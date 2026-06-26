@@ -611,7 +611,7 @@
             <thead>
               <tr>
                 <th>דירה</th>
-                <th>שם</th>
+                <th>פרטים</th>
                 <th>קומה</th>
                 <th>טלפון</th>
                 <th>סוג</th>
@@ -2004,11 +2004,74 @@ function renderPayments(ym) {
   const paidMap = {};
   allPayments.forEach(p => { paidMap[p.apt] = p; });
 
+  // דייר — מציג רק את הדירה שלו
+  if (!isAdmin) {
+    const myApt = currentResident?.apt;
+    const myResident = allResidents.find(r => r.apt === parseInt(myApt)) || currentResident;
+    const fee = aptFee(myApt, myResident);
+    const payment = paidMap[myApt];
+
+    // עדכון סטטיסטיקות — רק הדירה שלו
+    document.getElementById('pay-total-expected').textContent = fmtCurrency(fee);
+    document.getElementById('pay-total-paid').textContent = payment ? fmtCurrency(payment.amount || fee) : '₪0';
+    document.getElementById('pay-total-pending').textContent = payment ? '₪0' : fmtCurrency(fee);
+    document.getElementById('pay-pct').textContent = payment ? '100%' : '0%';
+    document.getElementById('pay-progress-bar').style.width = payment ? '100%' : '0%';
+    document.getElementById('pay-progress-label').textContent = payment ? '✅ שילמת החודש' : '⏳ טרם שילמת החודש';
+    document.getElementById('stat-paid').textContent = payment ? fmtCurrency(payment.amount || fee) : '₪0';
+    document.getElementById('stat-pending').textContent = payment ? '₪0' : fmtCurrency(fee);
+
+    // תצוגת סקירה — הדירה שלו בלבד
+    document.getElementById('pay-pending-section').style.display = payment ? 'none' : '';
+    document.getElementById('pay-paid-section').style.display = payment ? '' : 'none';
+
+    if (!payment) {
+      document.getElementById('pay-pending-section').querySelector('div').textContent = '⏳ טרם שולם';
+      document.getElementById('pay-pending-list').innerHTML = `
+        <div class="payment-item">
+          <div class="payment-item-info">
+            <div class="payment-item-name">דירה ${myApt}</div>
+            <div class="payment-item-sub">${ym ? monthLabel(ym) : ''}</div>
+          </div>
+          <div class="payment-item-amount orange">${fmtCurrency(fee)}</div>
+        </div>`;
+    } else {
+      document.getElementById('pay-paid-section').querySelector('div').textContent = '✅ שולם';
+      document.getElementById('pay-paid-list').innerHTML = `
+        <div class="payment-item">
+          <div class="payment-item-info">
+            <div class="payment-item-name">דירה ${myApt}</div>
+            <div class="payment-item-sub">${payment.paidAt ? new Date(payment.paidAt.toDate()).toLocaleDateString('he-IL') : ''}</div>
+          </div>
+          <div class="payment-item-amount" style="color:var(--green)">${fmtCurrency(payment.amount || fee)}</div>
+        </div>`;
+    }
+
+    // רשימה — הדירה שלו בלבד
+    document.getElementById('pay-full-list').innerHTML = `
+      <div style="overflow-x:auto;">
+        <table class="po-table">
+          <thead><tr>
+            <th>דירה</th><th>קומה</th><th>סכום</th><th>סטטוס</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>${myApt}</strong></td>
+              <td>${myResident?.floor !== undefined ? myResident.floor : '-'}</td>
+              <td>${fmtCurrency(fee)}</td>
+              <td>${payment ? '<span class="badge badge-green">שולם</span>' : '<span class="badge badge-orange">ממתין</span>'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+    return;
+  }
+
+  // מנהל — מציג הכל
   let totalPaid = 0, totalExpected = 0, paidCount = 0;
   const pendingItems = [], paidItems = [];
 
-  const residentsToShow = allResidents;
-  residentsToShow.forEach(r => {
+  allResidents.forEach(r => {
     const fee = aptFee(r.apt, r);
     totalExpected += fee;
     const payment = paidMap[r.apt];
@@ -2029,12 +2092,12 @@ function renderPayments(ym) {
   document.getElementById('pay-total-pending').textContent = fmtCurrency(totalExpected - totalPaid);
   document.getElementById('pay-progress-bar').style.width = pct + '%';
   document.getElementById('pay-progress-label').textContent = `${paidCount} מתוך ${allResidents.length} דירות שילמו`;
-
-  // Also update home stats
   document.getElementById('stat-paid').textContent = fmtCurrency(totalPaid);
   document.getElementById('stat-pending').textContent = fmtCurrency(totalExpected - totalPaid);
 
-  // Pending section
+  document.getElementById('pay-pending-section').style.display = '';
+  document.getElementById('pay-paid-section').style.display = '';
+
   const ps = document.getElementById('pay-pending-section');
   ps.querySelector('div').textContent = `⏳ ממתינים (${pendingItems.length})`;
   document.getElementById('pay-pending-list').innerHTML = pendingItems.map(({ resident: r }) => `
@@ -2044,11 +2107,10 @@ function renderPayments(ym) {
         <div class="payment-item-sub">דירה ${r.apt} • קומה ${r.floor !== undefined ? r.floor : '-'}</div>
       </div>
       <div class="payment-item-amount orange">${fmtCurrency(aptFee(r.apt, r))}</div>
-      ${isAdmin ? `<button class="btn-success" style="margin-right:8px;" onclick="event.stopPropagation();markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">✓ שולם</button>` : ''}
+      <button class="btn-success" style="margin-right:8px;" onclick="event.stopPropagation();markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">✓ שולם</button>
     </div>
   `).join('') || '<div class="card-empty">🎉 כולם שילמו!</div>';
 
-  // Paid section
   const paid_s = document.getElementById('pay-paid-section');
   paid_s.querySelector('div').textContent = `✅ שילמו (${paidItems.length})`;
   document.getElementById('pay-paid-list').innerHTML = paidItems.map(({ resident: r, payment: p }) => `
@@ -2058,19 +2120,17 @@ function renderPayments(ym) {
         <div class="payment-item-sub">דירה ${r.apt} • ${p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : ''}</div>
       </div>
       <div class="payment-item-amount" style="color:var(--green)">${fmtCurrency(p.amount || aptFee(r.apt, r))}</div>
-      ${isAdmin ? `<button class="btn-danger" style="margin-right:8px;" onclick="event.stopPropagation();cancelPayment('${p.id}')">ביטול</button>` : ''}
+      <button class="btn-danger" style="margin-right:8px;" onclick="event.stopPropagation();cancelPayment('${p.id}')">ביטול</button>
     </div>
   `).join('');
 
-  // Full list view
   const fullList = [...paidItems.map(x => ({...x, paid: true})), ...pendingItems.map(x => ({...x, paid: false}))];
   fullList.sort((a,b) => (parseInt(a.resident.apt)||0) - (parseInt(b.resident.apt)||0));
   document.getElementById('pay-full-list').innerHTML = `
     <div style="overflow-x:auto;">
       <table class="po-table">
         <thead><tr>
-          <th>דירה</th><th>שם</th><th>קומה</th><th>סכום</th><th>סטטוס</th>
-          ${isAdmin ? '<th>פעולה</th>' : ''}
+          <th>דירה</th><th>פרטים</th><th>קומה</th><th>סכום</th><th>סטטוס</th><th>פעולה</th>
         </tr></thead>
         <tbody>
           ${fullList.map(({ resident: r, payment: p, paid }) => `
@@ -2080,10 +2140,10 @@ function renderPayments(ym) {
               <td>${r.floor !== undefined ? r.floor : '-'}</td>
               <td>${fmtCurrency(aptFee(r.apt, r))}</td>
               <td>${paid ? '<span class="badge badge-green">שולם</span>' : '<span class="badge badge-orange">ממתין</span>'}</td>
-              ${isAdmin ? `<td>${paid
+              <td>${paid
                 ? `<button class="btn-danger" style="padding:4px 8px;font-size:11px;" onclick="cancelPayment('${p.id}')">ביטול</button>`
                 : `<button class="btn-success" style="padding:4px 8px;font-size:11px;" onclick="markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">שולם</button>`
-              }</td>` : ''}
+              }</td>
             </tr>
           `).join('')}
         </tbody>
@@ -2539,7 +2599,7 @@ async function createPDFReport() {
     let rowTotal = 0;
     let rowHtml = `<tr>
       <td style="font-weight:bold;text-align:center;border:1px solid #ddd;padding:8px;">${r.apt}</td>
-      <td style="text-align:right;border:1px solid #ddd;padding:8px;">${(r.name||"").replace(/ /g,"\u00A0")}</td>`;
+      <td style="text-align:center;border:1px solid #ddd;padding:8px;">דירה&nbsp;${r.apt}</td>`;
     
     for (let m = 0; m < 12; m++) {
       const ym = year + '-' + String(m+1).padStart(2,'0');
@@ -2599,7 +2659,7 @@ async function createPDFReport() {
         <thead>
           <tr>
             <th>דירה</th>
-            <th>שם</th>
+            <th>פרטים</th>
             ${months.map(m => `<th>${m}</th>`).join('')}
             <th>סה"כ</th>
           </tr>
