@@ -420,7 +420,7 @@
   <div style="color:rgba(255,255,255,0.7);font-size:14px;margin-bottom:32px;">בחר מצב כניסה</div>
   <div style="width:100%;max-width:400px;display:flex;flex-direction:column;gap:12px;">
     <button class="btn-primary" style="background:#fff;color:var(--blue);font-size:16px;padding:16px;" onclick="enterAsAdmin()">
-      🏠 מנהל הבניין שלי
+      🏠 מנהל זרחין 10, רעננה
     </button>
     <button class="btn-primary" style="background:rgba(255,255,255,0.15);color:#fff;border:2px solid rgba(255,255,255,0.4);font-size:16px;padding:16px;" onclick="enterSupervisorMode()">
       🔍 מצב פיקוח — כל הבניינים
@@ -929,6 +929,7 @@
         <option value="כיבוי אש">כיבוי אש</option>
         <option value="עמלות בנק">עמלות בנק</option>
         <option value="תיקון">תיקון</option>
+        <option value="גינון">גינון</option>
         <option value="אחר">אחר</option>
       </select>
     </div>
@@ -1392,7 +1393,7 @@ window.confirmDeleteBuilding = async () => {
 
 // ===== SUPER ADMIN =====
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
-const MY_BUILDING_ADDRESS = 'הבניין שלי';
+const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 
 window.showSuperAdminScreen = () => {
   document.getElementById('supervisor-screen').style.display = 'none';
@@ -2256,7 +2257,7 @@ function renderExpenses() {
     container.innerHTML = '<div class="card-empty" style="margin:16px;">אין הוצאות רשומות</div>';
     return;
   }
-  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', אחר:'📋' };
+  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
   const total = allExpenses.reduce((s,e) => s + (e.amount||0), 0);
   let html = '<div style="padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;">'
     + '<span style="font-size:15px;font-weight:700;">סה"כ הוצאות</span>'
@@ -2381,7 +2382,7 @@ async function loadBalance() {
   allExpenses.forEach(e => {
     byCat[e.category] = (byCat[e.category]||0) + (e.amount||0);
   });
-  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', אחר:'📋' };
+  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
 
   let html = '<div style="padding:16px;">';
   // Main balance card - יתרה בחשבון הבנק
