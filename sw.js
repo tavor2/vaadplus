@@ -1,10 +1,10 @@
 const CACHE_NAME = 'vaad-bait-plus-v1';
 const ASSETS = [
-  '/vaadplustemp/',
-  '/vaadplustemp/index.html',
-  '/vaadplustemp/manifest.json',
-  '/vaadplustemp/icon-192.png',
-  '/vaadplustemp/icon-512.png'
+  '/vaadplus/',
+  '/vaadplus/index.html',
+  '/vaadplus/manifest.json',
+  '/vaadplus/icon-192.png',
+  '/vaadplus/icon-512.png'
 ];
 
 self.addEventListener('install', e => {
@@ -31,5 +31,4 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
-  // temp
 });
