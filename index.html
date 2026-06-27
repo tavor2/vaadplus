@@ -1811,6 +1811,7 @@ function loadResidents() {
         // אם עדיין לא נמצא — הצג את currentResident ישירות
         listToRender = currentResident ? [currentResident] : [];
       }
+      showToast(`דיירים: ${allResidents.length} | apt: ${currentResident?.apt} | email: ${currentUser?.email} | נמצאו: ${listToRender.length}`);
     }
     renderResidents(listToRender);
     updateHomeStats();
