@@ -1058,10 +1058,10 @@
 
 3. שיתוף מידע ופרטיות הדיירים
 
-אנו נוקטים בגישה של צמצום חשיפת מידע אישי (Privacy by Design):
+אנו מחויבים להגנה מלאה על פרטיות הדיירים (Privacy by Design):
 
-• שקיפות פנימית: רק השם המלא ומספר הטלפון יהיו חשופים לדיירים האחרים בבניין.
-• כתובת אימייל: תשמש את ועד הבית בלבד ולא תוצג לשאר הדיירים.
+• הגנה מלאה על פרטיות הדיירים: לדיירים אחרים בבניין אין גישה לשום מידע אישי על דיירים אחרים.
+• גישת ועד הבית בלבד: מספר דירה, שם מלא, מספר טלפון וכתובת אימייל גלויים לועד הבית בלבד לצורכי ניהול.
 • צד שלישי: אנו לא חולקים, מוכרים או מעבירים את המידע האישי לצדדים שלישיים, למעט במקרים הנדרשים על פי חוק.
 
 4. אבטחת מידע
@@ -2057,7 +2057,6 @@ function renderPayments(ym) {
         <div class="payment-item-sub">דירה ${r.apt} • ${p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : ''}</div>
       </div>
       <div class="payment-item-amount" style="color:var(--green)">${fmtCurrency(p.amount || aptFee(r.apt, r))}</div>
-      <button class="btn-icon" style="margin-right:6px;padding:6px 10px;font-size:12px;" onclick="event.stopPropagation();generateReceipt(${r.apt},'${r.name}',${aptFee(r.apt, r)},'${ym}','${p.id}')">🧾</button>
       ${isAdmin ? `<button class="btn-danger" style="margin-right:8px;" onclick="event.stopPropagation();cancelPayment('${p.id}')">ביטול</button>` : ''}
     </div>
   `).join('');
@@ -2712,7 +2711,6 @@ async function renderHistoryGrid(apt, name, fee) {
         + '<div style="font-size:12px;font-weight:700;color:var(--green);">'+monthNames[m]+'</div>'
         + '<div style="font-size:18px;margin:4px 0;">✅</div>'
         + '<div style="font-size:11px;color:var(--green);">₪'+(paid.amount||fee)+'</div>'
-        + '<button onclick="event.stopPropagation();generateReceipt('+apt+',\''+name+'\','+fee+',\''+ym+'\',\''+paid.id+'\')" style="margin-top:6px;width:100%;background:#1A56DB;color:white;border:none;border-radius:6px;padding:4px 0;font-size:10px;font-weight:700;cursor:pointer;">🧾 קבלה</button>'
         + '</div>';
     } else if (isFuture) {
       grid += '<div style="background:var(--gray-100);border-radius:10px;padding:10px 6px;text-align:center;">'
@@ -2782,124 +2780,6 @@ async function renderHistoryGrid(apt, name, fee) {
 }
 
 
-
-// ===== RECEIPT GENERATION =====
-window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
-  try {
-    showToast('מכין קבלה...');
-    if (!window.html2pdf) {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-      await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
-    }
-
-    // Get payment details
-    let payment = null;
-    if (paymentId) {
-      const snap = await getDoc(doc(db, 'buildings', buildingId, 'payments', paymentId));
-      if (snap.exists()) payment = snap.data();
-    }
-    if (!payment) {
-      const snap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('apt','==', parseInt(apt)), where('month','==', ym)));
-      if (!snap.empty) payment = snap.docs[0].data();
-    }
-
-    const amount = payment?.amount || fee;
-    const methodMap = { transfer: 'העברה בנקאית', cash: 'מזומן', check: 'שיק' };
-    const methodLabel = methodMap[payment?.method] || payment?.method || '-';
-    const paidDate = payment?.paidAt ? new Date(payment.paidAt.toDate()).toLocaleDateString('he-IL') : new Date().toLocaleDateString('he-IL');
-    const [year, month] = ym.split('-');
-    const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-    const monthLabel = monthNames[parseInt(month)-1] + ' ' + year;
-    const receiptNum = `${year}${month}${String(apt).padStart(2,'0')}`;
-    const buildingAddress = buildingData?.address || '';
-    const adminName = buildingData?.adminName || '';
-    const today = new Date().toLocaleDateString('he-IL');
-
-    const html = `
-    <html><head><meta charset="utf-8"/>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: Arial, Helvetica, sans-serif; direction: rtl; color: #1a1a2e; background: white; padding: 0; }
-      .page { width: 148mm; min-height: 105mm; padding: 10mm 12mm; position: relative; }
-
-      /* Header */
-      .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1A56DB; padding-bottom: 8px; margin-bottom: 10px; }
-      .logo-area { display: flex; align-items: center; gap: 10px; }
-      .logo-icon { width: 44px; height: 44px; background: #1A56DB; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-      .logo-text { font-size: 20px; font-weight: 900; color: #1A56DB; letter-spacing: -0.5px; }
-      .logo-sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
-      .receipt-label { text-align: left; }
-      .receipt-word { font-size: 22px; font-weight: 900; color: #1A56DB; letter-spacing: 1px; }
-      .receipt-num { font-size: 11px; color: #6b7280; margin-top: 2px; }
-
-      /* Body */
-      .body-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 12px; }
-      .field { display: flex; flex-direction: column; gap: 1px; }
-      .field-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; font-weight: 600; }
-      .field-value { font-size: 13px; font-weight: 700; color: #111827; }
-
-      /* Amount box */
-      .amount-box { background: #EBF2FF; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-      .amount-label { font-size: 11px; color: #1A56DB; font-weight: 700; }
-      .amount-value { font-size: 28px; font-weight: 900; color: #1A56DB; }
-
-      /* Footer */
-      .footer { border-top: 1px solid #e5e7eb; padding-top: 8px; display: flex; justify-content: space-between; align-items: center; }
-      .footer-text { font-size: 9px; color: #9ca3af; }
-      .stamp { border: 2px solid #0E9F6E; border-radius: 8px; padding: 4px 10px; color: #0E9F6E; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
-    </style>
-    </head><body>
-    <div class="page">
-      <div class="header">
-        <div class="logo-area">
-          <div class="logo-icon">🏢</div>
-          <div>
-            <div class="logo-text">ועד בית פלוס</div>
-            <div class="logo-sub">${buildingAddress}</div>
-          </div>
-        </div>
-        <div class="receipt-label">
-          <div class="receipt-word">קבלה</div>
-          <div class="receipt-num">מס׳ ${receiptNum}</div>
-          <div class="receipt-num">תאריך הפקה: ${today}</div>
-        </div>
-      </div>
-
-      <div class="body-grid">
-        <div class="field"><div class="field-label">שם הדייר</div><div class="field-value">${name}</div></div>
-        <div class="field"><div class="field-label">דירה</div><div class="field-value">${apt}</div></div>
-        <div class="field"><div class="field-label">עבור חודש</div><div class="field-value">${monthLabel}</div></div>
-        <div class="field"><div class="field-label">תאריך תשלום</div><div class="field-value">${paidDate}</div></div>
-        <div class="field"><div class="field-label">אמצעי תשלום</div><div class="field-value">${methodLabel}</div></div>
-        <div class="field"><div class="field-label">מנהל הועד</div><div class="field-value">${adminName}</div></div>
-      </div>
-
-      <div class="amount-box">
-        <div class="amount-label">סכום ששולם — דמי ועד בית</div>
-        <div class="amount-value">₪${Number(amount).toLocaleString('he-IL')}</div>
-      </div>
-
-      <div class="footer">
-        <div class="footer-text">מסמך זה מהווה אסמכתא לתשלום דמי ועד בית</div>
-        <div class="stamp">✓ שולם</div>
-      </div>
-    </div>
-    </body></html>`;
-
-    const el = document.createElement('div');
-    el.innerHTML = html;
-    const opt = {
-      margin: 0,
-      filename: `קבלה_דירה${apt}_${monthLabel}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 3, useCORS: true },
-      jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a6' }
-    };
-    html2pdf().set(opt).from(el).save();
-    showToast('🧾 קבלה הורדה בהצלחה');
-  } catch(e) { showToast('שגיאה: ' + e.message); }
-};
 
 // ===== ISSUES =====
 function loadIssues() {
