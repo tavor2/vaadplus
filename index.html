@@ -611,7 +611,7 @@
             <thead>
               <tr>
                 <th>דירה</th>
-                <th>פרטים</th>
+                
                 <th>קומה</th>
                 <th>טלפון</th>
                 <th>סוג</th>
@@ -669,7 +669,7 @@
       <button class="tab-btn active" onclick="setPayView('overview',this)">סקירה</button>
       <button class="tab-btn" onclick="setPayView('list',this)">רשימה</button>
       <button class="tab-btn" onclick="setPayView('expenses',this)">הוצאות</button>
-      <button class="tab-btn" onclick="setPayView('balance',this)">מאזן</button>
+      <button class="tab-btn" id="tab-balance" onclick="setPayView('balance',this)">מאזן</button>
     </div>
 
     <div class="screen-body">
@@ -1617,6 +1617,8 @@ function initUI() {
     }
   }
 
+  document.getElementById('tab-balance').style.display = isAdmin ? '' : 'none';
+
   if (isAdmin) {
     document.getElementById('btn-add-resident').style.display = '';
     document.getElementById('btn-admin-finance').style.display = '';
@@ -2130,7 +2132,7 @@ function renderPayments(ym) {
     <div style="overflow-x:auto;">
       <table class="po-table">
         <thead><tr>
-          <th>דירה</th><th>פרטים</th><th>קומה</th><th>סכום</th><th>סטטוס</th><th>פעולה</th>
+          <th>דירה</th><th>קומה</th><th>סכום</th><th>סטטוס</th><th>פעולה</th>
         </tr></thead>
         <tbody>
           ${fullList.map(({ resident: r, payment: p, paid }) => `
@@ -2426,9 +2428,12 @@ async function loadBalance() {
   const bankExpenses = totalExpenses - cashExpenses;
   allExpenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // הפקדות מזומן לבנק
-  const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-  const totalDeposits = depositSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
+  // הפקדות מזומן לבנק — רק מנהל יכול לקרוא
+  let totalDeposits = 0;
+  try {
+    const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
+    totalDeposits = depositSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
+  } catch(e) { totalDeposits = 0; }
 
   const openingBalance = buildingData?.openingBalance || 0;
   const bankBalance = openingBalance + transferCollected + totalDeposits - bankExpenses;
@@ -2599,7 +2604,7 @@ async function createPDFReport() {
     let rowTotal = 0;
     let rowHtml = `<tr>
       <td style="font-weight:bold;text-align:center;border:1px solid #ddd;padding:8px;">${r.apt}</td>
-      <td style="text-align:center;border:1px solid #ddd;padding:8px;">דירה&nbsp;${r.apt}</td>`;
+      `;
     
     for (let m = 0; m < 12; m++) {
       const ym = year + '-' + String(m+1).padStart(2,'0');
@@ -2654,12 +2659,13 @@ async function createPDFReport() {
       <h1 style="letter-spacing:4px;">דוח תשלומים לוועד הבית</h1>
       <h2>${(buildingData?.address || '').replace(/ /g, '\u00A0')}</h2>
       <h2>שנה&nbsp;${year}</h2>
+      <h2 style="font-size:13px;color:#999;">הופק: ${new Date().toLocaleDateString('he-IL')} ${new Date().toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'})}</h2>
       
       <table>
         <thead>
           <tr>
             <th>דירה</th>
-            <th>פרטים</th>
+            
             ${months.map(m => `<th>${m}</th>`).join('')}
             <th>סה"כ</th>
           </tr>
