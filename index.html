@@ -2657,7 +2657,7 @@ async function createPDFReport() {
       <h1 style="letter-spacing:4px;">דוח תשלומים לוועד הבית</h1>
       <h2>${(buildingData?.address || '').replace(/ /g, '\u00A0')}</h2>
       <h2>שנה&nbsp;${year}</h2>
-      <h2 style="font-size:13px;color:#999;">${(() => { const now = new Date(); return 'הופק: ' + now.toLocaleDateString('he-IL') + ' בשעה ' + now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); })()}</h2>
+      <h2 style="font-size:13px;color:#999;">${(() => { const now = new Date(); return 'הופק ' + now.toLocaleDateString('he-IL') + ' בשעה ' + now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); })()}</h2>
       
       <table>
         <thead>
