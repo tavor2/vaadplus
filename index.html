@@ -611,7 +611,7 @@
             <thead>
               <tr>
                 <th>דירה</th>
-                
+                <th>שם</th>
                 <th>קומה</th>
                 <th>טלפון</th>
                 <th>סוג</th>
@@ -929,7 +929,6 @@
         <option value="כיבוי אש">כיבוי אש</option>
         <option value="עמלות בנק">עמלות בנק</option>
         <option value="תיקון">תיקון</option>
-        <option value="גינון">גינון</option>
         <option value="אחר">אחר</option>
       </select>
     </div>
@@ -2004,74 +2003,11 @@ function renderPayments(ym) {
   const paidMap = {};
   allPayments.forEach(p => { paidMap[p.apt] = p; });
 
-  // דייר — מציג רק את הדירה שלו
-  if (!isAdmin) {
-    const myApt = currentResident?.apt;
-    const myResident = allResidents.find(r => r.apt === parseInt(myApt)) || currentResident;
-    const fee = aptFee(myApt, myResident);
-    const payment = paidMap[myApt];
-
-    // עדכון סטטיסטיקות — רק הדירה שלו
-    document.getElementById('pay-total-expected').textContent = fmtCurrency(fee);
-    document.getElementById('pay-total-paid').textContent = payment ? fmtCurrency(payment.amount || fee) : '₪0';
-    document.getElementById('pay-total-pending').textContent = payment ? '₪0' : fmtCurrency(fee);
-    document.getElementById('pay-pct').textContent = payment ? '100%' : '0%';
-    document.getElementById('pay-progress-bar').style.width = payment ? '100%' : '0%';
-    document.getElementById('pay-progress-label').textContent = payment ? '✅ שילמת החודש' : '⏳ טרם שילמת החודש';
-    document.getElementById('stat-paid').textContent = payment ? fmtCurrency(payment.amount || fee) : '₪0';
-    document.getElementById('stat-pending').textContent = payment ? '₪0' : fmtCurrency(fee);
-
-    // תצוגת סקירה — הדירה שלו בלבד
-    document.getElementById('pay-pending-section').style.display = payment ? 'none' : '';
-    document.getElementById('pay-paid-section').style.display = payment ? '' : 'none';
-
-    if (!payment) {
-      document.getElementById('pay-pending-section').querySelector('div').textContent = '⏳ טרם שולם';
-      document.getElementById('pay-pending-list').innerHTML = `
-        <div class="payment-item">
-          <div class="payment-item-info">
-            <div class="payment-item-name">דירה ${myApt}</div>
-            <div class="payment-item-sub">${ym ? monthLabel(ym) : ''}</div>
-          </div>
-          <div class="payment-item-amount orange">${fmtCurrency(fee)}</div>
-        </div>`;
-    } else {
-      document.getElementById('pay-paid-section').querySelector('div').textContent = '✅ שולם';
-      document.getElementById('pay-paid-list').innerHTML = `
-        <div class="payment-item">
-          <div class="payment-item-info">
-            <div class="payment-item-name">דירה ${myApt}</div>
-            <div class="payment-item-sub">${payment.paidAt ? new Date(payment.paidAt.toDate()).toLocaleDateString('he-IL') : ''}</div>
-          </div>
-          <div class="payment-item-amount" style="color:var(--green)">${fmtCurrency(payment.amount || fee)}</div>
-        </div>`;
-    }
-
-    // רשימה — הדירה שלו בלבד
-    document.getElementById('pay-full-list').innerHTML = `
-      <div style="overflow-x:auto;">
-        <table class="po-table">
-          <thead><tr>
-            <th>דירה</th><th>קומה</th><th>סכום</th><th>סטטוס</th>
-          </tr></thead>
-          <tbody>
-            <tr>
-              <td><strong>${myApt}</strong></td>
-              <td>${myResident?.floor !== undefined ? myResident.floor : '-'}</td>
-              <td>${fmtCurrency(fee)}</td>
-              <td>${payment ? '<span class="badge badge-green">שולם</span>' : '<span class="badge badge-orange">ממתין</span>'}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>`;
-    return;
-  }
-
-  // מנהל — מציג הכל
   let totalPaid = 0, totalExpected = 0, paidCount = 0;
   const pendingItems = [], paidItems = [];
 
-  allResidents.forEach(r => {
+  const residentsToShow = allResidents;
+  residentsToShow.forEach(r => {
     const fee = aptFee(r.apt, r);
     totalExpected += fee;
     const payment = paidMap[r.apt];
@@ -2092,12 +2028,12 @@ function renderPayments(ym) {
   document.getElementById('pay-total-pending').textContent = fmtCurrency(totalExpected - totalPaid);
   document.getElementById('pay-progress-bar').style.width = pct + '%';
   document.getElementById('pay-progress-label').textContent = `${paidCount} מתוך ${allResidents.length} דירות שילמו`;
+
+  // Also update home stats
   document.getElementById('stat-paid').textContent = fmtCurrency(totalPaid);
   document.getElementById('stat-pending').textContent = fmtCurrency(totalExpected - totalPaid);
 
-  document.getElementById('pay-pending-section').style.display = '';
-  document.getElementById('pay-paid-section').style.display = '';
-
+  // Pending section
   const ps = document.getElementById('pay-pending-section');
   ps.querySelector('div').textContent = `⏳ ממתינים (${pendingItems.length})`;
   document.getElementById('pay-pending-list').innerHTML = pendingItems.map(({ resident: r }) => `
@@ -2107,10 +2043,11 @@ function renderPayments(ym) {
         <div class="payment-item-sub">דירה ${r.apt} • קומה ${r.floor !== undefined ? r.floor : '-'}</div>
       </div>
       <div class="payment-item-amount orange">${fmtCurrency(aptFee(r.apt, r))}</div>
-      <button class="btn-success" style="margin-right:8px;" onclick="event.stopPropagation();markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">✓ שולם</button>
+      ${isAdmin ? `<button class="btn-success" style="margin-right:8px;" onclick="event.stopPropagation();markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">✓ שולם</button>` : ''}
     </div>
   `).join('') || '<div class="card-empty">🎉 כולם שילמו!</div>';
 
+  // Paid section
   const paid_s = document.getElementById('pay-paid-section');
   paid_s.querySelector('div').textContent = `✅ שילמו (${paidItems.length})`;
   document.getElementById('pay-paid-list').innerHTML = paidItems.map(({ resident: r, payment: p }) => `
@@ -2120,17 +2057,20 @@ function renderPayments(ym) {
         <div class="payment-item-sub">דירה ${r.apt} • ${p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : ''}</div>
       </div>
       <div class="payment-item-amount" style="color:var(--green)">${fmtCurrency(p.amount || aptFee(r.apt, r))}</div>
-      <button class="btn-danger" style="margin-right:8px;" onclick="event.stopPropagation();cancelPayment('${p.id}')">ביטול</button>
+      <button class="btn-icon" style="margin-right:6px;padding:6px 10px;font-size:12px;" onclick="event.stopPropagation();generateReceipt(${r.apt},'${r.name}',${aptFee(r.apt, r)},'${ym}','${p.id}')">🧾</button>
+      ${isAdmin ? `<button class="btn-danger" style="margin-right:8px;" onclick="event.stopPropagation();cancelPayment('${p.id}')">ביטול</button>` : ''}
     </div>
   `).join('');
 
+  // Full list view
   const fullList = [...paidItems.map(x => ({...x, paid: true})), ...pendingItems.map(x => ({...x, paid: false}))];
   fullList.sort((a,b) => (parseInt(a.resident.apt)||0) - (parseInt(b.resident.apt)||0));
   document.getElementById('pay-full-list').innerHTML = `
     <div style="overflow-x:auto;">
       <table class="po-table">
         <thead><tr>
-          <th>דירה</th><th>קומה</th><th>סכום</th><th>סטטוס</th><th>פעולה</th>
+          <th>דירה</th><th>שם</th><th>קומה</th><th>סכום</th><th>סטטוס</th>
+          ${isAdmin ? '<th>פעולה</th>' : ''}
         </tr></thead>
         <tbody>
           ${fullList.map(({ resident: r, payment: p, paid }) => `
@@ -2140,10 +2080,10 @@ function renderPayments(ym) {
               <td>${r.floor !== undefined ? r.floor : '-'}</td>
               <td>${fmtCurrency(aptFee(r.apt, r))}</td>
               <td>${paid ? '<span class="badge badge-green">שולם</span>' : '<span class="badge badge-orange">ממתין</span>'}</td>
-              <td>${paid
+              ${isAdmin ? `<td>${paid
                 ? `<button class="btn-danger" style="padding:4px 8px;font-size:11px;" onclick="cancelPayment('${p.id}')">ביטול</button>`
                 : `<button class="btn-success" style="padding:4px 8px;font-size:11px;" onclick="markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">שולם</button>`
-              }</td>
+              }</td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -2317,7 +2257,7 @@ function renderExpenses() {
     container.innerHTML = '<div class="card-empty" style="margin:16px;">אין הוצאות רשומות</div>';
     return;
   }
-  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
+  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', אחר:'📋' };
   const total = allExpenses.reduce((s,e) => s + (e.amount||0), 0);
   let html = '<div style="padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;">'
     + '<span style="font-size:15px;font-weight:700;">סה"כ הוצאות</span>'
@@ -2426,12 +2366,9 @@ async function loadBalance() {
   const bankExpenses = totalExpenses - cashExpenses;
   allExpenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // הפקדות מזומן לבנק — רק מנהל יכול לקרוא
-  let totalDeposits = 0;
-  try {
-    const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-    totalDeposits = depositSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
-  } catch(e) { totalDeposits = 0; }
+  // הפקדות מזומן לבנק
+  const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
+  const totalDeposits = depositSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
 
   const openingBalance = buildingData?.openingBalance || 0;
   const bankBalance = openingBalance + transferCollected + totalDeposits - bankExpenses;
@@ -2445,7 +2382,7 @@ async function loadBalance() {
   allExpenses.forEach(e => {
     byCat[e.category] = (byCat[e.category]||0) + (e.amount||0);
   });
-  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
+  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', אחר:'📋' };
 
   let html = '<div style="padding:16px;">';
   // Main balance card - יתרה בחשבון הבנק
@@ -2602,7 +2539,7 @@ async function createPDFReport() {
     let rowTotal = 0;
     let rowHtml = `<tr>
       <td style="font-weight:bold;text-align:center;border:1px solid #ddd;padding:8px;">${r.apt}</td>
-      `;
+      <td style="text-align:right;border:1px solid #ddd;padding:8px;">${(r.name||"").replace(/ /g,"\u00A0")}</td>`;
     
     for (let m = 0; m < 12; m++) {
       const ym = year + '-' + String(m+1).padStart(2,'0');
@@ -2657,13 +2594,12 @@ async function createPDFReport() {
       <h1 style="letter-spacing:4px;">דוח תשלומים לוועד הבית</h1>
       <h2>${(buildingData?.address || '').replace(/ /g, '\u00A0')}</h2>
       <h2>שנה&nbsp;${year}</h2>
-      <h2 style="font-size:13px;color:#999;">${(() => { const now = new Date(); return 'הופק ' + now.toLocaleDateString('he-IL') + ' בשעה ' + now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); })()}</h2>
       
       <table>
         <thead>
           <tr>
             <th>דירה</th>
-            
+            <th>שם</th>
             ${months.map(m => `<th>${m}</th>`).join('')}
             <th>סה"כ</th>
           </tr>
@@ -2776,6 +2712,7 @@ async function renderHistoryGrid(apt, name, fee) {
         + '<div style="font-size:12px;font-weight:700;color:var(--green);">'+monthNames[m]+'</div>'
         + '<div style="font-size:18px;margin:4px 0;">✅</div>'
         + '<div style="font-size:11px;color:var(--green);">₪'+(paid.amount||fee)+'</div>'
+        + '<button onclick="event.stopPropagation();generateReceipt('+apt+',\''+name+'\','+fee+',\''+ym+'\',\''+paid.id+'\')" style="margin-top:6px;width:100%;background:#1A56DB;color:white;border:none;border-radius:6px;padding:4px 0;font-size:10px;font-weight:700;cursor:pointer;">🧾 קבלה</button>'
         + '</div>';
     } else if (isFuture) {
       grid += '<div style="background:var(--gray-100);border-radius:10px;padding:10px 6px;text-align:center;">'
@@ -2845,6 +2782,124 @@ async function renderHistoryGrid(apt, name, fee) {
 }
 
 
+
+// ===== RECEIPT GENERATION =====
+window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
+  try {
+    showToast('מכין קבלה...');
+    if (!window.html2pdf) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
+    }
+
+    // Get payment details
+    let payment = null;
+    if (paymentId) {
+      const snap = await getDoc(doc(db, 'buildings', buildingId, 'payments', paymentId));
+      if (snap.exists()) payment = snap.data();
+    }
+    if (!payment) {
+      const snap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('apt','==', parseInt(apt)), where('month','==', ym)));
+      if (!snap.empty) payment = snap.docs[0].data();
+    }
+
+    const amount = payment?.amount || fee;
+    const methodMap = { transfer: 'העברה בנקאית', cash: 'מזומן', check: 'שיק' };
+    const methodLabel = methodMap[payment?.method] || payment?.method || '-';
+    const paidDate = payment?.paidAt ? new Date(payment.paidAt.toDate()).toLocaleDateString('he-IL') : new Date().toLocaleDateString('he-IL');
+    const [year, month] = ym.split('-');
+    const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+    const monthLabel = monthNames[parseInt(month)-1] + ' ' + year;
+    const receiptNum = `${year}${month}${String(apt).padStart(2,'0')}`;
+    const buildingAddress = buildingData?.address || '';
+    const adminName = buildingData?.adminName || '';
+    const today = new Date().toLocaleDateString('he-IL');
+
+    const html = `
+    <html><head><meta charset="utf-8"/>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, Helvetica, sans-serif; direction: rtl; color: #1a1a2e; background: white; padding: 0; }
+      .page { width: 148mm; min-height: 105mm; padding: 10mm 12mm; position: relative; }
+
+      /* Header */
+      .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1A56DB; padding-bottom: 8px; margin-bottom: 10px; }
+      .logo-area { display: flex; align-items: center; gap: 10px; }
+      .logo-icon { width: 44px; height: 44px; background: #1A56DB; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+      .logo-text { font-size: 20px; font-weight: 900; color: #1A56DB; letter-spacing: -0.5px; }
+      .logo-sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
+      .receipt-label { text-align: left; }
+      .receipt-word { font-size: 22px; font-weight: 900; color: #1A56DB; letter-spacing: 1px; }
+      .receipt-num { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+      /* Body */
+      .body-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 12px; }
+      .field { display: flex; flex-direction: column; gap: 1px; }
+      .field-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; font-weight: 600; }
+      .field-value { font-size: 13px; font-weight: 700; color: #111827; }
+
+      /* Amount box */
+      .amount-box { background: #EBF2FF; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+      .amount-label { font-size: 11px; color: #1A56DB; font-weight: 700; }
+      .amount-value { font-size: 28px; font-weight: 900; color: #1A56DB; }
+
+      /* Footer */
+      .footer { border-top: 1px solid #e5e7eb; padding-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+      .footer-text { font-size: 9px; color: #9ca3af; }
+      .stamp { border: 2px solid #0E9F6E; border-radius: 8px; padding: 4px 10px; color: #0E9F6E; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+    </style>
+    </head><body>
+    <div class="page">
+      <div class="header">
+        <div class="logo-area">
+          <div class="logo-icon">🏢</div>
+          <div>
+            <div class="logo-text">ועד בית פלוס</div>
+            <div class="logo-sub">${buildingAddress}</div>
+          </div>
+        </div>
+        <div class="receipt-label">
+          <div class="receipt-word">קבלה</div>
+          <div class="receipt-num">מס׳ ${receiptNum}</div>
+          <div class="receipt-num">תאריך הפקה: ${today}</div>
+        </div>
+      </div>
+
+      <div class="body-grid">
+        <div class="field"><div class="field-label">שם הדייר</div><div class="field-value">${name}</div></div>
+        <div class="field"><div class="field-label">דירה</div><div class="field-value">${apt}</div></div>
+        <div class="field"><div class="field-label">עבור חודש</div><div class="field-value">${monthLabel}</div></div>
+        <div class="field"><div class="field-label">תאריך תשלום</div><div class="field-value">${paidDate}</div></div>
+        <div class="field"><div class="field-label">אמצעי תשלום</div><div class="field-value">${methodLabel}</div></div>
+        <div class="field"><div class="field-label">מנהל הועד</div><div class="field-value">${adminName}</div></div>
+      </div>
+
+      <div class="amount-box">
+        <div class="amount-label">סכום ששולם — דמי ועד בית</div>
+        <div class="amount-value">₪${Number(amount).toLocaleString('he-IL')}</div>
+      </div>
+
+      <div class="footer">
+        <div class="footer-text">מסמך זה מהווה אסמכתא לתשלום דמי ועד בית</div>
+        <div class="stamp">✓ שולם</div>
+      </div>
+    </div>
+    </body></html>`;
+
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    const opt = {
+      margin: 0,
+      filename: `קבלה_דירה${apt}_${monthLabel}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 3, useCORS: true },
+      jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a6' }
+    };
+    html2pdf().set(opt).from(el).save();
+    showToast('🧾 קבלה הורדה בהצלחה');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
 
 // ===== ISSUES =====
 function loadIssues() {
