@@ -426,6 +426,7 @@
       🔍 מצב פיקוח — כל הבניינים
     </button>
     <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.6);border:none;margin-top:8px;" onclick="logout()">התנתק</button>
+    <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:16px;">v<span id="app-version"></span></div>
   </div>
 </div>
 
@@ -501,7 +502,7 @@
           <div id="home-address" style="font-size:12px; opacity:0.75; margin-top:2px;"></div>
         </div>
         <div id="home-building-icon" style="width:52px; height:52px; background:rgba(255,255,255,0.15); border-radius:16px; display:flex; align-items:center; justify-content:center; font-size:28px;">🏢</div>
-        <button class="btn-logout" onclick="logout()" style="justify-self:end;">יציאה</button>
+        <button class="btn-logout" onclick="logout()" style="justify-self:end;">יציאה <span style="font-size:10px;opacity:0.6;">v<span id="app-version-home"></span></span></button>
       </div>
     </div>
 
@@ -1035,51 +1036,65 @@
 <div class="modal-overlay" id="modal-privacy">
   <div class="modal" style="max-height:80vh;overflow-y:auto;">
     <div class="modal-title">מדיניות פרטיות</div>
-    <div style="font-size:13px;line-height:1.8;color:#333;white-space:pre-wrap;text-align:right;direction:rtl;">מדיניות פרטיות – אפליקציית וועד בית פלוס
+    <div style="font-size:13px;color:#333;text-align:right;direction:rtl;">
 
-תאריך עדכון אחרון: 21.6.2026
+      <div style="font-size:12px;color:#9CA3AF;text-align:center;margin-bottom:16px;">תאריך עדכון אחרון: 21.6.2026</div>
 
-אפליקציית וועד בית פלוס פותחה כדי לסייע לדיירים וחברי ועד בית לנהל את הבניין המשותף בצורה יעילה. אנו מכבדים את פרטיותך ומחויבים להגן עליה. מסמך זה מפרט כיצד אנו אוספים, משתמשים ושומרים את המידע שלך.
+      <div style="margin-bottom:14px;line-height:1.8;">
+        אפליקציית ועד בית פלוס פותחה כדי לסייע לדיירים וחברי ועד בית לנהל את הבניין המשותף בצורה יעילה. אנו מכבדים את פרטיותך ומחויבים להגן עליה. מסמך זה מפרט כיצד אנו אוספים, משתמשים ושומרים את המידע שלך.
+      </div>
 
-1. איסוף מידע
+      <div style="font-size:15px;font-weight:700;color:#1A56DB;margin-bottom:8px;">1. איסוף מידע</div>
+      <div style="line-height:1.8;margin-bottom:14px;">
+        בעת השימוש באפליקציה, אנו עשויים לאסוף את סוגי המידע הבאים:
+        <ul style="list-style:none;padding:0;margin-top:6px;">
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span><strong>פרטי משתמש:</strong> שם מלא, מספר טלפון, וכתובת דוא"ל.</li>
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span><strong>פרטי דירה:</strong> מספר דירה ומצב תשלומים (רלוונטי לוועד הבית בלבד).</li>
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span><strong>מידע טכני:</strong> נתונים אודות השימוש באפליקציה (כגון גרסת מערכת ההפעלה, תקלות אפשריות).</li>
+        </ul>
+      </div>
 
-בעת השימוש באפליקציה, אנו עשויים לאסוף את סוגי המידע הבאים:
+      <div style="font-size:15px;font-weight:700;color:#1A56DB;margin-bottom:8px;">2. אופן השימוש במידע</div>
+      <div style="line-height:1.8;margin-bottom:14px;">
+        אנו עושים שימוש במידע שנאסף אך ורק למטרות הבאות:
+        <ul style="list-style:none;padding:0;margin-top:6px;">
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span>ניהול תקין של תקשורת בין דיירי הבניין וועד הבית.</li>
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span>שליחת הודעות ועדכונים שוטפים מטעם ועד הבית.</li>
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span>תפעול תקין, שיפור ושדרוג חווית המשתמש באפליקציה.</li>
+        </ul>
+      </div>
 
-• פרטי משתמש: שם מלא, מספר טלפון, וכתובת דוא"ל.
-• פרטי דירה: מספר דירה ומצב תשלומים (רלוונטי לוועד הבית בלבד).
-• מידע טכני: נתונים אודות השימוש באפליקציה (כגון גרסת מערכת ההפעלה, תקלות אפשריות).
+      <div style="font-size:15px;font-weight:700;color:#1A56DB;margin-bottom:8px;">3. שיתוף מידע ופרטיות הדיירים</div>
+      <div style="line-height:1.8;margin-bottom:14px;">
+        אנו מחויבים להגנה מלאה על פרטיות הדיירים (Privacy by Design):
+        <ul style="list-style:none;padding:0;margin-top:6px;">
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span><strong>הגנה מלאה על פרטיות הדיירים:</strong> לדיירים אחרים בבניין אין גישה לשום מידע אישי על דיירים אחרים.</li>
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span><strong>גישת ועד הבית בלבד:</strong> מספר דירה, שם מלא, מספר טלפון וכתובת אימייל גלויים לועד הבית בלבד לצורכי ניהול.</li>
+          <li style="padding:4px 0;padding-right:16px;position:relative;"><span style="position:absolute;right:0;color:#1A56DB;font-weight:700;">•</span><strong>צד שלישי:</strong> אנו לא חולקים, מוכרים או מעבירים את המידע האישי לצדדים שלישיים, למעט במקרים הנדרשים על פי חוק.</li>
+        </ul>
+      </div>
 
-2. אופן השימוש במידע
+      <div style="font-size:15px;font-weight:700;color:#1A56DB;margin-bottom:8px;">4. אבטחת מידע</div>
+      <div style="line-height:1.8;margin-bottom:14px;">
+        אנו מיישמים אמצעי אבטחה מתקדמים להגנה על המידע האישי מפני גישה בלתי מורשית. הגישה לנתונים רגישים מוגבלת למורשים בלבד.
+      </div>
 
-אנו עושים שימוש במידע שנאסף אך ורק למטרות הבאות:
+      <div style="font-size:15px;font-weight:700;color:#1A56DB;margin-bottom:8px;">5. שמירת מידע ומחיקתו</div>
+      <div style="line-height:1.8;margin-bottom:14px;">
+        אנו נשמור את המידע כל עוד אתה משתמש רשום באפליקציה. במידה ועזבת את הבניין או שברצונך להסיר את פרטיך, פנה אל מנהל ועד הבית של הבניין שלך — הוא יבצע את המחיקה עבורך מהמערכת.
+      </div>
 
-• ניהול תקין של תקשורת בין דיירי הבניין וועד הבית.
-• שליחת הודעות ועדכונים שוטפים מטעם ועד הבית.
-• תפעול תקין, שיפור ושדרוג חווית המשתמש באפליקציה.
+      <div style="font-size:15px;font-weight:700;color:#1A56DB;margin-bottom:8px;">6. שינויים במדיניות הפרטיות</div>
+      <div style="line-height:1.8;margin-bottom:14px;">
+        אנו עשויים לעדכן מדיניות זו מעת לעת. נודיע על כל שינוי מהותי באמצעות הודעה בתוך האפליקציה.
+      </div>
 
-3. שיתוף מידע ופרטיות הדיירים
+      <div style="background:#EBF2FF;border-radius:12px;padding:14px;text-align:center;margin-top:8px;">
+        <div style="font-size:12px;color:#4B5563;margin-bottom:4px;">לפניות בנושא פרטיות:</div>
+        <a href="mailto:vaadplus100@gmail.com" style="font-size:15px;font-weight:700;color:#1A56DB;text-decoration:none;">vaadplus100@gmail.com</a>
+      </div>
 
-אנו נוקטים בגישה של צמצום חשיפת מידע אישי (Privacy by Design):
-
-• שקיפות פנימית: רק השם המלא ומספר הטלפון יהיו חשופים לדיירים האחרים בבניין.
-• כתובת אימייל: תשמש את ועד הבית בלבד ולא תוצג לשאר הדיירים.
-• צד שלישי: אנו לא חולקים, מוכרים או מעבירים את המידע האישי לצדדים שלישיים, למעט במקרים הנדרשים על פי חוק.
-
-4. אבטחת מידע
-
-אנו מיישמים אמצעי אבטחה מתקדמים להגנה על המידע האישי מפני גישה בלתי מורשית. הגישה לנתונים רגישים מוגבלת למורשים בלבד.
-
-5. שמירת מידע ומחיקתו
-
-אנו נשמור את המידע כל עוד אתה משתמש רשום באפליקציה. במידה ועזבת את הבניין או שברצונך להסיר את פרטיך, פנה אל מנהל ועד הבית של הבניין שלך — הוא יבצע את המחיקה עבורך מהמערכת.
-
-6. שינויים במדיניות הפרטיות
-
-אנו עשויים לעדכן מדיניות זו מעת לעת. נודיע על כל שינוי מהותי באמצעות הודעה בתוך האפליקציה.
-
-7. יצירת קשר
-
-vaadplus100@gmail.com</div>
+    </div>
     <button class="btn-primary" style="margin-top:16px;width:100%;" onclick="closeModal('modal-privacy')">סגור</button>
   </div>
 </div>
@@ -1392,6 +1407,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
+const APP_VERSION = '1.2.0'; // קבלות דיגיטליות + מדיניות פרטיות מעודכנת
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 
@@ -1601,6 +1617,7 @@ function initUI() {
   document.getElementById('home-greeting').textContent = getGreeting();
   document.getElementById('home-name').textContent = firstName || currentUser.name;
   document.getElementById('home-address').textContent = buildingData?.address || '';
+  document.querySelectorAll('#app-version, #app-version-home').forEach(el => el.textContent = APP_VERSION);
 
   // Admin controls
   // כתר ל-Super Admin בלבד
