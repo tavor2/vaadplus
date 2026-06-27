@@ -1412,7 +1412,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.4.2'; // תיקון תצוגת דייר + כפתור גיבוי
+const APP_VERSION = '1.4.3'; // תיקון טעינת דיירים לדייר רגיל
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 
@@ -1793,29 +1793,31 @@ function loadAll() {
 
 // ===== RESIDENTS =====
 function loadResidents() {
-  onSnapshot(collection(db, 'buildings', buildingId, 'residents'), (snap) => {
-    allResidents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    allResidents.sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
-    // דייר רואה רק את עצמו — לפי דירה מתוך currentResident
-    let listToRender;
-    if (isAdmin) {
-      listToRender = allResidents;
-    } else {
-      const myApt = parseInt(currentResident?.apt);
-      listToRender = allResidents.filter(r => parseInt(r.apt) === myApt);
-      if (!listToRender.length && currentResident) {
-        // fallback — הצג לפי אימייל case-insensitive
-        listToRender = allResidents.filter(r => (r.email||'').toLowerCase() === (currentUser?.email||'').toLowerCase());
-      }
-      if (!listToRender.length) {
-        // אם עדיין לא נמצא — הצג את currentResident ישירות
-        listToRender = currentResident ? [currentResident] : [];
-      }
-      showToast(`דיירים: ${allResidents.length} | apt: ${currentResident?.apt} | email: ${currentUser?.email} | נמצאו: ${listToRender.length}`);
-    }
-    renderResidents(listToRender);
-    updateHomeStats();
-  });
+  if (isAdmin) {
+    // מנהל — האזן לכל הרשימה
+    onSnapshot(collection(db, 'buildings', buildingId, 'residents'), (snap) => {
+      allResidents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      allResidents.sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+      renderResidents(allResidents);
+      updateHomeStats();
+    });
+  } else {
+    // דייר — שאילתה ממוקדת רק על הרשומה שלו
+    const userEmail = auth.currentUser?.email || '';
+    getDocs(query(
+      collection(db, 'buildings', buildingId, 'residents'),
+      where('email', '==', userEmail)
+    )).then(snap => {
+      allResidents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const listToRender = allResidents.length > 0 ? allResidents : (currentResident ? [currentResident] : []);
+      renderResidents(listToRender);
+      updateHomeStats();
+    }).catch(() => {
+      // fallback — השתמש ב-currentResident שכבר נטען בהתחברות
+      renderResidents(currentResident ? [currentResident] : []);
+      updateHomeStats();
+    });
+  }
 }
 
 function renderResidents(list) {
