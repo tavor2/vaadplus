@@ -1412,7 +1412,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.4.1'; // תיקון checkbox פיקוח + סינון דיירים + רענון בהתנתקות
+const APP_VERSION = '1.4.2'; // תיקון תצוגת דייר + כפתור גיבוי
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 
@@ -1458,11 +1458,11 @@ window.enterSupervisorMode = async () => {
 
   list.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:0 2px;">
-      <button id="btn-backup-selected" class="btn-primary" style="padding:10px 16px;font-size:14px;flex-shrink:0;" onclick="backupSelectedBuildings()">⬇️ גבה נבחרים</button>
       <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">
+        <input type="checkbox" id="chk-select-all" style="width:20px;height:20px;cursor:pointer;" onchange="toggleSelectAll(this.checked)"/>
         בחר הכל
-        <input type="checkbox" id="chk-select-all" style="width:18px;height:18px;cursor:pointer;" onchange="toggleSelectAll(this.checked)"/>
       </label>
+      <button id="btn-backup-selected" class="btn-icon" style="padding:8px 12px;font-size:13px;flex-shrink:0;" onclick="backupSelectedBuildings()">⬇️ גבה נבחרים</button>
     </div>
     ${window._supervisorBuildings.map(b => `
       <div class="card" style="margin-bottom:10px;">
@@ -1796,8 +1796,22 @@ function loadResidents() {
   onSnapshot(collection(db, 'buildings', buildingId, 'residents'), (snap) => {
     allResidents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     allResidents.sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
-    // דייר רואה רק את עצמו
-    const listToRender = isAdmin ? allResidents : allResidents.filter(r => r.email === currentUser?.email);
+    // דייר רואה רק את עצמו — לפי דירה מתוך currentResident
+    let listToRender;
+    if (isAdmin) {
+      listToRender = allResidents;
+    } else {
+      const myApt = parseInt(currentResident?.apt);
+      listToRender = allResidents.filter(r => parseInt(r.apt) === myApt);
+      if (!listToRender.length && currentResident) {
+        // fallback — הצג לפי אימייל case-insensitive
+        listToRender = allResidents.filter(r => (r.email||'').toLowerCase() === (currentUser?.email||'').toLowerCase());
+      }
+      if (!listToRender.length) {
+        // אם עדיין לא נמצא — הצג את currentResident ישירות
+        listToRender = currentResident ? [currentResident] : [];
+      }
+    }
     renderResidents(listToRender);
     updateHomeStats();
   });
