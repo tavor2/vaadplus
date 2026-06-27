@@ -669,7 +669,7 @@
       <button class="tab-btn active" onclick="setPayView('overview',this)">סקירה</button>
       <button class="tab-btn" onclick="setPayView('list',this)">רשימה</button>
       <button class="tab-btn" onclick="setPayView('expenses',this)">הוצאות</button>
-      <button class="tab-btn" id="tab-balance" onclick="setPayView('balance',this)">מאזן</button>
+      <button class="tab-btn" onclick="setPayView('balance',this)">מאזן</button>
     </div>
 
     <div class="screen-body">
@@ -1616,8 +1616,6 @@ function initUI() {
       buildingIcon.onclick = null;
     }
   }
-
-  document.getElementById('tab-balance').style.display = isAdmin ? '' : 'none';
 
   if (isAdmin) {
     document.getElementById('btn-add-resident').style.display = '';
@@ -2659,7 +2657,7 @@ async function createPDFReport() {
       <h1 style="letter-spacing:4px;">דוח תשלומים לוועד הבית</h1>
       <h2>${(buildingData?.address || '').replace(/ /g, '\u00A0')}</h2>
       <h2>שנה&nbsp;${year}</h2>
-      <h2 style="font-size:13px;color:#999;">הופק: ${new Date().toLocaleDateString('he-IL')} ${new Date().toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'})}</h2>
+      <h2 style="font-size:13px;color:#999;">${(() => { const now = new Date(); return 'הופק: ' + now.toLocaleDateString('he-IL') + ' בשעה ' + now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); })()}</h2>
       
       <table>
         <thead>
