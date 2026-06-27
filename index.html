@@ -1261,6 +1261,7 @@ window.signInWithGoogle = async () => {
 
 window.logout = async () => {
   await signOut(auth);
+  location.reload();
 };
 
 onAuthStateChanged(auth, async (user) => {
@@ -1411,7 +1412,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.4.0'; // עיצוב פיקוח + סרטון הדרכה + הגבלת דיירים + ניקוי cache
+const APP_VERSION = '1.4.1'; // תיקון checkbox פיקוח + סינון דיירים + רענון בהתנתקות
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 
@@ -1456,20 +1457,20 @@ window.enterSupervisorMode = async () => {
   window._supervisorBuildings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   list.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <button id="btn-backup-selected" class="btn-primary" style="padding:10px 16px;font-size:14px;" onclick="backupSelectedBuildings()">⬇️ גבה נבחרים</button>
-      <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:0 2px;">
+      <button id="btn-backup-selected" class="btn-primary" style="padding:10px 16px;font-size:14px;flex-shrink:0;" onclick="backupSelectedBuildings()">⬇️ גבה נבחרים</button>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">
         בחר הכל
         <input type="checkbox" id="chk-select-all" style="width:18px;height:18px;cursor:pointer;" onchange="toggleSelectAll(this.checked)"/>
       </label>
     </div>
     ${window._supervisorBuildings.map(b => `
       <div class="card" style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <input type="checkbox" class="building-chk" data-id="${b.id}" style="width:18px;height:18px;cursor:pointer;margin-right:8px;" onchange="updateBackupBtn()"/>
-          <div style="flex:1;cursor:pointer;" onclick="enterBuildingAsViewer('${b.id}')">
-            <div style="font-weight:700;font-size:16px;text-align:right;">${b.address || 'בניין ללא כתובת'}</div>
-            <div style="font-size:13px;color:var(--gray-500);text-align:right;margin-top:4px;">מנהל: ${b.adminName || ''} • ${b.adminEmail || ''}</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="checkbox" class="building-chk" data-id="${b.id}" style="width:20px;height:20px;cursor:pointer;flex-shrink:0;" onchange="updateBackupBtn()"/>
+          <div style="flex:1;cursor:pointer;min-width:0;" onclick="enterBuildingAsViewer('${b.id}')">
+            <div style="font-weight:700;font-size:15px;text-align:right;">${b.address || 'בניין ללא כתובת'}</div>
+            <div style="font-size:12px;color:var(--gray-400);text-align:right;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">מנהל: ${b.adminName || ''} • ${b.adminEmail || ''}</div>
           </div>
         </div>
       </div>
@@ -1796,7 +1797,7 @@ function loadResidents() {
     allResidents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     allResidents.sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
     // דייר רואה רק את עצמו
-    const listToRender = isAdmin ? allResidents : allResidents.filter(r => r.apt === parseInt(currentResident?.apt));
+    const listToRender = isAdmin ? allResidents : allResidents.filter(r => r.email === currentUser?.email);
     renderResidents(listToRender);
     updateHomeStats();
   });
