@@ -1310,7 +1310,7 @@ onAuthStateChanged(auth, async (user) => {
         buildingData = foundBuilding.data();
         currentUser = { uid: user.uid, name: foundResident.name || user.displayName || '', email: user.email, role: foundResident.role || 'tenant' };
         currentResident = foundResident;
-        isAdmin = false;
+        isAdmin = foundResident.role === 'admin';
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('setup-screen').style.display = 'none';
         document.getElementById('app').style.display = 'flex';
@@ -1412,7 +1412,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.4.3'; // תיקון טעינת דיירים לדייר רגיל
+const APP_VERSION = '1.4.4'; // תיקון הרשאות ועד שנרשם כדייר
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 
