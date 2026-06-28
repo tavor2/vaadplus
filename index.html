@@ -1310,7 +1310,8 @@ onAuthStateChanged(auth, async (user) => {
         buildingData = foundBuilding.data();
         currentUser = { uid: user.uid, name: foundResident.name || user.displayName || '', email: user.email, role: foundResident.role || 'tenant' };
         currentResident = foundResident;
-        isAdmin = foundResident.role === 'admin';
+        const coAdmins = foundBuilding.data().coAdmins || [];
+        isAdmin = foundResident.role === 'admin' || coAdmins.includes(user.email);
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('setup-screen').style.display = 'none';
         document.getElementById('app').style.display = 'flex';
@@ -1412,7 +1413,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.4.4'; // תיקון הרשאות ועד שנרשם כדייר
+const APP_VERSION = '1.4.7'; // תמיכה בכמה ועד בניין + coAdmins
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 
@@ -1793,8 +1794,12 @@ function loadAll() {
 
 // ===== RESIDENTS =====
 function loadResidents() {
-  if (isAdmin) {
-    // מנהל — האזן לכל הרשימה
+  const userEmail = auth.currentUser?.email || '';
+  const coAdmins = buildingData?.coAdmins || [];
+  const isBuildingAdmin = buildingData?.adminEmail === userEmail || coAdmins.includes(userEmail);
+
+  if (isBuildingAdmin) {
+    // מנהל או ועד — onSnapshot על כל הרשימה
     onSnapshot(collection(db, 'buildings', buildingId, 'residents'), (snap) => {
       allResidents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       allResidents.sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
@@ -1802,8 +1807,7 @@ function loadResidents() {
       updateHomeStats();
     });
   } else {
-    // דייר — שאילתה ממוקדת רק על הרשומה שלו
-    const userEmail = auth.currentUser?.email || '';
+    // דייר רגיל — רק את עצמו
     getDocs(query(
       collection(db, 'buildings', buildingId, 'residents'),
       where('email', '==', userEmail)
@@ -1813,7 +1817,6 @@ function loadResidents() {
       renderResidents(listToRender);
       updateHomeStats();
     }).catch(() => {
-      // fallback — השתמש ב-currentResident שכבר נטען בהתחברות
       renderResidents(currentResident ? [currentResident] : []);
       updateHomeStats();
     });
@@ -2096,19 +2099,18 @@ window.saveResident = async () => {
 
   const feeInput = parseFloat(document.getElementById('r-fee').value);
   const defaultFee = buildingData?.monthlyFee || 200;
+  const email = document.getElementById('r-email').value.trim();
+  const role = document.getElementById('r-role').value;
 
   const data = {
     apt: parseInt(apt),
     floor: parseInt(document.getElementById('r-floor').value) || 0,
-    name,
+    name, email, role,
     phone: document.getElementById('r-phone').value.trim(),
-    email: document.getElementById('r-email').value.trim(),
-    role: document.getElementById('r-role').value,
     paymentMethod: document.getElementById('r-payment-method').value,
     updatedAt: serverTimestamp()
   };
 
-  // שמור customFee רק אם שונה מברירת המחדל
   if (feeInput && feeInput !== defaultFee) {
     data.customFee = feeInput;
   } else {
@@ -2124,11 +2126,23 @@ window.saveResident = async () => {
       await addDoc(collection(db, 'buildings', buildingId, 'residents'), data);
       showToast('✅ הדייר נוסף');
     }
+
+    if (email) {
+      const buildingRef = doc(db, 'buildings', buildingId);
+      const bSnap = await getDoc(buildingRef);
+      let coAdmins = bSnap.data()?.coAdmins || [];
+      if (role === 'admin') {
+        if (!coAdmins.includes(email)) coAdmins.push(email);
+      } else {
+        coAdmins = coAdmins.filter(e => e !== email);
+      }
+      await updateDoc(buildingRef, { coAdmins });
+      buildingData.coAdmins = coAdmins;
+    }
+
     closeModal('modal-resident');
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
-
-// ===== PAYMENTS =====
 window.loadPayments = async () => {
   const ym = document.getElementById('payment-month-select').value;
   const snap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','==',ym)));
