@@ -1450,13 +1450,9 @@ function isPremium() {
     const until = buildingData.premiumUntil.toDate ? buildingData.premiumUntil.toDate() : new Date(buildingData.premiumUntil);
     if (until > new Date()) return true;
   }
-  if (!buildingData?.createdAt) {
-    showToast("DEBUG: אין createdAt - פתוח");
-    return true;
-  }
+  if (!buildingData?.createdAt) return true;
   const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
   const daysPassed = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
-  showToast("DEBUG: " + Math.round(daysPassed) + " ימים");
   return daysPassed <= TRIAL_DAYS;
 }
 
