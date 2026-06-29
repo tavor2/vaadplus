@@ -1,14 +1,17 @@
 {
   "name": "ועד בית פלוס",
   "short_name": "ועד בית+",
-  "description": "ניהול חכם לבניין שלך",
+  "description": "ניהול חכם לבניין שלך — תשלומים, תחזוקה, הודעות ועוד",
+  "id": "/vaadplus/",
   "start_url": "/vaadplus/",
   "scope": "/vaadplus/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#1A56DB",
   "theme_color": "#1A56DB",
   "dir": "rtl",
   "lang": "he",
+  "categories": ["utilities", "productivity"],
   "icons": [
     {
       "src": "/vaadplus/icon-192.png",
@@ -21,6 +24,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/vaadplus/screenshot1.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "מסך הבית"
+    },
+    {
+      "src": "/vaadplus/screenshot2.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "ניהול תשלומים"
     }
   ]
 }
