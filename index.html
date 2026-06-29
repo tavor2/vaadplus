@@ -565,8 +565,8 @@
     <div id="backup-section" style="display:none;padding:0 16px 24px;">
       <div class="section-header"><div class="section-title">גיבוי ושחזור</div></div>
       <div style="display:flex;gap:10px;">
-        <button class="btn-icon" style="flex:1;" onclick="exportData()">⬇️ גיבוי</button>
-        <button class="btn-icon" style="flex:1;" onclick="document.getElementById('import-file-input').click()">⬆️ שחזור</button>
+        <button class="btn-icon" style="flex:1;" onclick="exportData()">⬇️ גיבוי 👑</button>
+        <button class="btn-icon" style="flex:1;" onclick="document.getElementById('import-file-input').click()">⬆️ שחזור 👑</button>
       </div>
       <input type="file" id="import-file-input" accept="application/json" style="display:none" onchange="importData(event)"/>
     </div>
@@ -1989,6 +1989,7 @@ window.openCashDeposit = () => {
 
 window.saveCashDeposit = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
+  if (!premiumGate('הפקדת מזומן לבנק')) return;
   const amount = parseFloat(document.getElementById('deposit-amount').value);
   const date = document.getElementById('deposit-date').value;
   const note = document.getElementById('deposit-note').value.trim();
@@ -2042,6 +2043,7 @@ window.executeResetData = async () => {
 };
 
 window.exportData = async () => {
+  if (!premiumGate('גיבוי נתונים')) return;
   try {
     showToast('מייצא נתונים...');
     const collections = ['residents','payments','expenses','issues','announcements'];
@@ -2092,6 +2094,7 @@ window.importData = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   event.target.value = '';
+  if (!premiumGate('שחזור נתונים')) return;
 
   try {
     const text = await file.text();
@@ -2407,6 +2410,7 @@ window.cancelPayment = async (id) => {
 
 window.saveOpeningBalance = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
+  if (!premiumGate('יתרת איזון')) return;
   const val = parseFloat(document.getElementById('input-opening-balance').value) || 0;
   await updateDoc(doc(db, 'buildings', buildingId), { openingBalance: val });
   buildingData.openingBalance = val;
@@ -2450,6 +2454,7 @@ window.closeAdminFinance = () => {
 
 window.saveMonthlyFee = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
+  if (!premiumGate('שינוי דמי ועד')) return;
 
   const val = parseFloat(document.getElementById('input-monthly-fee').value);
   if (!val || val <= 0) { showToast('הכנס סכום תקין'); return; }
@@ -2728,6 +2733,7 @@ async function loadBalance() {
 
 // ===== EXPORT EXCEL =====
 window.exportExcel = async () => {
+  if (!premiumGate('ייצוא לאקסל')) return;
   try {
     showToast('📊 מכין קובץ אקסל...');
 
@@ -2825,6 +2831,7 @@ window.exportExcel = async () => {
 
 // ===== PAYMENT LOG & PDF REPORT =====
 window.openLog = async () => {
+  if (!premiumGate('לוג תשלומים')) return;
   const container = document.getElementById('log-content');
   container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
   openModal('modal-log');
@@ -2861,6 +2868,7 @@ window.openLog = async () => {
 };
 
 window.generatePDF = async () => {
+  if (!premiumGate('הפקת דוח PDF')) return;
   try {
     showToast('📄 מכין דוח...');
     // Load html2pdf library
