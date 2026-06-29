@@ -29,14 +29,14 @@
   "screenshots": [
     {
       "src": "/vaadplus/screenshot1.png",
-      "sizes": "1080x1920",
+      "sizes": "1080x2340",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "מסך הבית"
     },
     {
       "src": "/vaadplus/screenshot2.png",
-      "sizes": "1080x1920",
+      "sizes": "1080x2340",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "ניהול תשלומים"
