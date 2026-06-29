@@ -637,7 +637,7 @@
       <div class="screen-title">ניהול כספים</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
         <select id="payment-month-select" class="form-select" style="width:auto;padding:6px 10px;font-size:13px;" onchange="loadPayments()"></select>
-        <button id="btn-admin-finance" style="display:none" class="btn-icon" onclick="openAdminFinance()">⚙️ ניהול</button>
+        <button id="btn-admin-finance" style="display:none" class="btn-icon" onclick="openAdminFinance()">👑 ניהול</button>
       </div>
     </div>
 
@@ -965,36 +965,46 @@
 <!-- Admin Finance Modal -->
 <div class="modal-overlay" id="modal-admin-finance">
   <div class="modal">
-    <div class="modal-title">⚙️ ניהול כספים</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="font-size:28px;">👑</div>
+      <div>
+        <div class="modal-title" style="margin-bottom:2px;">ניהול כספים</div>
+        <div id="premium-trial-badge" style="font-size:12px;color:var(--green);font-weight:600;"></div>
+      </div>
+    </div>
+    <div id="premium-launch-msg" style="display:none;background:linear-gradient(135deg,#1A56DB,#0f3a8a);color:white;border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;line-height:1.7;text-align:right;">
+      גרסת הניהול המלאה היא פרימיום, אך לרגל ההשקה היא פתוחה עבורכם בחינם לחלוטין למשך 3 חודשים! 🎉<br/>נשמח לשמוע את הפידבק שלכם 😊
+    </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 לוג תשלומים</button>
-      <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF</button>
+      <button class="btn-primary" onclick="if(premiumGate('לוג תשלומים')){closeAdminFinance();openLog();}">📋 לוג תשלומים 👑</button>
+      <button class="btn-primary" onclick="if(premiumGate('הפקת דוח PDF')){closeAdminFinance();generatePDF();}">📄 הפק PDF שנתי 👑</button>
+      <button class="btn-primary" onclick="if(premiumGate('ייצוא לאקסל')){closeAdminFinance();exportExcel();}">📊 ייצוא לאקסל שנתי 👑</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
-        <label class="form-label">💰 דמי ועד חודשיים (ברירת מחדל לכל הדירות)</label>
+        <label class="form-label">💰 דמי ועד חודשיים (ברירת מחדל לכל הדירות) 👑</label>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-input" id="input-monthly-fee" type="number" min="0" placeholder="200" style="flex:1;"/>
-          <button class="btn-success" onclick="saveMonthlyFee()">שמור</button>
+          <button class="btn-success" onclick="if(premiumGate('שינוי דמי ועד'))saveMonthlyFee()">שמור</button>
         </div>
         <div id="monthly-fee-note" style="font-size:12px;color:var(--gray-500);margin-top:4px;"></div>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
-        <label class="form-label">🏦 יתרת איזון (₪)</label>
-        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">סכום לאיזון המאזן באפליקציה עם הבנק בפועל. לדוגמה: אם המאזן מראה ‎-300₪ והבנק מראה ‎+3,000₪ — הזן 3,300₪</div>
+        <label class="form-label">🏦 יתרת איזון (₪) 👑</label>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">סכום לאיזון המאזן באפליקציה עם הבנק בפועל.</div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-input" id="input-opening-balance" type="number" placeholder="0" style="flex:1;"/>
-          <button class="btn-success" onclick="saveOpeningBalance()">שמור</button>
+          <button class="btn-success" onclick="if(premiumGate('יתרת איזון'))saveOpeningBalance()">שמור</button>
         </div>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div style="display:flex;gap:8px;">
-        <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();exportData()">⬇️ גיבוי</button>
-        <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();document.getElementById('import-file-input').click()">⬆️ שחזור</button>
+        <button class="btn-icon" style="flex:1;" onclick="if(premiumGate('גיבוי')){closeAdminFinance();exportData()}">⬇️ גיבוי 👑</button>
+        <button class="btn-icon" style="flex:1;" onclick="if(premiumGate('שחזור')){closeAdminFinance();document.getElementById('import-file-input').click()}">⬆️ שחזור 👑</button>
       </div>
-      <button class="btn-secondary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
+      <button class="btn-secondary" onclick="if(premiumGate('הפקדת מזומן')){closeAdminFinance();openCashDeposit()}">🏦 הפקד מזומן לבנק 👑</button>
       <button class="btn-secondary" style="color:#d33;border-color:#d33;" onclick="closeAdminFinance();openResetData()">🗑️ איפוס נתונים</button>
       <button class="btn-secondary" onclick="closeAdminFinance()">סגור</button>
     </div>
@@ -1100,6 +1110,22 @@
 
     </div>
     <button class="btn-primary" style="margin-top:16px;width:100%;" onclick="closeModal('modal-privacy')">סגור</button>
+  </div>
+</div>
+
+<!-- Premium Upgrade Modal -->
+<div class="modal-overlay" id="modal-premium-upgrade">
+  <div class="modal" style="text-align:center;">
+    <div style="font-size:48px;margin-bottom:12px;">👑</div>
+    <div class="modal-title">גרסת פרימיום</div>
+    <div style="font-size:14px;color:var(--gray-600);line-height:1.8;margin-bottom:20px;">
+      הפיצ'ר הזה זמין בגרסת הפרימיום.<br/>
+      צור קשר עם התמיכה לשדרוג:
+    </div>
+    <a href="mailto:vaadplus100@gmail.com" style="display:block;background:var(--blue);color:white;border-radius:var(--radius);padding:14px;font-size:15px;font-weight:700;text-decoration:none;margin-bottom:10px;">
+      📧 צור קשר לשדרוג
+    </a>
+    <button class="btn-secondary" onclick="closeModal('modal-premium-upgrade')">סגור</button>
   </div>
 </div>
 
@@ -1413,9 +1439,32 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.4.7'; // תמיכה בכמה ועד בניין + coAdmins
+const APP_VERSION = '1.5.0'; // מערכת פרימיום + ייצוא אקסל
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
+const TRIAL_DAYS = 90;
+
+function isPremium() {
+  if (auth.currentUser?.email === SUPER_ADMIN_EMAIL) return true;
+  if (!buildingData?.createdAt) return true; // אם אין תאריך — נותנים גישה
+  const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
+  const daysPassed = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
+  return daysPassed <= TRIAL_DAYS;
+}
+
+function daysLeftInTrial() {
+  if (!buildingData?.createdAt) return TRIAL_DAYS;
+  const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
+  const daysPassed = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
+  return Math.max(0, Math.round(TRIAL_DAYS - daysPassed));
+}
+
+function premiumGate(featureName) {
+  if (isPremium()) return true;
+  showToast(`🔒 ${featureName} זמין בגרסת פרימיום`);
+  setTimeout(() => openModal('modal-premium-upgrade'), 500);
+  return false;
+}
 
 window.showSuperAdminScreen = () => {
   document.getElementById('supervisor-screen').style.display = 'none';
@@ -2370,6 +2419,28 @@ window.openAdminFinance = () => {
   document.getElementById('input-monthly-fee').value = fee;
   document.getElementById('monthly-fee-note').textContent = fee ? `נוכחי: ${fmtCurrency(fee)} לחודש` : 'לא הוגדר עדיין';
   document.getElementById('input-opening-balance').value = buildingData?.openingBalance || '';
+
+  // הודעת השקה + badge
+  const isSuperAdmin = auth.currentUser?.email === SUPER_ADMIN_EMAIL;
+  const trialActive = isPremium();
+  const daysLeft = daysLeftInTrial();
+
+  const launchMsg = document.getElementById('premium-launch-msg');
+  const badge = document.getElementById('premium-trial-badge');
+
+  if (isSuperAdmin) {
+    launchMsg.style.display = 'none';
+    badge.textContent = '';
+  } else if (trialActive) {
+    launchMsg.style.display = 'block';
+    badge.textContent = `✨ פרימיום פעיל — נותרו ${daysLeft} ימים`;
+    badge.style.color = 'var(--green)';
+  } else {
+    launchMsg.style.display = 'none';
+    badge.textContent = '🔒 תקופת הניסיון הסתיימה';
+    badge.style.color = 'var(--red)';
+  }
+
   document.getElementById('modal-admin-finance').classList.add('open');
 };
 
@@ -2654,6 +2725,103 @@ async function loadBalance() {
   html += '</div>';
   container.innerHTML = html;
 }
+
+// ===== EXPORT EXCEL =====
+window.exportExcel = async () => {
+  try {
+    showToast('📊 מכין קובץ אקסל...');
+
+    // טען SheetJS
+    if (!window.XLSX) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
+    }
+
+    const year = new Date().getFullYear();
+    const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+    // טען נתונים
+    const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
+    const residents = resSnap.docs.map(d => ({id:d.id,...d.data()})).sort((a,b)=>(parseInt(a.apt)||0)-(parseInt(b.apt)||0));
+
+    const paySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
+    const paymentMap = {};
+    paySnap.docs.forEach(d => {
+      const p = d.data();
+      if (p.month?.startsWith(String(year))) paymentMap[`${p.apt}_${p.month}`] = p;
+    });
+
+    const expSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), orderBy('date','asc')));
+    const expenses = expSnap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.date?.startsWith(String(year)));
+
+    const wb = XLSX.utils.book_new();
+
+    // ===== גיליון 1 — תשלומים =====
+    const payHeader = ['דירה', 'שם', ...months, 'סה"כ'];
+    const payRows = residents.map(r => {
+      let total = 0;
+      const row = [r.apt, r.name];
+      for (let m = 0; m < 12; m++) {
+        const ym = `${year}-${String(m+1).padStart(2,'0')}`;
+        const p = paymentMap[`${r.apt}_${ym}`];
+        const fee = r.customFee || buildingData?.monthlyFee || 200;
+        if (p) { row.push(p.amount || fee); total += (p.amount || fee); }
+        else row.push('');
+      }
+      row.push(total);
+      return row;
+    });
+
+    // שורת סיכום
+    const totalRow = ['', 'סה"כ'];
+    let grandTotal = 0;
+    for (let m = 0; m < 12; m++) {
+      const ym = `${year}-${String(m+1).padStart(2,'0')}`;
+      const monthTotal = paySnap.docs
+        .filter(d => d.data().month === ym)
+        .reduce((s,d) => s + (d.data().amount||0), 0);
+      totalRow.push(monthTotal);
+      grandTotal += monthTotal;
+    }
+    totalRow.push(grandTotal);
+
+    const paySheet = XLSX.utils.aoa_to_sheet([payHeader, ...payRows, [], totalRow]);
+    paySheet['!cols'] = [{wch:8},{wch:16},...Array(12).fill({wch:10}),{wch:10}];
+    XLSX.utils.book_append_sheet(wb, paySheet, `תשלומים ${year}`);
+
+    // ===== גיליון 2 — הוצאות =====
+    const expHeader = ['תאריך', 'קטגוריה', 'תיאור', 'אמצעי תשלום', 'סכום'];
+    const expRows = expenses.map(e => [e.date||'', e.category||'', e.description||'', e.method==='cash'?'מזומן':'בנק', e.amount||0]);
+    const expTotal = expenses.reduce((s,e)=>s+(e.amount||0),0);
+    expRows.push(['','','','סה"כ', expTotal]);
+
+    const expSheet = XLSX.utils.aoa_to_sheet([expHeader, ...expRows]);
+    expSheet['!cols'] = [{wch:12},{wch:14},{wch:30},{wch:14},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, expSheet, `הוצאות ${year}`);
+
+    // ===== גיליון 3 — מאזן =====
+    const totalCollected = grandTotal;
+    const totalExpenses = expTotal;
+    const openingBalance = buildingData?.openingBalance || 0;
+    const balance = openingBalance + totalCollected - totalExpenses;
+
+    const balSheet = XLSX.utils.aoa_to_sheet([
+      ['סיכום מאזן', `${year}`],
+      [],
+      ['סה"כ גבייה', totalCollected],
+      ['סה"כ הוצאות', totalExpenses],
+      ['יתרת פתיחה', openingBalance],
+      ['יתרה נוכחית', balance],
+    ]);
+    balSheet['!cols'] = [{wch:20},{wch:14}];
+    XLSX.utils.book_append_sheet(wb, balSheet, 'מאזן');
+
+    const addrStr = (buildingData?.address||'').replace(/,\s*/g,'_').replace(/\s+/g,'_');
+    XLSX.writeFile(wb, `vaad-${addrStr}-${year}.xlsx`);
+    showToast('✅ קובץ אקסל הורד בהצלחה');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
 
 // ===== PAYMENT LOG & PDF REPORT =====
 window.openLog = async () => {
