@@ -748,7 +748,7 @@
       תחזוקה
     </button>
     <button class="nav-item" onclick="navigate('announcements')" id="nav-announcements">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       הודעות
     </button>
   </div>
@@ -1019,8 +1019,19 @@
   </div>
 </div>
 
+<!-- Custom Confirm Modal (avoids native browser confirm() showing the site URL) -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal" style="max-width:340px;">
+    <div class="modal-title" id="confirm-message" style="font-size:16px;"></div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn-secondary" style="flex:1;margin-top:0;" onclick="resolveConfirm(false)">ביטול</button>
+      <button class="btn-danger" style="flex:1;padding:13px;" onclick="resolveConfirm(true)">אישור</button>
+    </div>
+  </div>
+</div>
+
 <!-- PDF generation (hidden) -->
-<div id="pdf-container" style="display:none"></div>
+<div id="pdf-container" style="position:fixed; left:-99999px; top:0;"></div>
 
 <div id="toast"></div>
 
@@ -1439,7 +1450,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.5.4'; // תיקון פורמט אקסל RTL+מספרים, שחזור חינמי תמיד
+const APP_VERSION = '1.5.5'; // תיקון: Super Admin רואה דיירים/כספים, קבלות PDF, כפתור "סמן כשולם", אייקון פעמון, מודאל ביטול מותאם
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -1849,7 +1860,7 @@ function loadAll() {
 function loadResidents() {
   const userEmail = auth.currentUser?.email || '';
   const coAdmins = buildingData?.coAdmins || [];
-  const isBuildingAdmin = buildingData?.adminEmail === userEmail || coAdmins.includes(userEmail);
+  const isBuildingAdmin = buildingData?.adminEmail === userEmail || coAdmins.includes(userEmail) || userEmail === SUPER_ADMIN_EMAIL;
 
   if (isBuildingAdmin) {
     // מנהל או ועד — onSnapshot על כל הרשימה
@@ -2311,7 +2322,7 @@ function renderPayments(ym) {
         <div class="payment-item-sub">דירה ${r.apt} • קומה ${r.floor !== undefined ? r.floor : '-'}</div>
       </div>
       <div class="payment-item-amount orange">${fmtCurrency(aptFee(r.apt, r))}</div>
-      <button class="btn-success" style="margin-right:8px;" onclick="event.stopPropagation();markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">✓ שולם</button>
+      <button class="btn-success" style="margin-right:8px;" onclick="event.stopPropagation();markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">✓ סמן כשולם</button>
     </div>
   `).join('') || '<div class="card-empty">🎉 כולם שילמו!</div>';
 
@@ -2347,7 +2358,7 @@ function renderPayments(ym) {
               <td>${paid ? '<span class="badge badge-green">שולם</span>' : '<span class="badge badge-orange">ממתין</span>'}</td>
               <td>${paid
                 ? `<button class="btn-danger" style="padding:4px 8px;font-size:11px;" onclick="cancelPayment('${p.id}')">ביטול</button>`
-                : `<button class="btn-success" style="padding:4px 8px;font-size:11px;" onclick="markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">שולם</button>`
+                : `<button class="btn-success" style="padding:4px 8px;font-size:11px;" onclick="markPaid('${r.apt}','${r.name}',${aptFee(r.apt, r)})">סמן כשולם</button>`
               }</td>
             </tr>
           `).join('')}
@@ -2392,7 +2403,8 @@ window.markPaid = async (apt, name, amount) => {
 };
 
 window.cancelPayment = async (id) => {
-  if (!confirm('לבטל את התשלום?')) return;
+  const ok = await customConfirm('לבטל את התשלום?');
+  if (!ok) return;
   try {
     const snap = await getDoc(doc(db, 'buildings', buildingId, 'payments', id));
     const p = snap.exists() ? snap.data() : {};
@@ -3131,7 +3143,11 @@ async function createPDFReport() {
 
   const element = document.createElement('div');
   element.innerHTML = html;
-  
+
+  const pdfContainer = document.getElementById('pdf-container');
+  pdfContainer.innerHTML = '';
+  pdfContainer.appendChild(element);
+
   const opt = {
     margin: 10,
     filename: `vaad_bait_${year}.pdf`,
@@ -3139,8 +3155,9 @@ async function createPDFReport() {
     html2canvas: { scale: 2 },
     jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
   };
-  
-  html2pdf().set(opt).from(element).save();
+
+  await html2pdf().set(opt).from(element).save();
+  pdfContainer.innerHTML = '';
   showToast('📄 דוח PDF הורד בהצלחה');
 }
 
@@ -3209,7 +3226,8 @@ async function renderHistoryGrid(apt, name, fee) {
       const ym = cell.dataset.ym;
       const pid = cell.dataset.pid;
       if (pid) {
-        if (!confirm('לבטל תשלום ' + ym + '?')) return;
+        const ok = await customConfirm('לבטל תשלום ' + ym + '?');
+        if (!ok) return;
         const snap = await getDoc(doc(db, 'buildings', buildingId, 'payments', pid));
         const p = snap.exists() ? snap.data() : {};
         await deleteDoc(doc(db, 'buildings', buildingId, 'payments', pid));
@@ -3341,6 +3359,11 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
 
     const el = document.createElement('div');
     el.innerHTML = html;
+
+    const pdfContainer = document.getElementById('pdf-container');
+    pdfContainer.innerHTML = '';
+    pdfContainer.appendChild(el);
+
     const opt = {
       margin: 0,
       filename: `קבלה_דירה${apt}_${monthLabel}.pdf`,
@@ -3348,7 +3371,8 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
       html2canvas: { scale: 3, useCORS: true },
       jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a6' }
     };
-    html2pdf().set(opt).from(el).save();
+    await html2pdf().set(opt).from(el).save();
+    pdfContainer.innerHTML = '';
     showToast('🧾 קבלה הורדה בהצלחה');
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
@@ -3582,6 +3606,18 @@ window.openModal = (id) => {
 };
 window.closeModal = (id) => {
   document.getElementById(id).classList.remove('open');
+};
+
+// Custom confirm (replaces native confirm() which exposes the site URL in its prompt)
+let _confirmResolve = null;
+window.customConfirm = (msg) => {
+  document.getElementById('confirm-message').textContent = msg;
+  openModal('modal-confirm');
+  return new Promise(resolve => { _confirmResolve = resolve; });
+};
+window.resolveConfirm = (val) => {
+  closeModal('modal-confirm');
+  if (_confirmResolve) { _confirmResolve(val); _confirmResolve = null; }
 };
 
 // Close modal on overlay click
