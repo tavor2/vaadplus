@@ -978,33 +978,33 @@
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
-      <button class="btn-primary" onclick="if(premiumGate('לוג תשלומים')){closeAdminFinance();openLog();}">📋 לוג תשלומים 👑</button>
-      <button class="btn-primary" onclick="if(premiumGate('הפקת דוח PDF')){closeAdminFinance();generatePDF();}">📄 הפק PDF שנתי 👑</button>
-      <button class="btn-primary" onclick="if(premiumGate('ייצוא לאקסל')){closeAdminFinance();exportExcel();}">📊 ייצוא לאקסל שנתי 👑</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 לוג תשלומים 👑</button>
+      <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי 👑</button>
+      <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי 👑</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
-        <label class="form-label">💰 דמי ועד חודשיים (ברירת מחדל לכל הדירות) 👑</label>
+        <label class="form-label">💰 דמי ועד חודשיים (ברירת מחדל לכל הדירות)</label>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-input" id="input-monthly-fee" type="number" min="0" placeholder="200" style="flex:1;"/>
-          <button class="btn-success" onclick="if(premiumGate('שינוי דמי ועד'))saveMonthlyFee()">שמור</button>
+          <button class="btn-success" onclick="saveMonthlyFee()">שמור</button>
         </div>
         <div id="monthly-fee-note" style="font-size:12px;color:var(--gray-500);margin-top:4px;"></div>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
-        <label class="form-label">🏦 יתרת איזון (₪) 👑</label>
+        <label class="form-label">🏦 יתרת איזון (₪)</label>
         <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">סכום לאיזון המאזן באפליקציה עם הבנק בפועל.</div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-input" id="input-opening-balance" type="number" placeholder="0" style="flex:1;"/>
-          <button class="btn-success" onclick="if(premiumGate('יתרת איזון'))saveOpeningBalance()">שמור</button>
+          <button class="btn-success" onclick="saveOpeningBalance()">שמור</button>
         </div>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div style="display:flex;gap:8px;">
-        <button class="btn-icon" style="flex:1;" onclick="if(premiumGate('גיבוי')){closeAdminFinance();exportData()}">⬇️ גיבוי 👑</button>
-        <button class="btn-icon" style="flex:1;" onclick="if(premiumGate('שחזור')){closeAdminFinance();document.getElementById('import-file-input').click()}">⬆️ שחזור 👑</button>
+        <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();exportData()">⬇️ גיבוי 👑</button>
+        <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();document.getElementById('import-file-input').click()">⬆️ שחזור 👑</button>
       </div>
-      <button class="btn-secondary" onclick="if(premiumGate('הפקדת מזומן')){closeAdminFinance();openCashDeposit()}">🏦 הפקד מזומן לבנק 👑</button>
+      <button class="btn-secondary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-secondary" style="color:#d33;border-color:#d33;" onclick="closeAdminFinance();openResetData()">🗑️ איפוס נתונים</button>
       <button class="btn-secondary" onclick="closeAdminFinance()">סגור</button>
     </div>
@@ -1439,7 +1439,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.5.0'; // מערכת פרימיום + ייצוא אקסל
+const APP_VERSION = '1.5.1'; // הסרת מנעול פרימיום מדמי ועד, יתרת איזון והפקדת מזומן
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -1993,7 +1993,6 @@ window.openCashDeposit = () => {
 
 window.saveCashDeposit = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
-  if (!premiumGate('הפקדת מזומן לבנק')) return;
   const amount = parseFloat(document.getElementById('deposit-amount').value);
   const date = document.getElementById('deposit-date').value;
   const note = document.getElementById('deposit-note').value.trim();
@@ -2414,7 +2413,6 @@ window.cancelPayment = async (id) => {
 
 window.saveOpeningBalance = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
-  if (!premiumGate('יתרת איזון')) return;
   const val = parseFloat(document.getElementById('input-opening-balance').value) || 0;
   await updateDoc(doc(db, 'buildings', buildingId), { openingBalance: val });
   buildingData.openingBalance = val;
@@ -2458,7 +2456,6 @@ window.closeAdminFinance = () => {
 
 window.saveMonthlyFee = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
-  if (!premiumGate('שינוי דמי ועד')) return;
 
   const val = parseFloat(document.getElementById('input-monthly-fee').value);
   if (!val || val <= 0) { showToast('הכנס סכום תקין'); return; }
