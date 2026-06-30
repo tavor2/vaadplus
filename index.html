@@ -978,6 +978,7 @@
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 לוג תשלומים 👑</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי 👑</button>
       <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי 👑</button>
@@ -1004,7 +1005,6 @@
         <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();exportData()">⬇️ גיבוי 👑</button>
         <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();document.getElementById('import-file-input').click()">⬆️ שחזור 👑</button>
       </div>
-      <button class="btn-secondary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-secondary" style="color:#d33;border-color:#d33;" onclick="closeAdminFinance();openResetData()">🗑️ איפוס נתונים</button>
       <button class="btn-secondary" onclick="closeAdminFinance()">סגור</button>
     </div>
@@ -1439,7 +1439,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.5.2'; // ניסוח עדין יותר לכלי הפרימיום
+const APP_VERSION = '1.5.3'; // אקסל עם סיכומי קטגוריה+חודש, מיקום מחדש להפקדת מזומן
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -2797,31 +2797,70 @@ window.exportExcel = async () => {
     paySheet['!cols'] = [{wch:8},{wch:16},...Array(12).fill({wch:10}),{wch:10}];
     XLSX.utils.book_append_sheet(wb, paySheet, `תשלומים ${year}`);
 
-    // ===== גיליון 2 — הוצאות =====
+    // ===== גיליון 2 — הוצאות (פירוט + סיכום קטגוריות) =====
     const expHeader = ['תאריך', 'קטגוריה', 'תיאור', 'אמצעי תשלום', 'סכום'];
     const expRows = expenses.map(e => [e.date||'', e.category||'', e.description||'', e.method==='cash'?'מזומן':'בנק', e.amount||0]);
     const expTotal = expenses.reduce((s,e)=>s+(e.amount||0),0);
     expRows.push(['','','','סה"כ', expTotal]);
 
-    const expSheet = XLSX.utils.aoa_to_sheet([expHeader, ...expRows]);
+    // סיכום לפי קטגוריה
+    const catTotals = {};
+    expenses.forEach(e => {
+      const cat = e.category || 'אחר';
+      catTotals[cat] = (catTotals[cat]||0) + (e.amount||0);
+    });
+    const catRows = Object.entries(catTotals)
+      .sort((a,b) => b[1]-a[1])
+      .map(([cat, sum]) => [cat, sum, expTotal ? Math.round(sum/expTotal*100)+'%' : '0%']);
+
+    const expSheetData = [
+      expHeader, ...expRows,
+      [], [],
+      ['סיכום לפי קטגוריה'],
+      ['קטגוריה', 'סכום', 'אחוז'],
+      ...catRows
+    ];
+    const expSheet = XLSX.utils.aoa_to_sheet(expSheetData);
     expSheet['!cols'] = [{wch:12},{wch:14},{wch:30},{wch:14},{wch:10}];
     XLSX.utils.book_append_sheet(wb, expSheet, `הוצאות ${year}`);
 
-    // ===== גיליון 3 — מאזן =====
+    // ===== גיליון 3 — מאזן (כולל פירוט חודשי גבייה/הוצאות) =====
     const totalCollected = grandTotal;
     const totalExpenses = expTotal;
     const openingBalance = buildingData?.openingBalance || 0;
     const balance = openingBalance + totalCollected - totalExpenses;
 
-    const balSheet = XLSX.utils.aoa_to_sheet([
+    // פירוט חודשי הוצאות
+    const expByMonth = {};
+    expenses.forEach(e => {
+      const m = (e.date||'').slice(0,7); // YYYY-MM
+      if (m) expByMonth[m] = (expByMonth[m]||0) + (e.amount||0);
+    });
+
+    const monthlyRows = [];
+    for (let m = 0; m < 12; m++) {
+      const ym = `${year}-${String(m+1).padStart(2,'0')}`;
+      const monthCollected = paySnap.docs
+        .filter(d => d.data().month === ym)
+        .reduce((s,d) => s + (d.data().amount||0), 0);
+      const monthExpenses = expByMonth[ym] || 0;
+      monthlyRows.push([months[m], monthCollected, monthExpenses, monthCollected - monthExpenses]);
+    }
+
+    const balSheetData = [
       ['סיכום מאזן', `${year}`],
       [],
       ['סה"כ גבייה', totalCollected],
       ['סה"כ הוצאות', totalExpenses],
       ['יתרת פתיחה', openingBalance],
       ['יתרה נוכחית', balance],
-    ]);
-    balSheet['!cols'] = [{wch:20},{wch:14}];
+      [], [],
+      ['פירוט חודשי'],
+      ['חודש', 'גבייה', 'הוצאות', 'הפרש'],
+      ...monthlyRows
+    ];
+    const balSheet = XLSX.utils.aoa_to_sheet(balSheetData);
+    balSheet['!cols'] = [{wch:14},{wch:14},{wch:14},{wch:14}];
     XLSX.utils.book_append_sheet(wb, balSheet, 'מאזן');
 
     const addrStr = (buildingData?.address||'').replace(/,\s*/g,'_').replace(/\s+/g,'_');
