@@ -637,7 +637,7 @@
       <div class="screen-title">ניהול כספים</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
         <select id="payment-month-select" class="form-select" style="width:auto;padding:6px 10px;font-size:13px;" onchange="loadPayments()"></select>
-        <button id="btn-admin-finance" style="display:none" class="btn-icon" onclick="openAdminFinance()">👑 ניהול</button>
+        <button id="btn-admin-finance" style="display:none" class="btn-icon" onclick="openAdminFinance()">⚙️ ניהול</button>
       </div>
     </div>
 
@@ -966,14 +966,14 @@
 <div class="modal-overlay" id="modal-admin-finance">
   <div class="modal">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-      <div style="font-size:28px;">👑</div>
+      <div style="font-size:24px;">⚙️</div>
       <div>
         <div class="modal-title" style="margin-bottom:2px;">ניהול כספים</div>
         <div id="premium-trial-badge" style="font-size:12px;color:var(--green);font-weight:600;"></div>
       </div>
     </div>
-    <div id="premium-launch-msg" style="display:none;background:linear-gradient(135deg,#1A56DB,#0f3a8a);color:white;border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;line-height:1.7;text-align:right;">
-      גרסת הניהול המלאה היא פרימיום, אך לרגל ההשקה היא פתוחה עבורכם בחינם לחלוטין למשך 3 חודשים! 🎉<br/>נשמח לשמוע את הפידבק שלכם 😊
+    <div id="premium-launch-msg" style="display:none;background:var(--blue-light);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.7;text-align:right;color:var(--gray-800);">
+      כמה כלים מתקדמים (📋 לוג, 📄 דוח PDF, 📊 אקסל, 💾 גיבוי) פתוחים לכם בחינם לתקופת ניסיון. נשמח לשמוע מה דעתכם 😊
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
@@ -1439,7 +1439,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.5.1'; // הסרת מנעול פרימיום מדמי ועד, יתרת איזון והפקדת מזומן
+const APP_VERSION = '1.5.2'; // ניסוח עדין יותר לכלי הפרימיום
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -2439,11 +2439,11 @@ window.openAdminFinance = () => {
     badge.textContent = '';
   } else if (trialActive) {
     launchMsg.style.display = 'block';
-    badge.textContent = `✨ פרימיום פעיל — נותרו ${daysLeft} ימים`;
+    badge.textContent = `כלים מתקדמים פתוחים — נותרו ${daysLeft} ימים`;
     badge.style.color = 'var(--green)';
   } else {
     launchMsg.style.display = 'none';
-    badge.textContent = '🔒 תקופת הניסיון הסתיימה';
+    badge.textContent = 'תקופת הניסיון של הכלים המתקדמים הסתיימה';
     badge.style.color = 'var(--red)';
   }
 
