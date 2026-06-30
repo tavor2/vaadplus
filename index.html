@@ -566,7 +566,7 @@
       <div class="section-header"><div class="section-title">גיבוי ושחזור</div></div>
       <div style="display:flex;gap:10px;">
         <button class="btn-icon" style="flex:1;" onclick="exportData()">⬇️ גיבוי 👑</button>
-        <button class="btn-icon" style="flex:1;" onclick="document.getElementById('import-file-input').click()">⬆️ שחזור 👑</button>
+        <button class="btn-icon" style="flex:1;" onclick="document.getElementById('import-file-input').click()">⬆️ שחזור</button>
       </div>
       <input type="file" id="import-file-input" accept="application/json" style="display:none" onchange="importData(event)"/>
     </div>
@@ -1003,7 +1003,7 @@
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div style="display:flex;gap:8px;">
         <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();exportData()">⬇️ גיבוי 👑</button>
-        <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();document.getElementById('import-file-input').click()">⬆️ שחזור 👑</button>
+        <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();document.getElementById('import-file-input').click()">⬆️ שחזור</button>
       </div>
       <button class="btn-secondary" style="color:#d33;border-color:#d33;" onclick="closeAdminFinance();openResetData()">🗑️ איפוס נתונים</button>
       <button class="btn-secondary" onclick="closeAdminFinance()">סגור</button>
@@ -1439,7 +1439,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.5.3'; // אקסל עם סיכומי קטגוריה+חודש, מיקום מחדש להפקדת מזומן
+const APP_VERSION = '1.5.4'; // תיקון פורמט אקסל RTL+מספרים, שחזור חינמי תמיד
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -2097,7 +2097,6 @@ window.importData = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   event.target.value = '';
-  if (!premiumGate('שחזור נתונים')) return;
 
   try {
     const text = await file.text();
@@ -2795,6 +2794,18 @@ window.exportExcel = async () => {
 
     const paySheet = XLSX.utils.aoa_to_sheet([payHeader, ...payRows, [], totalRow]);
     paySheet['!cols'] = [{wch:8},{wch:16},...Array(12).fill({wch:10}),{wch:10}];
+    // פורמט מספרים שלמים לעמודות סכומים
+    const payRange = XLSX.utils.decode_range(paySheet['!ref']);
+    for (let R = 1; R <= payRange.e.r; R++) {
+      for (let C = 2; C <= payRange.e.c; C++) {
+        const addr = XLSX.utils.encode_cell({r:R, c:C});
+        if (paySheet[addr] && typeof paySheet[addr].v === 'number') {
+          paySheet[addr].z = '#,##0';
+        }
+      }
+    }
+    if (!wb.Workbook) wb.Workbook = {};
+    if (!wb.Workbook.Views) wb.Workbook.Views = [{RTL:true}];
     XLSX.utils.book_append_sheet(wb, paySheet, `תשלומים ${year}`);
 
     // ===== גיליון 2 — הוצאות (פירוט + סיכום קטגוריות) =====
@@ -2822,6 +2833,17 @@ window.exportExcel = async () => {
     ];
     const expSheet = XLSX.utils.aoa_to_sheet(expSheetData);
     expSheet['!cols'] = [{wch:12},{wch:14},{wch:30},{wch:14},{wch:10}];
+    {
+      const range = XLSX.utils.decode_range(expSheet['!ref']);
+      for (let R = 0; R <= range.e.r; R++) {
+        for (let C = 0; C <= range.e.c; C++) {
+          const addr = XLSX.utils.encode_cell({r:R, c:C});
+          if (expSheet[addr] && typeof expSheet[addr].v === 'number') {
+            expSheet[addr].z = '#,##0';
+          }
+        }
+      }
+    }
     XLSX.utils.book_append_sheet(wb, expSheet, `הוצאות ${year}`);
 
     // ===== גיליון 3 — מאזן (כולל פירוט חודשי גבייה/הוצאות) =====
@@ -2861,6 +2883,17 @@ window.exportExcel = async () => {
     ];
     const balSheet = XLSX.utils.aoa_to_sheet(balSheetData);
     balSheet['!cols'] = [{wch:14},{wch:14},{wch:14},{wch:14}];
+    {
+      const range = XLSX.utils.decode_range(balSheet['!ref']);
+      for (let R = 0; R <= range.e.r; R++) {
+        for (let C = 0; C <= range.e.c; C++) {
+          const addr = XLSX.utils.encode_cell({r:R, c:C});
+          if (balSheet[addr] && typeof balSheet[addr].v === 'number') {
+            balSheet[addr].z = '#,##0';
+          }
+        }
+      }
+    }
     XLSX.utils.book_append_sheet(wb, balSheet, 'מאזן');
 
     const addrStr = (buildingData?.address||'').replace(/,\s*/g,'_').replace(/\s+/g,'_');
