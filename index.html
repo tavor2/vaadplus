@@ -1481,7 +1481,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.6.3'; // מסך המאזן עובר ל-listener חי במקום getDocs בכל כניסה - בלי גלגל טעינה מיותר וקריאות שרת חוזרות
+const APP_VERSION = '1.6.4'; // לשונית הוצאות עוברת ל-listener משותף עם המאזן - אותו תיקון גלגל טעינה כמו במאזן
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -2665,18 +2665,36 @@ window.savePayment = async () => {
 
 // ===== EXPENSES =====
 let allExpenses = [];
+let unsubExpenses = null;
+let expensesListenerBuildingId = null; // which building the expenses listener is attached to
+
+function ensureExpensesListener() {
+  if (expensesListenerBuildingId === buildingId && unsubExpenses) return; // already listening for this building
+  if (unsubExpenses) unsubExpenses();
+  expensesListenerBuildingId = buildingId;
+  unsubExpenses = onSnapshot(
+    query(collection(db, 'buildings', buildingId, 'expenses'), orderBy('date','desc')),
+    (snap) => {
+      allExpenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderExpenses();
+      renderBalance();
+    }
+  );
+}
 
 function loadExpenses() {
   const container = document.getElementById('expenses-list');
-  container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
-  getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), orderBy('date','desc'))).then(snap => {
-    allExpenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderExpenses();
-  });
+  const alreadyListening = expensesListenerBuildingId === buildingId && unsubExpenses;
+  if (!alreadyListening) {
+    container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  }
+  ensureExpensesListener();
+  if (alreadyListening) renderExpenses(); // instant re-render from cache, no new server read
 }
 
 function renderExpenses() {
   const container = document.getElementById('expenses-list');
+  if (!container) return;
   if (!allExpenses.length) {
     container.innerHTML = '<div class="card-empty" style="margin:16px;">אין הוצאות רשומות</div>';
     return;
@@ -2775,22 +2793,18 @@ window.deleteExpense = async (id) => {
 // ===== BALANCE =====
 let balPaymentsAll = [];      // cache: all payments ever recorded (for balance calc)
 let balDepositsAll = [];      // cache: all cash deposits ever recorded
-let unsubBalPayments = null, unsubBalExpenses = null, unsubBalDeposits = null;
+let unsubBalPayments = null, unsubBalDeposits = null;
 let balanceListenersBuildingId = null; // which building the above listeners are attached to
 
 function ensureBalanceListeners() {
+  ensureExpensesListener(); // shared with the expenses tab — one listener, not two
   if (balanceListenersBuildingId === buildingId && unsubBalPayments) return; // already listening for this building
   if (unsubBalPayments) unsubBalPayments();
-  if (unsubBalExpenses) unsubBalExpenses();
   if (unsubBalDeposits) unsubBalDeposits();
   balanceListenersBuildingId = buildingId;
 
   unsubBalPayments = onSnapshot(collection(db, 'buildings', buildingId, 'payments'), (snap) => {
     balPaymentsAll = snap.docs.map(d => d.data());
-    renderBalance();
-  });
-  unsubBalExpenses = onSnapshot(collection(db, 'buildings', buildingId, 'expenses'), (snap) => {
-    allExpenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderBalance();
   });
   // הפקדות מזומן לבנק — רק מנהל יכול לקרוא, לכן מטפלים בשגיאת הרשאה בעדינות
