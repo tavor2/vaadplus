@@ -1481,7 +1481,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.6.2'; // חיסכון בקריאות Firestore: cache מקומי מתמיד (IndexedDB) + מעבר תשלומים ל-listener חכם
+const APP_VERSION = '1.6.3'; // מסך המאזן עובר ל-listener חי במקום getDocs בכל כניסה - בלי גלגל טעינה מיותר וקריאות שרת חוזרות
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -2773,29 +2773,59 @@ window.deleteExpense = async (id) => {
 };
 
 // ===== BALANCE =====
-async function loadBalance() {
+let balPaymentsAll = [];      // cache: all payments ever recorded (for balance calc)
+let balDepositsAll = [];      // cache: all cash deposits ever recorded
+let unsubBalPayments = null, unsubBalExpenses = null, unsubBalDeposits = null;
+let balanceListenersBuildingId = null; // which building the above listeners are attached to
+
+function ensureBalanceListeners() {
+  if (balanceListenersBuildingId === buildingId && unsubBalPayments) return; // already listening for this building
+  if (unsubBalPayments) unsubBalPayments();
+  if (unsubBalExpenses) unsubBalExpenses();
+  if (unsubBalDeposits) unsubBalDeposits();
+  balanceListenersBuildingId = buildingId;
+
+  unsubBalPayments = onSnapshot(collection(db, 'buildings', buildingId, 'payments'), (snap) => {
+    balPaymentsAll = snap.docs.map(d => d.data());
+    renderBalance();
+  });
+  unsubBalExpenses = onSnapshot(collection(db, 'buildings', buildingId, 'expenses'), (snap) => {
+    allExpenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderBalance();
+  });
+  // הפקדות מזומן לבנק — רק מנהל יכול לקרוא, לכן מטפלים בשגיאת הרשאה בעדינות
+  unsubBalDeposits = onSnapshot(
+    collection(db, 'buildings', buildingId, 'cashDeposits'),
+    (snap) => { balDepositsAll = snap.docs.map(d => d.data()); renderBalance(); },
+    () => { balDepositsAll = []; renderBalance(); }
+  );
+}
+
+function loadBalance() {
   const container = document.getElementById('balance-content');
-  container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  const alreadyListening = balanceListenersBuildingId === buildingId && unsubBalPayments;
+  if (!alreadyListening) {
+    container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  }
+  ensureBalanceListeners();
+  if (alreadyListening) renderBalance(); // instant re-render from cache, no new server read
+}
+
+function renderBalance() {
+  const container = document.getElementById('balance-content');
+  if (!container) return;
 
   // Total collected (all time)
-  const paySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
-  const totalCollected = paySnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
-  const cashCollected = paySnap.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
+  const totalCollected = balPaymentsAll.reduce((s,p) => s + (p.amount||0), 0);
+  const cashCollected = balPaymentsAll.filter(p => p.method === 'cash').reduce((s,p) => s + (p.amount||0), 0);
   const transferCollected = totalCollected - cashCollected;
 
   // Total expenses (all time)
-  const expSnap = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
-  const totalExpenses = expSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
-  const cashExpenses = expSnap.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
+  const totalExpenses = allExpenses.reduce((s,e) => s + (e.amount||0), 0);
+  const cashExpenses = allExpenses.filter(e => e.method === 'cash').reduce((s,e) => s + (e.amount||0), 0);
   const bankExpenses = totalExpenses - cashExpenses;
-  allExpenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // הפקדות מזומן לבנק — רק מנהל יכול לקרוא
-  let totalDeposits = 0;
-  try {
-    const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-    totalDeposits = depositSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
-  } catch(e) { totalDeposits = 0; }
+  const totalDeposits = balDepositsAll.reduce((s,d) => s + (d.amount||0), 0);
 
   const openingBalance = buildingData?.openingBalance || 0;
   const bankBalance = openingBalance + transferCollected + totalDeposits - bankExpenses;
@@ -2832,7 +2862,7 @@ async function loadBalance() {
     + '</div>';
   // Expenses by category
   if (Object.keys(byCat).length) {
-    html += '<div style="font-size:15px;font-weight:700;margin-bottom:10px;">פירוט הוצאות לפי קטגוריה</div>';
+    html += '<div style="font-size:15px;font-weight:700;margin-bottom:10px;">פירוט הוצאות לפי קטגוריה</div>';
     Object.entries(byCat).sort((a,b)=>b[1]-a[1]).forEach(([cat,amt]) => {
       const icon = catIcons[cat]||'📋';
       const pct = totalExpenses > 0 ? Math.round(amt/totalExpenses*100) : 0;
@@ -2845,7 +2875,7 @@ async function loadBalance() {
     });
     
     // Expenses detail table
-    html += '<div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:10px;">פירוט הוצאות</div>';
+    html += '<div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:10px;">פירוט הוצאות</div>';
     html += '<div style="overflow-x:auto;">'
       + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
       + '<thead><tr style="background-color:var(--blue);color:white;">'
