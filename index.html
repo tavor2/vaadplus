@@ -979,7 +979,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 לוג תשלומים 👑</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות 👑</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי 👑</button>
       <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי 👑</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
@@ -1014,7 +1014,7 @@
 <!-- Payment Log Modal -->
 <div class="modal-overlay" id="modal-log">
   <div class="modal">
-    <div class="modal-title">לוג תשלומים</div>
+    <div class="modal-title">יומן פעולות</div>
     <div id="log-content"></div>
   </div>
 </div>
@@ -1220,7 +1220,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, runTransaction }
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, runTransaction, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
@@ -1498,7 +1498,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.7.1'; // כל דיאלוגי המחיקה/אישור עברו למודל מותאם - אין יותר חשיפת כתובת האתר בשום מקום
+const APP_VERSION = '1.7.3'; // הרחבת היומן: הוצאות, הפקדות מזומן ועדכוני יתרת איזון נכנסים ליומן הפעולות, כתיבה אטומית לכולם
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -1695,7 +1695,7 @@ window.backupSelectedBuildings = async () => {
   if (!selected.length) return;
 
   showToast(`מגבה ${selected.length} בניינים...`);
-  const cols = ['residents','payments','expenses','issues','announcements'];
+  const cols = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
   const dateStr = new Date().toISOString().slice(0,10);
   let done = 0;
 
@@ -1808,7 +1808,7 @@ window.executeRestoreBuilding = async (event) => {
     const newBuildingId = newBuildingRef.id;
 
     // 3. ייבא את כל הנתונים לבניין החדש
-    const collections = ['residents','payments','expenses','issues','announcements','cashDeposits'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
     let imported = 0;
     for (const colName of collections) {
       const items = data[colName];
@@ -2143,10 +2143,18 @@ window.saveCashDeposit = async () => {
   const note = document.getElementById('deposit-note').value.trim();
   if (!amount || !date) { showToast('חובה למלא סכום ותאריך'); return; }
   try {
-    await addDoc(collection(db, 'buildings', buildingId, 'cashDeposits'), {
+    const batch = writeBatch(db);
+    const depositRef = doc(collection(db, 'buildings', buildingId, 'cashDeposits'));
+    batch.set(depositRef, {
       amount, date, note,
       createdAt: serverTimestamp(), createdBy: currentUser.uid
     });
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      type: 'deposit', action: 'deposit', amount, note,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
     showToast('✅ הפקדה נשמרה');
     closeModal('modal-cash-deposit');
     loadBalance();
@@ -2193,7 +2201,7 @@ window.executeResetData = async () => {
 window.exportData = async () => {
   try {
     showToast('מייצא נתונים...');
-    const collections = ['residents','payments','expenses','issues','announcements'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
     const data = {};
     for (const colName of collections) {
       const snap = await getDocs(collection(db, 'buildings', buildingId, colName));
@@ -2245,7 +2253,7 @@ window.importData = async (event) => {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
-    const collections = ['residents','payments','expenses','issues','announcements'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
     let totalDocs = 0;
     for (const colName of collections) {
       if (Array.isArray(data[colName])) totalDocs += data[colName].length;
@@ -2530,18 +2538,18 @@ window.markPaid = async (apt, name, amount) => {
   const resident = allResidents.find(r => r.apt === parseInt(apt));
   const method = resident?.paymentMethod || 'transfer';
   try {
-    await addDoc(collection(db, 'buildings', buildingId, 'payments'), {
+    const batch = writeBatch(db);
+    const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+    batch.set(paymentRef, {
       apt: parseInt(apt), name, amount, month: ym, method,
       paidAt: serverTimestamp(), recordedBy: currentUser.uid
     });
-    try {
-      await addDoc(collection(db, 'buildings', buildingId, 'paymentLog'), {
-        apt: parseInt(apt), name, amount, month: ym, method, action: 'paid',
-        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-      });
-    } catch(logErr) {
-      console.warn('paymentLog write failed:', logErr);
-    }
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: parseInt(apt), name, amount, month: ym, method, action: 'paid',
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
     showToast(`✅ ${name} - תשלום נרשם`);
     loadPayments();
     logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS' });
@@ -2552,17 +2560,17 @@ window.cancelPayment = async (id) => {
   const ok = await customConfirm('לבטל את התשלום?');
   if (!ok) return;
   try {
-    const snap = await getDoc(doc(db, 'buildings', buildingId, 'payments', id));
+    const paymentRef = doc(db, 'buildings', buildingId, 'payments', id);
+    const snap = await getDoc(paymentRef);
     const p = snap.exists() ? snap.data() : {};
-    await deleteDoc(doc(db, 'buildings', buildingId, 'payments', id));
-    try {
-      await addDoc(collection(db, 'buildings', buildingId, 'paymentLog'), {
-        apt: p.apt, name: p.name, amount: p.amount, month: p.month, action: 'cancelled',
-        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-      });
-    } catch(logErr) {
-      console.warn('paymentLog write failed:', logErr);
-    }
+    const batch = writeBatch(db);
+    batch.delete(paymentRef);
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: p.apt, name: p.name, amount: p.amount, month: p.month, action: 'cancelled',
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
     showToast('תשלום בוטל');
     loadPayments();
   } catch(e) { showToast('שגיאה: ' + e.message); }
@@ -2571,7 +2579,15 @@ window.cancelPayment = async (id) => {
 window.saveOpeningBalance = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const val = parseFloat(document.getElementById('input-opening-balance').value) || 0;
-  await updateDoc(doc(db, 'buildings', buildingId), { openingBalance: val });
+  const previousVal = buildingData?.openingBalance || 0;
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'buildings', buildingId), { openingBalance: val });
+  const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+  batch.set(logRef, {
+    type: 'balance', action: 'balance_adjusted', amount: val, previousAmount: previousVal,
+    at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+  });
+  await batch.commit();
   buildingData.openingBalance = val;
   showToast('✅ יתרת פתיחה נשמרה');
   loadBalance();
@@ -2666,18 +2682,18 @@ window.savePayment = async () => {
   const resident = allResidents.find(r => r.apt === apt);
   try {
     const method = document.getElementById('p-method').value;
-    await addDoc(collection(db, 'buildings', buildingId, 'payments'), {
+    const batch = writeBatch(db);
+    const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+    batch.set(paymentRef, {
       apt, name: resident?.name || '', amount, month, note,
       method, paidAt: serverTimestamp(), recordedBy: currentUser.uid
     });
-    try {
-      await addDoc(collection(db, 'buildings', buildingId, 'paymentLog'), {
-        apt: parseInt(apt), name: resident?.name || '', amount, month, action: 'paid',
-        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-      });
-    } catch(logErr) {
-      console.warn('paymentLog write failed:', logErr);
-    }
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: parseInt(apt), name: resident?.name || '', amount, month, action: 'paid',
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
     showToast('✅ תשלום נרשם');
     closeModal('modal-payment');
     loadPayments();
@@ -2779,21 +2795,36 @@ window.saveExpense = async () => {
   const desc = document.getElementById('exp-desc').value.trim();
   const amount = parseInt(document.getElementById('exp-amount').value);
   if (!desc || !amount) { showToast('חובה למלא תיאור וסכום'); return; }
+  const category = document.getElementById('exp-cat').value;
+  const method = document.getElementById('exp-method').value;
   const data = {
-    category: document.getElementById('exp-cat').value,
+    category,
     description: desc, amount,
-    method: document.getElementById('exp-method').value,
+    method,
     date: document.getElementById('exp-date').value,
     updatedAt: serverTimestamp()
   };
   try {
+    const batch = writeBatch(db);
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     if (id) {
-      await updateDoc(doc(db, 'buildings', buildingId, 'expenses', id), data);
+      batch.update(doc(db, 'buildings', buildingId, 'expenses', id), data);
+      batch.set(logRef, {
+        type: 'expense', action: 'expense_updated', category, description: desc, amount, method,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
       showToast('✅ הוצאה עודכנה');
     } else {
       data.createdAt = serverTimestamp();
       data.createdBy = currentUser.uid;
-      await addDoc(collection(db, 'buildings', buildingId, 'expenses'), data);
+      const expenseRef = doc(collection(db, 'buildings', buildingId, 'expenses'));
+      batch.set(expenseRef, data);
+      batch.set(logRef, {
+        type: 'expense', action: 'expense_added', category, description: desc, amount, method,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
       showToast('✅ הוצאה נשמרה');
     }
     closeModal('modal-expense');
@@ -2806,7 +2837,17 @@ window.deleteExpense = async (id) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
 
   if (!(await customConfirm('למחוק הוצאה זו?'))) return;
-  await deleteDoc(doc(db, 'buildings', buildingId, 'expenses', id));
+  const expenseRef = doc(db, 'buildings', buildingId, 'expenses', id);
+  const snap = await getDoc(expenseRef);
+  const e = snap.exists() ? snap.data() : {};
+  const batch = writeBatch(db);
+  batch.delete(expenseRef);
+  const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+  batch.set(logRef, {
+    type: 'expense', action: 'expense_deleted', category: e.category || '', description: e.description || '', amount: e.amount || 0,
+    at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+  });
+  await batch.commit();
   showToast('🗑 נמחק');
   loadExpenses();
   loadBalance();
@@ -3108,7 +3149,7 @@ window.exportExcel = async () => {
 
 // ===== PAYMENT LOG & PDF REPORT =====
 window.openLog = async () => {
-  if (!premiumGate('לוג תשלומים')) return;
+  if (!premiumGate('יומן פעולות')) return;
   const container = document.getElementById('log-content');
   container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
   openModal('modal-log');
@@ -3117,29 +3158,75 @@ window.openLog = async () => {
   const entries = snap.docs.map(d => ({id: d.id, ...d.data()}));
   
   if (!entries.length) {
-    container.innerHTML = '<div class="card-empty">אין רשומות בלוג</div>';
+    container.innerHTML = '<div class="card-empty">אין רשומות ביומן</div>';
     return;
   }
 
-  let html = '<div style="padding:12px 0;max-height:70vh;overflow-y:auto;">';
-  entries.forEach(p => {
+  const expCatIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
+
+  function renderLogCard(p) {
     const dateStr = p.at ? new Date(p.at.toDate()).toLocaleString('he-IL') : '-';
-    const monthStr = p.month ? p.month : '-';
+    const byLine = '<div style="color:var(--gray-400);font-size:11px;margin-top:4px;">📅 '+dateStr+' ✏️ '+(p.byName || 'מנהל')+'</div>';
+    const type = p.type || 'payment'; // entries created before this update have no type — treat as payment
+
+    if (type === 'expense') {
+      const icon = expCatIcons[p.category] || '📋';
+      const isDeleted = p.action === 'expense_deleted';
+      const badgeText = p.action === 'expense_added' ? '➕ הוצאה נוספה' : p.action === 'expense_updated' ? '✏️ הוצאה עודכנה' : '🗑 הוצאה נמחקה';
+      const badgeColor = isDeleted ? 'var(--red)' : p.action === 'expense_added' ? 'var(--green)' : 'var(--blue)';
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;'+(isDeleted ? 'opacity:0.7;' : '')+'">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;'+(isDeleted ? 'text-decoration:line-through;' : '')+'">'+icon+' '+(p.description||'')+'</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.category||'')+' • ₪'+(p.amount||0)+'</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:'+badgeColor+';font-weight:600;white-space:nowrap;">'+badgeText+'</div>'
+        + '</div></div>';
+    }
+
+    if (type === 'deposit') {
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;">🏦 הפקדת מזומן לבנק</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.amount||0)+(p.note ? ' • '+p.note : '')+'</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:var(--green);font-weight:600;white-space:nowrap;">✅ הופקד</div>'
+        + '</div></div>';
+    }
+
+    if (type === 'balance') {
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;">⚖️ עדכון יתרת איזון מול הבנק</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+'</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
+        + '</div></div>';
+    }
+
+    // type === 'payment' (default, includes legacy entries without a type field)
     const isCancelled = p.action === 'cancelled';
     const badge = isCancelled
       ? '<div style="text-align:left;color:var(--red);font-weight:600;">❌ בוטל</div>'
       : '<div style="text-align:left;color:var(--green);font-weight:600;">✅ שולם</div>';
-    html += '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;'+(isCancelled ? 'opacity:0.7;' : '')+'">'
+    return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;'+(isCancelled ? 'opacity:0.7;' : '')+'">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
       + '<div>'
       + '<div style="font-weight:700;'+(isCancelled ? 'text-decoration:line-through;' : '')+'">'+p.name+' (דירה '+p.apt+')</div>'
-      + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+monthStr+' • ₪'+(p.amount||0)+'</div>'
-      + '<div style="color:var(--gray-400);font-size:11px;margin-top:4px;">📅 '+dateStr+' ✏️ '+(p.byName || 'מנהל')+'</div>'
+      + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.month||'-')+' • ₪'+(p.amount||0)+'</div>'
+      + byLine
       + '</div>'
       + badge
-      + '</div>'
-      + '</div>';
-  });
+      + '</div></div>';
+  }
+
+  let html = '<div style="padding:12px 0;max-height:70vh;overflow-y:auto;">';
+  entries.forEach(p => { html += renderLogCard(p); });
   html += '</div>';
   container.innerHTML = html;
 };
@@ -3421,33 +3508,33 @@ async function renderHistoryGrid(apt, name, fee) {
       if (pid) {
         const ok = await customConfirm('לבטל תשלום ' + ym + '?');
         if (!ok) return;
-        const snap = await getDoc(doc(db, 'buildings', buildingId, 'payments', pid));
+        const paymentRef = doc(db, 'buildings', buildingId, 'payments', pid);
+        const snap = await getDoc(paymentRef);
         const p = snap.exists() ? snap.data() : {};
-        await deleteDoc(doc(db, 'buildings', buildingId, 'payments', pid));
-        try {
-          await addDoc(collection(db, 'buildings', buildingId, 'paymentLog'), {
-            apt: parseInt(_histApt), name: _histName, amount: _histFee, month: ym, action: 'cancelled',
-            at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-          });
-        } catch(logErr) {
-          console.warn('paymentLog write failed:', logErr);
-        }
+        const batch = writeBatch(db);
+        batch.delete(paymentRef);
+        const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+        batch.set(logRef, {
+          apt: parseInt(_histApt), name: _histName, amount: _histFee, month: ym, action: 'cancelled',
+          at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+        });
+        await batch.commit();
         showToast('תשלום בוטל');
       } else {
         const histResident = allResidents.find(r => r.apt === parseInt(_histApt));
         const histMethod = histResident?.paymentMethod || 'transfer';
-        await addDoc(collection(db, 'buildings', buildingId, 'payments'), {
+        const batch = writeBatch(db);
+        const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+        batch.set(paymentRef, {
           apt: parseInt(_histApt), name: _histName, amount: _histFee,
           month: ym, method: histMethod, paidAt: serverTimestamp(), recordedBy: currentUser.uid
         });
-        try {
-          await addDoc(collection(db, 'buildings', buildingId, 'paymentLog'), {
-            apt: parseInt(_histApt), name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid',
-            at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-          });
-        } catch(logErr) {
-          console.warn('paymentLog write failed:', logErr);
-        }
+        const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+        batch.set(logRef, {
+          apt: parseInt(_histApt), name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid',
+          at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+        });
+        await batch.commit();
         showToast('✅ שולם');
       }
       await renderHistoryGrid(_histApt, _histName, _histFee);
