@@ -1022,7 +1022,7 @@
 <!-- Custom Confirm Modal (avoids native browser confirm() showing the site URL) -->
 <div class="modal-overlay" id="modal-confirm">
   <div class="modal" style="max-width:340px;">
-    <div class="modal-title" id="confirm-message" style="font-size:16px;"></div>
+    <div class="modal-title" id="confirm-message" style="font-size:16px;white-space:pre-line;"></div>
     <div style="display:flex;gap:10px;">
       <button class="btn-secondary" style="flex:1;margin-top:0;" onclick="resolveConfirm(false)">ביטול</button>
       <button class="btn-danger" style="flex:1;padding:13px;" onclick="resolveConfirm(true)">אישור</button>
@@ -1435,13 +1435,14 @@ onAuthStateChanged(auth, async (user) => {
   loadAll();
 });
 
-window.resetAllData = () => {
+window.resetAllData = async () => {
   if (auth.currentUser?.email !== 'vaadplus100@gmail.com') {
     showToast('פעולה זו מוגבלת ל-Super Admin בלבד');
     return;
   }
   // תמיד מחייב גיבוי לפני מחיקה
-  if (!confirm(`⚠️ לפני מחיקת הבניין חובה לגבות!\n\nכתובת: ${buildingData?.address || ''}\n\nלחץ אישור כדי לגבות עכשיו, ואחר כך תוכל למחוק.`)) return;
+  const ok = await customConfirm(`⚠️ לפני מחיקת הבניין חובה לגבות!\n\nכתובת: ${buildingData?.address || ''}\n\nלחץ אישור כדי לגבות עכשיו, ואחר כך תוכל למחוק.`);
+  if (!ok) return;
   exportData();
   // אחרי הגיבוי — הצג את מודל המחיקה
   setTimeout(() => {
@@ -1497,7 +1498,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.7.0'; // הוספת Google Analytics for Firebase: אירועי שימוש בפיצ'רים + עדכון מדיניות פרטיות
+const APP_VERSION = '1.7.1'; // כל דיאלוגי המחיקה/אישור עברו למודל מותאם - אין יותר חשיפת כתובת האתר בשום מקום
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -1775,7 +1776,7 @@ window.executeRestoreBuilding = async (event) => {
       return;
     }
 
-    if (!confirm(`שחזור בניין:\n${info.address}\nמנהל: ${info.adminName} (${info.adminEmail})\n\nלהמשיך?`)) return;
+    if (!(await customConfirm(`שחזור בניין:\n${info.address}\nמנהל: ${info.adminName} (${info.adminEmail})\n\nלהמשיך?`))) return;
 
     closeModal('modal-restore-building');
     showToast('יוצר בניין...');
@@ -2120,7 +2121,7 @@ window.deleteResident = async () => {
 
   const id = document.getElementById('edit-resident-id').value;
   if (!id) return;
-  if (!confirm('למחוק את הדייר? פעולה זו אינה הפיכה.')) return;
+  if (!(await customConfirm('למחוק את הדייר? פעולה זו אינה הפיכה.'))) return;
   try {
     await deleteDoc(doc(db, 'buildings', buildingId, 'residents', id));
     showToast('🗑️ הדייר נמחק');
@@ -2258,7 +2259,7 @@ window.importData = async (event) => {
       return;
     }
 
-    if (!confirm(`הקובץ מכיל ${totalDocs} רשומות.\nהשחזור יוסיף/יעדכן רשומות לפי ה-ID שלהן (לא ימחק נתונים קיימים).\nלהמשיך?`)) return;
+    if (!(await customConfirm(`הקובץ מכיל ${totalDocs} רשומות.\nהשחזור יוסיף/יעדכן רשומות לפי ה-ID שלהן (לא ימחק נתונים קיימים).\nלהמשיך?`))) return;
 
     showToast('מייבא נתונים...');
     let imported = 0;
@@ -2804,7 +2805,7 @@ window.saveExpense = async () => {
 window.deleteExpense = async (id) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
 
-  if (!confirm('למחוק הוצאה זו?')) return;
+  if (!(await customConfirm('למחוק הוצאה זו?'))) return;
   await deleteDoc(doc(db, 'buildings', buildingId, 'expenses', id));
   showToast('🗑 נמחק');
   loadExpenses();
@@ -3674,7 +3675,7 @@ window.saveIssue = async () => {
 window.deleteIssue = async (id) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
 
-  if (!confirm('למחוק את הקריאה?')) return;
+  if (!(await customConfirm('למחוק את הקריאה?'))) return;
   await deleteDoc(doc(db, 'buildings', buildingId, 'issues', id));
   showToast('🗑 קריאה נמחקה');
 };
@@ -3760,7 +3761,7 @@ window.saveAnnounce = async () => {
 window.deleteAnnounce = async (id) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
 
-  if (!confirm('למחוק את ההודעה?')) return;
+  if (!(await customConfirm('למחוק את ההודעה?'))) return;
   await deleteDoc(doc(db, 'buildings', buildingId, 'announcements', id));
   showToast('🗑 הודעה נמחקה');
 };
