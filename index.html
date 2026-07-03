@@ -493,6 +493,19 @@
   </div>
 </div>
 
+<!-- LOCKOUT SCREEN (trial ended, not VIP, not premium) -->
+<div id="lockout-screen" style="display:none;min-height:100vh;background:linear-gradient(160deg, var(--blue) 0%, #0f3a8a 100%);flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;">
+  <div style="font-size:52px;margin-bottom:16px;">🔒</div>
+  <div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:10px;">תקופת הניסיון הסתיימה</div>
+  <div style="color:rgba(255,255,255,0.75);font-size:14px;line-height:1.7;margin-bottom:28px;max-width:320px;">
+    כדי להמשיך להשתמש בועד בית פלוס — ניהול דיירים, תשלומים, תחזוקה והודעות — יש לרכוש מנוי.
+  </div>
+  <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px;">
+    <button class="btn-primary" style="background:#fff;color:var(--blue);font-size:16px;padding:16px;" onclick="openPremiumModal()">🔓 שדרג עכשיו</button>
+    <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.3);" onclick="logout()">התנתק</button>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="app">
 
@@ -1499,13 +1512,15 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.7.5'; // שינוי דמי ועד ברירת מחדל נכנס ליומן הפעולות, כתיבה אטומית
+const APP_VERSION = '1.8.0'; // 30 בניינים ראשונים VIP לצמיתות + טריאל 14 יום + נעילת אפליקציה מלאה אחריו למי שלא VIP/מנוי
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
-const TRIAL_DAYS = 90;
+const TRIAL_DAYS = 14;
+const VIP_LIMIT = 30; // first N buildings ever created get permanent free premium access
 
 function isPremium() {
   if (auth.currentUser?.email === SUPER_ADMIN_EMAIL) return true;
+  if (buildingData?.vipLifetime) return true;
   if (buildingData?.premiumUntil) {
     const until = buildingData.premiumUntil.toDate ? buildingData.premiumUntil.toDate() : new Date(buildingData.premiumUntil);
     if (until > new Date()) return true;
@@ -1517,6 +1532,7 @@ function isPremium() {
 }
 
 function daysLeftInTrial() {
+  if (buildingData?.vipLifetime) return Infinity;
   if (!buildingData?.createdAt) return TRIAL_DAYS;
   const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
   const daysPassed = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
@@ -1541,7 +1557,7 @@ function premiumGate(featureName) {
   return false;
 }
 
-function openPremiumModal() {
+window.openPremiumModal = function openPremiumModal() {
   const playSection = document.getElementById('premium-play-purchase');
   const emailSection = document.getElementById('premium-email-fallback');
   const statusEl = document.getElementById('premium-purchase-status');
@@ -1599,6 +1615,12 @@ window.purchasePremium = async () => {
       showToast('🎉 הפרימיום הופעל בהצלחה!');
       closeModal('modal-premium-upgrade');
       logAnalyticsEvent('purchase', { currency: 'ILS', value: 119, items: [{ item_id: PLAY_SUBSCRIPTION_ID, item_name: 'מנוי פרימיום שנתי' }] });
+      if (document.getElementById('lockout-screen').style.display !== 'none') {
+        document.getElementById('app').style.display = 'flex';
+        document.getElementById('app').style.flexDirection = 'column';
+        initUI();
+        loadAll();
+      }
     } else {
       statusEl.textContent = 'האימות נכשל, נסה/י שוב או פני/ה לתמיכה';
     }
@@ -1866,6 +1888,8 @@ window.completeSetup = async () => {
   const addressKey = normalizeAddress(address);
   const addressRef = doc(db, 'buildingAddresses', addressKey);
   const newBuildingRef = doc(collection(db, 'buildings'));
+  const counterRef = doc(db, 'meta', 'stats');
+  let vipLifetime = false;
 
   try {
     await runTransaction(db, async (tx) => {
@@ -1873,22 +1897,29 @@ window.completeSetup = async () => {
       if (addressSnap.exists()) {
         throw new Error('כתובת זו כבר רשומה במערכת על ידי ועד אחר. אם זה הבניין שלך, פנה לוועד הקיים.');
       }
+      const counterSnap = await tx.get(counterRef);
+      const currentCount = counterSnap.exists() ? (counterSnap.data().buildingCount || 0) : 0;
+      const newCount = currentCount + 1;
+      vipLifetime = newCount <= VIP_LIMIT;
+
       tx.set(newBuildingRef, {
         address,
         adminEmail: user.email,
         adminUid: user.uid,
         adminName: name,
         monthlyFee: feeVal,
+        vipLifetime,
         createdAt: serverTimestamp()
       });
       tx.set(addressRef, {
         buildingId: newBuildingRef.id,
         createdAt: serverTimestamp()
       });
+      tx.set(counterRef, { buildingCount: newCount }, { merge: true });
     });
 
     buildingId = newBuildingRef.id;
-    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal };
+    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal, vipLifetime };
     currentUser = { uid: user.uid, name, email: user.email, role: 'admin' };
     isAdmin = true;
 
@@ -1984,6 +2015,12 @@ window.addEventListener('popstate', (e) => {
 
 // ===== LOAD ALL =====
 function loadAll() {
+  if (!isPremium()) {
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('lockout-screen').style.display = 'flex';
+    return;
+  }
+  document.getElementById('lockout-screen').style.display = 'none';
   navigate('home');
   loadResidents();
   loadIssues();
