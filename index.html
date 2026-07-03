@@ -1499,7 +1499,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.7.4'; // הגבלת 2 דיירים כועד/מנהל לכל היותר בבניין - צמצום משתמשים עם גישת כתיבה ל-Firebase
+const APP_VERSION = '1.7.5'; // שינוי דמי ועד ברירת מחדל נכנס ליומן הפעולות, כתיבה אטומית
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -2659,7 +2659,15 @@ window.saveMonthlyFee = async () => {
   const val = parseFloat(document.getElementById('input-monthly-fee').value);
   if (!val || val <= 0) { showToast('הכנס סכום תקין'); return; }
   try {
-    await updateDoc(doc(db, 'buildings', buildingId), { monthlyFee: val });
+    const previousVal = buildingData?.monthlyFee || 0;
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'buildings', buildingId), { monthlyFee: val });
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      type: 'fee', action: 'fee_adjusted', amount: val, previousAmount: previousVal,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
     buildingData.monthlyFee = val;
     document.getElementById('monthly-fee-note').textContent = `נשמר: ${fmtCurrency(val)} לחודש`;
     showToast('דמי הועד עודכנו!');
@@ -3229,6 +3237,18 @@ window.openLog = async () => {
         + '<div>'
         + '<div style="font-weight:700;">⚖️ עדכון יתרת איזון מול הבנק</div>'
         + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+'</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
+        + '</div></div>';
+    }
+
+    if (type === 'fee') {
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;">💰 שינוי דמי ועד ברירת מחדל</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+' לחודש</div>'
         + byLine
         + '</div>'
         + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
