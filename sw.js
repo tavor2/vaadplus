@@ -53,7 +53,7 @@ self.addEventListener('fetch', e => {
         }
         return response;
       }).catch(() => {
-        // Offline fallback — return main page
+        // Offline fallback — return main page1
         if (e.request.mode === 'navigate') {
           return caches.match('/vaadplus/index.html');
         }
