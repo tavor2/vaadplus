@@ -789,6 +789,7 @@
         <option value="tenant">דייר</option>
         <option value="admin">ועד בית / מנהל</option>
       </select>
+      <div id="r-role-note" style="font-size:11px;color:var(--gray-400);margin-top:4px;"></div>
     </div>
     <div class="form-group">
       <label class="form-label">אופן תשלום</label>
@@ -1498,7 +1499,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.7.3'; // הרחבת היומן: הוצאות, הפקדות מזומן ועדכוני יתרת איזון נכנסים ליומן הפעולות, כתיבה אטומית לכולם
+const APP_VERSION = '1.7.4'; // הגבלת 2 דיירים כועד/מנהל לכל היותר בבניין - צמצום משתמשים עם גישת כתיבה ל-Firebase
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 90;
@@ -2082,6 +2083,21 @@ window.setResView = (view, btn) => {
   document.getElementById('residents-cards-view').style.display = view === 'cards' ? '' : 'none';
 };
 
+function updateRoleNote(excludeId) {
+  const otherAdminsCount = allResidents.filter(r => r.role === 'admin' && r.id !== excludeId).length;
+  const note = document.getElementById('r-role-note');
+  const adminOption = document.querySelector('#r-role option[value="admin"]');
+  if (otherAdminsCount >= 2) {
+    note.textContent = `⚠️ הגעת למקסימום של 2 ועד/מנהל בבניין הזה (${otherAdminsCount}/2)`;
+    note.style.color = 'var(--red)';
+    if (adminOption) adminOption.disabled = true;
+  } else {
+    note.textContent = `ועד/מנהל בבניין: ${otherAdminsCount}/2`;
+    note.style.color = 'var(--gray-400)';
+    if (adminOption) adminOption.disabled = false;
+  }
+}
+
 window.openAddResident = () => {
   document.getElementById('btn-delete-resident').style.display = 'none';
   document.getElementById('modal-resident-title').textContent = 'הוסף דייר';
@@ -2094,6 +2110,7 @@ window.openAddResident = () => {
   document.getElementById('r-role').value = 'tenant';
   document.getElementById('r-payment-method').value = 'transfer';
   document.getElementById('r-fee').value = '';
+  updateRoleNote('');
   openModal('modal-resident');
 };
 
@@ -2113,6 +2130,7 @@ window.editResident = (id) => {
   document.getElementById('r-role').value = r.role || 'tenant';
   document.getElementById('r-payment-method').value = r.paymentMethod || 'transfer';
   document.getElementById('r-fee').value = r.customFee || aptFee(r.apt, r);
+  updateRoleNote(id);
   openModal('modal-resident');
 };
 
@@ -2307,6 +2325,14 @@ window.saveResident = async () => {
   const defaultFee = buildingData?.monthlyFee || 200;
   const email = document.getElementById('r-email').value.trim();
   const role = document.getElementById('r-role').value;
+
+  if (role === 'admin') {
+    const otherAdminsCount = allResidents.filter(r => r.role === 'admin' && r.id !== id).length;
+    if (otherAdminsCount >= 2) {
+      showToast('⚠️ לא ניתן להגדיר יותר מ-2 דיירים כועד/מנהל בבניין אחד');
+      return;
+    }
+  }
 
   const data = {
     apt: parseInt(apt),
