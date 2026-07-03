@@ -715,6 +715,7 @@
         <div id="balance-content"></div>
       </div>
     </div>
+    <button class="fab" id="fab-expense" onclick="openAddExpense()">+</button>
   </div>
 
   <!-- ISSUES SCREEN -->
@@ -986,16 +987,13 @@
         <div id="premium-trial-badge" style="font-size:12px;color:var(--green);font-weight:600;"></div>
       </div>
     </div>
-    <div id="premium-launch-msg" style="display:none;background:var(--blue-light);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.7;text-align:right;color:var(--gray-800);">
-      כמה כלים מתקדמים (📋 לוג, 📄 דוח PDF, 📊 אקסל) פתוחים לכם בחינם לתקופת ניסיון. נשמח לשמוע מה דעתכם 😊
-    </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות 👑</button>
-      <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי 👑</button>
-      <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי 👑</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
+      <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
         <label class="form-label">💰 דמי ועד חודשיים (ברירת מחדל לכל הדירות)</label>
@@ -1512,7 +1510,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.8.0'; // 30 בניינים ראשונים VIP לצמיתות + טריאל 14 יום + נעילת אפליקציה מלאה אחריו למי שלא VIP/מנוי
+const APP_VERSION = '1.8.2'; // הסרת נעילת פרימיום פרטנית מלוג/PDF/אקסל - הגישה נשלטת כולה ברמת האפליקציה (VIP/טריאל/מנוי)
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const TRIAL_DAYS = 14;
@@ -1548,13 +1546,6 @@ function isPlayBillingAvailable() {
   // via the Play Store (verified by assetlinks.json). Regular browser
   // visits (e.g. tavor2.github.io directly) will not have this API.
   return 'getDigitalGoodsService' in window;
-}
-
-function premiumGate(featureName) {
-  if (isPremium()) return true;
-  showToast(`🔒 ${featureName} זמין בגרסת פרימיום`);
-  setTimeout(() => openPremiumModal(), 500);
-  return false;
 }
 
 window.openPremiumModal = function openPremiumModal() {
@@ -2592,6 +2583,7 @@ window.setPayView = (view, btn) => {
   document.getElementById('pay-view-list').style.display = view === 'list' ? '' : 'none';
   document.getElementById('pay-view-expenses').style.display = view === 'expenses' ? '' : 'none';
   document.getElementById('pay-view-balance').style.display = view === 'balance' ? '' : 'none';
+  document.getElementById('fab-expense').classList.toggle('visible', view === 'expenses' && isAdmin);
   if (view === 'expenses') loadExpenses();
   if (view === 'balance') loadBalance();
 };
@@ -2662,25 +2654,17 @@ window.openAdminFinance = () => {
   document.getElementById('monthly-fee-note').textContent = fee ? `נוכחי: ${fmtCurrency(fee)} לחודש` : 'לא הוגדר עדיין';
   document.getElementById('input-opening-balance').value = buildingData?.openingBalance || '';
 
-  // הודעת השקה + badge
   const isSuperAdmin = auth.currentUser?.email === SUPER_ADMIN_EMAIL;
-  const trialActive = isPremium();
-  const daysLeft = daysLeftInTrial();
-
-  const launchMsg = document.getElementById('premium-launch-msg');
+  const hasActiveSubscription = buildingData?.premiumUntil &&
+    (buildingData.premiumUntil.toDate ? buildingData.premiumUntil.toDate() : new Date(buildingData.premiumUntil)) > new Date();
   const badge = document.getElementById('premium-trial-badge');
 
-  if (isSuperAdmin) {
-    launchMsg.style.display = 'none';
+  if (isSuperAdmin || buildingData?.vipLifetime || hasActiveSubscription) {
     badge.textContent = '';
-  } else if (trialActive) {
-    launchMsg.style.display = 'block';
-    badge.textContent = `כלים מתקדמים פתוחים — נותרו ${daysLeft} ימים`;
-    badge.style.color = 'var(--green)';
   } else {
-    launchMsg.style.display = 'none';
-    badge.textContent = 'תקופת הניסיון של הכלים המתקדמים הסתיימה';
-    badge.style.color = 'var(--red)';
+    const daysLeft = daysLeftInTrial();
+    badge.textContent = `נותרו ${daysLeft} ימים לתקופת הניסיון`;
+    badge.style.color = daysLeft <= 3 ? 'var(--red)' : 'var(--green)';
   }
 
   document.getElementById('modal-admin-finance').classList.add('open');
@@ -3048,7 +3032,6 @@ function renderBalance() {
 
 // ===== EXPORT EXCEL =====
 window.exportExcel = async () => {
-  if (!premiumGate('ייצוא לאקסל')) return;
   try {
     showToast('📊 מכין קובץ אקסל...');
 
@@ -3220,7 +3203,6 @@ window.exportExcel = async () => {
 
 // ===== PAYMENT LOG & PDF REPORT =====
 window.openLog = async () => {
-  if (!premiumGate('יומן פעולות')) return;
   const container = document.getElementById('log-content');
   container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
   openModal('modal-log');
@@ -3315,7 +3297,6 @@ window.openLog = async () => {
 };
 
 window.generatePDF = async () => {
-  if (!premiumGate('הפקת דוח PDF')) return;
   try {
     showToast('📄 מכין דוח...');
     // Load html2pdf library
