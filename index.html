@@ -1061,6 +1061,18 @@
         <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();exportData()">⬇️ גיבוי</button>
         <button class="btn-icon" style="flex:1;" onclick="closeAdminFinance();document.getElementById('import-file-input').click()">⬆️ שחזור</button>
       </div>
+      <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
+      <div id="ownership-transfer-section" style="display:none;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">👑 בעלות על הבניין</label>
+          <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px;">
+            המנהל הראשי הרשום כרגע: <span id="current-owner-name" style="font-weight:600;color:var(--gray-800);"></span>.
+            אם המנהל הראשי כבר לא זמין או לא פעיל, תוכל/י לקחת בעלות מלאה על הבניין. פעולה זו תסיר את גישת המנהל הקודם לצמיתות.
+          </div>
+          <button class="btn-secondary" style="color:#d33;border-color:#d33;width:100%;" onclick="closeAdminFinance();transferOwnershipToMe();">👑 קבל/י בעלות מלאה על הבניין</button>
+        </div>
+        <hr style="border:none;border-top:1px solid #eee;margin:12px 0 4px;"/>
+      </div>
       <button class="btn-secondary" style="color:#d33;border-color:#d33;" onclick="closeAdminFinance();openResetData()">🗑️ איפוס נתונים</button>
       <button class="btn-secondary" onclick="closeAdminFinance()">סגור</button>
     </div>
@@ -1554,7 +1566,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.1.1'; // הגבלת חברי ועד ל-2 בסה"כ (מנהל + דייר אחד נוסף), במקום 3
+const APP_VERSION = '2.2.0'; // פיצ'ר העברת בעלות: דייר-ועד יכול לקבל בעלות מלאה אם המנהל הראשי לא זמין יותר
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -2784,11 +2796,62 @@ window.openAdminFinance = () => {
   document.getElementById('input-monthly-fee').value = fee;
   document.getElementById('monthly-fee-note').textContent = fee ? `נוכחי: ${fmtCurrency(fee)} לחודש` : 'לא הוגדר עדיין';
   document.getElementById('input-opening-balance').value = buildingData?.openingBalance || '';
+
+  const ownershipSection = document.getElementById('ownership-transfer-section');
+  const isCurrentOwner = auth.currentUser?.email === buildingData?.adminEmail;
+  const isSuperAdmin = auth.currentUser?.email === SUPER_ADMIN_EMAIL;
+  if (isAdmin && !isCurrentOwner && !isSuperAdmin) {
+    ownershipSection.style.display = 'block';
+    document.getElementById('current-owner-name').textContent = buildingData?.adminName || buildingData?.adminEmail || 'לא ידוע';
+  } else {
+    ownershipSection.style.display = 'none';
+  }
+
   document.getElementById('modal-admin-finance').classList.add('open');
 };
 
 window.closeAdminFinance = () => {
   document.getElementById('modal-admin-finance').classList.remove('open');
+};
+
+window.transferOwnershipToMe = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  if (auth.currentUser?.email === buildingData?.adminEmail) { showToast('אתה כבר המנהל הראשי של הבניין'); return; }
+
+  const previousAdminEmail = buildingData?.adminEmail || '';
+  const previousAdminName = buildingData?.adminName || previousAdminEmail;
+  const newAdminName = currentUser.name || auth.currentUser.email;
+
+  const ok = await customConfirm(
+    `להעביר את הבעלות על הבניין אליך?\n\n` +
+    `המנהל הרשום כרגע (${previousAdminName}) יאבד גישה לבניין לצמיתות, ואתה תהיה המנהל הראשי החדש.\n\n` +
+    `לא ניתן לבטל פעולה זו בקלות. להמשיך?`
+  );
+  if (!ok) return;
+
+  try {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'buildings', buildingId), {
+      adminEmail: auth.currentUser.email,
+      adminUid: auth.currentUser.uid,
+      adminName: newAdminName
+    });
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      type: 'ownership', action: 'ownership_transferred',
+      previousAdminEmail, previousAdminName,
+      newAdminEmail: auth.currentUser.email, newAdminName,
+      at: serverTimestamp(), by: currentUser.uid, byName: newAdminName
+    });
+    await batch.commit();
+
+    buildingData.adminEmail = auth.currentUser.email;
+    buildingData.adminUid = auth.currentUser.uid;
+    buildingData.adminName = newAdminName;
+
+    showToast('👑 הבעלות על הבניין הועברה אליך בהצלחה');
+    logAnalyticsEvent('ownership_transferred');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
 window.saveMonthlyFee = async () => {
@@ -3397,6 +3460,18 @@ window.openLog = async () => {
         + byLine
         + '</div>'
         + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
+        + '</div></div>';
+    }
+
+    if (type === 'ownership') {
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;border:1px solid #d33;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;">👑 העברת בעלות על הבניין</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.previousAdminName||p.previousAdminEmail||'-')+' ← '+(p.newAdminName||p.newAdminEmail||'-')+'</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:#d33;font-weight:600;white-space:nowrap;">⚠️ הועבר</div>'
         + '</div></div>';
     }
 
