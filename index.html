@@ -493,15 +493,14 @@
   </div>
 </div>
 
-<!-- LOCKOUT SCREEN (trial ended, not VIP, not premium) -->
-<div id="lockout-screen" style="display:none;min-height:100vh;background:linear-gradient(160deg, var(--blue) 0%, #0f3a8a 100%);flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;">
-  <div style="font-size:52px;margin-bottom:16px;">🔒</div>
-  <div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:10px;">תקופת הניסיון הסתיימה</div>
+<!-- BETA WAITLIST SCREEN (50-building cap reached) -->
+<div id="waitlist-screen" style="display:none;min-height:100vh;background:linear-gradient(160deg, var(--blue) 0%, #0f3a8a 100%);flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;">
+  <div style="font-size:52px;margin-bottom:16px;">⏳</div>
+  <div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:10px;">גרסת הבטא הסגורה מלאה</div>
   <div style="color:rgba(255,255,255,0.75);font-size:14px;line-height:1.7;margin-bottom:28px;max-width:320px;">
-    כדי להמשיך להשתמש בועד בית פלוס — ניהול דיירים, תשלומים, תחזוקה והודעות — יש לרכוש מנוי.
+    גרסת הבטא הסגורה הגיעה למכסה המקסימלית. תוכלו לנסות במועד מאוחר יותר.
   </div>
   <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px;">
-    <button class="btn-primary" style="background:#fff;color:var(--blue);font-size:16px;padding:16px;" onclick="openPremiumModal()">🔓 שדרג עכשיו</button>
     <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.3);" onclick="logout()">התנתק</button>
   </div>
 </div>
@@ -982,10 +981,7 @@
   <div class="modal">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <div style="font-size:24px;">⚙️</div>
-      <div>
-        <div class="modal-title" style="margin-bottom:2px;">ניהול כספים</div>
-        <div id="premium-trial-badge" style="font-size:12px;color:var(--green);font-weight:600;"></div>
-      </div>
+      <div class="modal-title" style="margin-bottom:0;">ניהול כספים</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
@@ -1510,31 +1506,18 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '1.8.2'; // הסרת נעילת פרימיום פרטנית מלוג/PDF/אקסל - הגישה נשלטת כולה ברמת האפליקציה (VIP/טריאל/מנוי)
+const APP_VERSION = '2.0.0'; // מודל עסקי חדש: בטא סגורה חינמית לחלוטין, מוגבלת ל-50 בניינים, בלי Play Billing בשלב הזה
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
-const TRIAL_DAYS = 14;
-const VIP_LIMIT = 30; // first N buildings ever created get permanent free premium access
+const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Stage 2 (future) will remove this and add Google Play Billing.
 
+// Stage 1: the app is fully free for everyone who got in during the beta —
+// no trial, no VIP tiers, no paywall. This function is kept as the single
+// place to reintroduce a subscription gate in Stage 2 (see completeSetup()
+// premiumUntil is still written by Cloud Function purchases if that flow
+// is ever re-enabled, so this function already knows how to honor it).
 function isPremium() {
-  if (auth.currentUser?.email === SUPER_ADMIN_EMAIL) return true;
-  if (buildingData?.vipLifetime) return true;
-  if (buildingData?.premiumUntil) {
-    const until = buildingData.premiumUntil.toDate ? buildingData.premiumUntil.toDate() : new Date(buildingData.premiumUntil);
-    if (until > new Date()) return true;
-  }
-  if (!buildingData?.createdAt) return true;
-  const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
-  const daysPassed = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
-  return daysPassed <= TRIAL_DAYS;
-}
-
-function daysLeftInTrial() {
-  if (buildingData?.vipLifetime) return Infinity;
-  if (!buildingData?.createdAt) return TRIAL_DAYS;
-  const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
-  const daysPassed = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
-  return Math.max(0, Math.round(TRIAL_DAYS - daysPassed));
+  return true;
 }
 
 // ===== GOOGLE PLAY BILLING =====
@@ -1606,12 +1589,6 @@ window.purchasePremium = async () => {
       showToast('🎉 הפרימיום הופעל בהצלחה!');
       closeModal('modal-premium-upgrade');
       logAnalyticsEvent('purchase', { currency: 'ILS', value: 119, items: [{ item_id: PLAY_SUBSCRIPTION_ID, item_name: 'מנוי פרימיום שנתי' }] });
-      if (document.getElementById('lockout-screen').style.display !== 'none') {
-        document.getElementById('app').style.display = 'flex';
-        document.getElementById('app').style.flexDirection = 'column';
-        initUI();
-        loadAll();
-      }
     } else {
       statusEl.textContent = 'האימות נכשל, נסה/י שוב או פני/ה לתמיכה';
     }
@@ -1880,7 +1857,6 @@ window.completeSetup = async () => {
   const addressRef = doc(db, 'buildingAddresses', addressKey);
   const newBuildingRef = doc(collection(db, 'buildings'));
   const counterRef = doc(db, 'meta', 'stats');
-  let vipLifetime = false;
 
   try {
     await runTransaction(db, async (tx) => {
@@ -1890,8 +1866,10 @@ window.completeSetup = async () => {
       }
       const counterSnap = await tx.get(counterRef);
       const currentCount = counterSnap.exists() ? (counterSnap.data().buildingCount || 0) : 0;
+      if (currentCount >= BETA_BUILDING_LIMIT) {
+        throw new Error('__BETA_FULL__');
+      }
       const newCount = currentCount + 1;
-      vipLifetime = newCount <= VIP_LIMIT;
 
       tx.set(newBuildingRef, {
         address,
@@ -1899,7 +1877,6 @@ window.completeSetup = async () => {
         adminUid: user.uid,
         adminName: name,
         monthlyFee: feeVal,
-        vipLifetime,
         createdAt: serverTimestamp()
       });
       tx.set(addressRef, {
@@ -1910,7 +1887,7 @@ window.completeSetup = async () => {
     });
 
     buildingId = newBuildingRef.id;
-    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal, vipLifetime };
+    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal };
     currentUser = { uid: user.uid, name, email: user.email, role: 'admin' };
     isAdmin = true;
 
@@ -1922,6 +1899,12 @@ window.completeSetup = async () => {
     loadAll();
     logAnalyticsEvent('building_created');
   } catch(e) {
+    if (e.message === '__BETA_FULL__') {
+      document.getElementById('setup-screen').style.display = 'none';
+      document.getElementById('waitlist-screen').style.display = 'flex';
+      logAnalyticsEvent('beta_waitlist_shown');
+      return;
+    }
     showToast('שגיאה: ' + e.message);
   }
 };
@@ -2006,12 +1989,6 @@ window.addEventListener('popstate', (e) => {
 
 // ===== LOAD ALL =====
 function loadAll() {
-  if (!isPremium()) {
-    document.getElementById('app').style.display = 'none';
-    document.getElementById('lockout-screen').style.display = 'flex';
-    return;
-  }
-  document.getElementById('lockout-screen').style.display = 'none';
   navigate('home');
   loadResidents();
   loadIssues();
@@ -2405,6 +2382,17 @@ window.saveResident = async () => {
 };
 window.loadPayments = () => {
   const ym = document.getElementById('payment-month-select').value;
+
+  if (!isAdmin) {
+    // Residents are read-only — a one-time read per month view is enough,
+    // no need to hold open a live listener just to look at payment status.
+    getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','==',ym))).then(snap => {
+      allPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderPayments(ym);
+    });
+    return;
+  }
+
   const listenerKey = buildingId + '|' + ym;
   if (unsubPayments && currentPaymentsYm === listenerKey) {
     // Already subscribed to this exact building+month — re-render with what we have, no new listener needed.
@@ -2653,20 +2641,6 @@ window.openAdminFinance = () => {
   document.getElementById('input-monthly-fee').value = fee;
   document.getElementById('monthly-fee-note').textContent = fee ? `נוכחי: ${fmtCurrency(fee)} לחודש` : 'לא הוגדר עדיין';
   document.getElementById('input-opening-balance').value = buildingData?.openingBalance || '';
-
-  const isSuperAdmin = auth.currentUser?.email === SUPER_ADMIN_EMAIL;
-  const hasActiveSubscription = buildingData?.premiumUntil &&
-    (buildingData.premiumUntil.toDate ? buildingData.premiumUntil.toDate() : new Date(buildingData.premiumUntil)) > new Date();
-  const badge = document.getElementById('premium-trial-badge');
-
-  if (isSuperAdmin || buildingData?.vipLifetime || hasActiveSubscription) {
-    badge.textContent = '';
-  } else {
-    const daysLeft = daysLeftInTrial();
-    badge.textContent = `נותרו ${daysLeft} ימים לתקופת הניסיון`;
-    badge.style.color = daysLeft <= 3 ? 'var(--red)' : 'var(--green)';
-  }
-
   document.getElementById('modal-admin-finance').classList.add('open');
 };
 
@@ -3049,15 +3023,24 @@ window.exportExcel = async () => {
     const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
     const residents = resSnap.docs.map(d => ({id:d.id,...d.data()})).sort((a,b)=>(parseInt(a.apt)||0)-(parseInt(b.apt)||0));
 
-    const paySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
+    const paySnap = await getDocs(query(
+      collection(db, 'buildings', buildingId, 'payments'),
+      where('month', '>=', `${year}-01`),
+      where('month', '<=', `${year}-12`)
+    ));
     const paymentMap = {};
     paySnap.docs.forEach(d => {
       const p = d.data();
-      if (p.month?.startsWith(String(year))) paymentMap[`${p.apt}_${p.month}`] = p;
+      paymentMap[`${p.apt}_${p.month}`] = p;
     });
 
-    const expSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), orderBy('date','asc')));
-    const expenses = expSnap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.date?.startsWith(String(year)));
+    const expSnap = await getDocs(query(
+      collection(db, 'buildings', buildingId, 'expenses'),
+      where('date', '>=', `${year}-01-01`),
+      where('date', '<=', `${year}-12-31`),
+      orderBy('date','asc')
+    ));
+    const expenses = expSnap.docs.map(d=>({id:d.id,...d.data()}));
 
     const wb = XLSX.utils.book_new();
 
@@ -3323,21 +3306,28 @@ async function createPDFReport() {
   const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
   const residents = resSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
   
-  const paySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments')));
+  const paySnap = await getDocs(query(
+    collection(db, 'buildings', buildingId, 'payments'),
+    where('month', '>=', `${year}-01`),
+    where('month', '<=', `${year}-12`)
+  ));
   const paymentMap = {};
   paySnap.docs.forEach(d => {
     const p = d.data();
-    if (p.month && p.month.startsWith(String(year))) {
-      const key = p.apt + '_' + p.month;
-      paymentMap[key] = p;
-    }
+    const key = p.apt + '_' + p.month;
+    paymentMap[key] = p;
   });
 
   const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
   
   // Load expenses
-  const expSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), orderBy('date','asc')));
-  const expenses = expSnap.docs.map(d => ({id: d.id, ...d.data()})).filter(e => e.date && e.date.startsWith(String(year)));
+  const expSnap = await getDocs(query(
+    collection(db, 'buildings', buildingId, 'expenses'),
+    where('date', '>=', `${year}-01-01`),
+    where('date', '<=', `${year}-12-31`),
+    orderBy('date','asc')
+  ));
+  const expenses = expSnap.docs.map(d => ({id: d.id, ...d.data()}));
   let totalExpenses = 0;
   const expenseRows = expenses.map(e => {
     totalExpenses += (e.amount || 0);
@@ -3722,11 +3712,19 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
 
 // ===== ISSUES =====
 function loadIssues() {
-  onSnapshot(query(collection(db, 'buildings', buildingId, 'issues'), orderBy('createdAt','desc')), (snap) => {
-    allIssues = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderIssues();
-    updateHomeStats();
-  });
+  if (isAdmin) {
+    onSnapshot(query(collection(db, 'buildings', buildingId, 'issues'), orderBy('createdAt','desc')), (snap) => {
+      allIssues = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderIssues();
+      updateHomeStats();
+    });
+  } else {
+    getDocs(query(collection(db, 'buildings', buildingId, 'issues'), orderBy('createdAt','desc'))).then(snap => {
+      allIssues = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderIssues();
+      updateHomeStats();
+    });
+  }
 }
 
 function renderIssues() {
@@ -3833,11 +3831,19 @@ window.deleteIssue = async (id) => {
 
 // ===== ANNOUNCEMENTS =====
 function loadAnnouncements() {
-  onSnapshot(query(collection(db, 'buildings', buildingId, 'announcements'), orderBy('createdAt','desc')), (snap) => {
-    allAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderAnnouncements();
-    renderHomeAnnouncements();
-  });
+  if (isAdmin) {
+    onSnapshot(query(collection(db, 'buildings', buildingId, 'announcements'), orderBy('createdAt','desc')), (snap) => {
+      allAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAnnouncements();
+      renderHomeAnnouncements();
+    });
+  } else {
+    getDocs(query(collection(db, 'buildings', buildingId, 'announcements'), orderBy('createdAt','desc'))).then(snap => {
+      allAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAnnouncements();
+      renderHomeAnnouncements();
+    });
+  }
 }
 
 function renderAnnouncements() {
