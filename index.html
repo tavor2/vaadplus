@@ -429,8 +429,56 @@
     <button class="btn-primary" style="background:rgba(255,255,255,0.15);color:#fff;border:2px solid rgba(255,255,255,0.4);font-size:16px;padding:16px;" onclick="enterSupervisorMode()">
       🔍 מצב פיקוח — כל הבניינים
     </button>
+    <button class="btn-primary" style="background:rgba(255,255,255,0.15);color:#fff;border:2px solid rgba(255,255,255,0.4);font-size:16px;padding:16px;" onclick="openSystemSettings()">
+      ⚙️ הגדרות מערכת
+    </button>
     <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.6);border:none;margin-top:8px;" onclick="logout()">התנתק</button>
     <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:16px;">v<span id="app-version"></span></div>
+  </div>
+</div>
+
+<!-- SYSTEM SETTINGS MODAL -->
+<div class="modal-overlay" id="modal-system-settings">
+  <div class="modal">
+    <div class="modal-title" style="color:var(--blue);">⚙️ הגדרות מערכת</div>
+
+    <div class="form-group">
+      <label class="form-label">מספר בניינים מקסימלי בבטא</label>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">בניינים קיימים כרגע: <span id="settings-current-count">-</span></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="form-input" id="input-beta-limit" type="number" min="1" style="flex:1;"/>
+        <button class="btn-success" onclick="saveBetaLimit()">שמור</button>
+      </div>
+      <div id="beta-limit-note" style="font-size:12px;margin-top:4px;"></div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
+
+    <div class="form-group">
+      <label class="form-label">שלב ב׳ — דרישת תשלום לבניינים חדשים מעל המכסה</label>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px;line-height:1.6;">
+        כשמופעל: בניין חדש שנרשם מעבר למכסה שלמעלה עדיין יוכל להירשם, אבל כפתור "ניהול" שלו יבקש ממנו לרכוש מנוי לפני שימוש. כשכבוי (ברירת מחדל): בניין מעבר למכסה נחסם לגמרי ומועבר לרשימת המתנה.
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" id="input-freemium-toggle" style="width:22px;height:22px;cursor:pointer;" onchange="saveFreemiumToggle()"/>
+        <label for="input-freemium-toggle" style="cursor:pointer;font-weight:600;">הפעל דרישת תשלום (שלב ב׳)</label>
+      </div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">מחיר מנוי שנתי להצגה באפליקציה (₪)</label>
+      <div style="font-size:12px;color:var(--red);margin-bottom:6px;line-height:1.6;">
+        ⚠️ זהו רק המחיר שמוצג למשתמש בתוך האפליקציה. הסכום שנגבה בפועל נקבע ב-Google Play Console — יש לעדכן שם גם, אחרת המחירים לא יתאימו.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="form-input" id="input-sub-price" type="number" min="0" style="flex:1;"/>
+        <button class="btn-success" onclick="saveSubscriptionPrice()">שמור</button>
+      </div>
+    </div>
+
+    <button class="btn-secondary" style="width:100%;margin-top:16px;" onclick="closeModal('modal-system-settings')">סגור</button>
   </div>
 </div>
 
@@ -1506,10 +1554,10 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.0.0'; // מודל עסקי חדש: בטא סגורה חינמית לחלוטין, מוגבלת ל-50 בניינים, בלי Play Billing בשלב הזה
+const APP_VERSION = '2.1.1'; // הגבלת חברי ועד ל-2 בסה"כ (מנהל + דייר אחד נוסף), במקום 3
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
-const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Stage 2 (future) will remove this and add Google Play Billing.
+const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 
 // Stage 1: the app is fully free for everyone who got in during the beta —
 // no trial, no VIP tiers, no paywall. This function is kept as the single
@@ -1518,6 +1566,15 @@ const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Stage 2 (future) wi
 // is ever re-enabled, so this function already knows how to honor it).
 function isPremium() {
   return true;
+}
+
+// Used only for buildings created past the beta limit while Stage 2
+// freemium mode is on (buildingData.requiresPayment). Everyone else is
+// unaffected by this — see isPremium() above for the general app-wide state.
+function hasActiveSubscription() {
+  if (!buildingData?.premiumUntil) return false;
+  const until = buildingData.premiumUntil.toDate ? buildingData.premiumUntil.toDate() : new Date(buildingData.premiumUntil);
+  return until > new Date();
 }
 
 // ===== GOOGLE PLAY BILLING =====
@@ -1531,7 +1588,7 @@ function isPlayBillingAvailable() {
   return 'getDigitalGoodsService' in window;
 }
 
-window.openPremiumModal = function openPremiumModal() {
+window.openPremiumModal = async function openPremiumModal() {
   const playSection = document.getElementById('premium-play-purchase');
   const emailSection = document.getElementById('premium-email-fallback');
   const statusEl = document.getElementById('premium-purchase-status');
@@ -1543,6 +1600,11 @@ window.openPremiumModal = function openPremiumModal() {
     playSection.style.display = 'none';
     emailSection.style.display = 'block';
   }
+  try {
+    const settingsSnap = await getDoc(doc(db, 'meta', 'settings'));
+    const price = settingsSnap.exists() ? (settingsSnap.data().subscriptionPriceILS ?? 119) : 119;
+    document.getElementById('premium-price-display').textContent = `₪${price} / שנה`;
+  } catch(e) { /* fall back to whatever was already shown */ }
   openModal('modal-premium-upgrade');
 }
 
@@ -1628,6 +1690,68 @@ window.enterAsAdmin = async () => {
   document.getElementById('app').style.flexDirection = 'column';
   initUI();
   loadAll();
+};
+
+window.openSystemSettings = async () => {
+  openModal('modal-system-settings');
+  document.getElementById('beta-limit-note').textContent = '';
+  try {
+    const [statsSnap, settingsSnap] = await Promise.all([
+      getDoc(doc(db, 'meta', 'stats')),
+      getDoc(doc(db, 'meta', 'settings'))
+    ]);
+    const currentCount = statsSnap.exists() ? (statsSnap.data().buildingCount || 0) : 0;
+    const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+    const limit = settings.betaBuildingLimit ?? BETA_BUILDING_LIMIT;
+    const freemiumEnabled = settings.freemiumEnabled ?? false;
+    const price = settings.subscriptionPriceILS ?? 119;
+
+    document.getElementById('settings-current-count').textContent = currentCount;
+    document.getElementById('input-beta-limit').value = limit;
+    document.getElementById('input-freemium-toggle').checked = freemiumEnabled;
+    document.getElementById('input-sub-price').value = price;
+  } catch(e) {
+    showToast('שגיאה בטעינת ההגדרות: ' + e.message);
+  }
+};
+
+window.saveBetaLimit = async () => {
+  const newLimit = parseInt(document.getElementById('input-beta-limit').value);
+  const note = document.getElementById('beta-limit-note');
+  if (!newLimit || newLimit < 1) { showToast('הכנס מספר תקין'); return; }
+  try {
+    const statsSnap = await getDoc(doc(db, 'meta', 'stats'));
+    const currentCount = statsSnap.exists() ? (statsSnap.data().buildingCount || 0) : 0;
+    if (newLimit < currentCount) {
+      note.textContent = `⚠️ לא ניתן לקבוע מספר נמוך מכמות הבניינים הקיימת כרגע (${currentCount})`;
+      note.style.color = 'var(--red)';
+      return;
+    }
+    await setDoc(doc(db, 'meta', 'settings'), { betaBuildingLimit: newLimit }, { merge: true });
+    note.textContent = `✅ נשמר: ${newLimit} בניינים`;
+    note.style.color = 'var(--green)';
+    showToast('✅ מגבלת הבניינים עודכנה');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.saveFreemiumToggle = async () => {
+  const enabled = document.getElementById('input-freemium-toggle').checked;
+  try {
+    await setDoc(doc(db, 'meta', 'settings'), { freemiumEnabled: enabled }, { merge: true });
+    showToast(enabled ? '✅ שלב ב׳ הופעל — בניינים חדשים מעל המכסה יידרשו מנוי' : '✅ שלב ב׳ כבוי — הכל חוזר לחינמי');
+  } catch(e) {
+    showToast('שגיאה: ' + e.message);
+    document.getElementById('input-freemium-toggle').checked = !enabled; // revert UI on failure
+  }
+};
+
+window.saveSubscriptionPrice = async () => {
+  const price = parseFloat(document.getElementById('input-sub-price').value);
+  if (!price || price <= 0) { showToast('הכנס מחיר תקין'); return; }
+  try {
+    await setDoc(doc(db, 'meta', 'settings'), { subscriptionPriceILS: price }, { merge: true });
+    showToast('✅ המחיר עודכן — זכור לעדכן גם ב-Google Play Console');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
 window.enterSupervisorMode = async () => {
@@ -1857,6 +1981,8 @@ window.completeSetup = async () => {
   const addressRef = doc(db, 'buildingAddresses', addressKey);
   const newBuildingRef = doc(collection(db, 'buildings'));
   const counterRef = doc(db, 'meta', 'stats');
+  const settingsRef = doc(db, 'meta', 'settings');
+  let requiresPayment = false;
 
   try {
     await runTransaction(db, async (tx) => {
@@ -1865,9 +1991,17 @@ window.completeSetup = async () => {
         throw new Error('כתובת זו כבר רשומה במערכת על ידי ועד אחר. אם זה הבניין שלך, פנה לוועד הקיים.');
       }
       const counterSnap = await tx.get(counterRef);
+      const settingsSnap = await tx.get(settingsRef);
       const currentCount = counterSnap.exists() ? (counterSnap.data().buildingCount || 0) : 0;
-      if (currentCount >= BETA_BUILDING_LIMIT) {
-        throw new Error('__BETA_FULL__');
+      const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+      const effectiveLimit = settings.betaBuildingLimit ?? BETA_BUILDING_LIMIT;
+      const freemiumEnabled = settings.freemiumEnabled ?? false;
+
+      if (currentCount >= effectiveLimit) {
+        if (!freemiumEnabled) {
+          throw new Error('__BETA_FULL__');
+        }
+        requiresPayment = true; // Stage 2: allowed in, but "ניהול" will require a subscription
       }
       const newCount = currentCount + 1;
 
@@ -1877,6 +2011,7 @@ window.completeSetup = async () => {
         adminUid: user.uid,
         adminName: name,
         monthlyFee: feeVal,
+        requiresPayment,
         createdAt: serverTimestamp()
       });
       tx.set(addressRef, {
@@ -1887,7 +2022,7 @@ window.completeSetup = async () => {
     });
 
     buildingId = newBuildingRef.id;
-    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal };
+    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal, requiresPayment };
     currentUser = { uid: user.uid, name, email: user.email, role: 'admin' };
     isAdmin = true;
 
@@ -1898,6 +2033,9 @@ window.completeSetup = async () => {
     initUI();
     loadAll();
     logAnalyticsEvent('building_created');
+    if (requiresPayment) {
+      setTimeout(() => showToast('🔒 בניין זה נרשם מעבר למכסה החינמית — ניהול הבניין ידרוש רכישת מנוי'), 800);
+    }
   } catch(e) {
     if (e.message === '__BETA_FULL__') {
       document.getElementById('setup-screen').style.display = 'none';
@@ -2092,12 +2230,12 @@ function updateRoleNote(excludeId) {
   const otherAdminsCount = allResidents.filter(r => r.role === 'admin' && r.id !== excludeId).length;
   const note = document.getElementById('r-role-note');
   const adminOption = document.querySelector('#r-role option[value="admin"]');
-  if (otherAdminsCount >= 2) {
-    note.textContent = `⚠️ הגעת למקסימום של 2 ועד/מנהל בבניין הזה (${otherAdminsCount}/2)`;
+  if (otherAdminsCount >= 1) {
+    note.textContent = `⚠️ הגעת למקסימום של דייר אחד כועד נוסף בבניין הזה (${otherAdminsCount}/1)`;
     note.style.color = 'var(--red)';
     if (adminOption) adminOption.disabled = true;
   } else {
-    note.textContent = `ועד/מנהל בבניין: ${otherAdminsCount}/2`;
+    note.textContent = `דייר נוסף כועד בבניין: ${otherAdminsCount}/1`;
     note.style.color = 'var(--gray-400)';
     if (adminOption) adminOption.disabled = false;
   }
@@ -2333,8 +2471,8 @@ window.saveResident = async () => {
 
   if (role === 'admin') {
     const otherAdminsCount = allResidents.filter(r => r.role === 'admin' && r.id !== id).length;
-    if (otherAdminsCount >= 2) {
-      showToast('⚠️ לא ניתן להגדיר יותר מ-2 דיירים כועד/מנהל בבניין אחד');
+    if (otherAdminsCount >= 1) {
+      showToast('⚠️ לא ניתן להגדיר יותר מדייר אחד נוסף כועד/מנהל בבניין אחד');
       return;
     }
   }
@@ -2637,6 +2775,11 @@ window.saveOpeningBalance = async () => {
 };
 
 window.openAdminFinance = () => {
+  if (buildingData?.requiresPayment && !hasActiveSubscription() && auth.currentUser?.email !== SUPER_ADMIN_EMAIL) {
+    showToast('🔒 ניהול הבניין דורש רכישת מנוי');
+    setTimeout(() => openPremiumModal(), 400);
+    return;
+  }
   const fee = buildingData?.monthlyFee || '';
   document.getElementById('input-monthly-fee').value = fee;
   document.getElementById('monthly-fee-note').textContent = fee ? `נוכחי: ${fmtCurrency(fee)} לחודש` : 'לא הוגדר עדיין';
