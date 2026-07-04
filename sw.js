@@ -7,7 +7,7 @@ const ASSETS = [
   '/vaadplus/icon-512.png'
 ];
 
-// Install — cache all assets1
+// Install — cache all assets11
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
