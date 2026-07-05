@@ -873,18 +873,29 @@
 <!-- Add Payment -->
 <div class="modal-overlay" id="modal-payment">
   <div class="modal">
-    <div class="modal-title">רשום תשלום</div>
+    <div class="modal-title" id="modal-payment-title">רשום תשלום</div>
+    <input type="hidden" id="p-is-exceptional" value="false"/>
     <div class="form-group">
       <label class="form-label">דירה *</label>
       <select class="form-select" id="p-apt"></select>
     </div>
     <div class="form-group">
-      <label class="form-label">חודש *</label>
+      <label class="form-label" id="p-month-label">חודש *</label>
       <select class="form-select" id="p-month"></select>
     </div>
+    <div class="form-group" id="p-month-to-group" style="display:none;">
+      <label class="form-label">עד חודש (כולל) *</label>
+      <select class="form-select" id="p-month-to"></select>
+    </div>
+    <div class="form-group" id="p-actual-date-group" style="display:none;">
+      <label class="form-label">תאריך ההעברה בפועל *</label>
+      <input class="form-input" id="p-actual-date" type="date"/>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:4px;">התאריך שבו הכסף באמת התקבל — יכול להיות שונה מהחודשים שהתשלום מכסה.</div>
+    </div>
     <div class="form-group">
-      <label class="form-label">סכום (₪) *</label>
-      <input class="form-input" id="p-amount" type="number" placeholder="200"/>
+      <label class="form-label" id="p-amount-label">סכום (₪) *</label>
+      <input class="form-input" id="p-amount" type="number" step="0.01" placeholder="200"/>
+      <div id="p-amount-note" style="font-size:11px;color:var(--gray-500);margin-top:4px;"></div>
     </div>
     <div class="form-group">
       <label class="form-label">אופן תשלום</label>
@@ -1013,7 +1024,7 @@
     </div>
     <div class="form-group">
       <label class="form-label">סכום (₪) *</label>
-      <input class="form-input" id="exp-amount" type="number" placeholder="0"/>
+      <input class="form-input" id="exp-amount" type="number" step="0.01" placeholder="0"/>
     </div>
     <div class="form-group">
       <label class="form-label">תאריך</label>
@@ -1042,19 +1053,36 @@
       <div class="form-group" style="margin:0;">
         <label class="form-label">💰 דמי ועד חודשיים (ברירת מחדל לכל הדירות)</label>
         <div style="display:flex;gap:8px;align-items:center;">
-          <input class="form-input" id="input-monthly-fee" type="number" min="0" placeholder="200" style="flex:1;"/>
+          <input class="form-input" id="input-monthly-fee" type="number" step="0.01" min="0" placeholder="200" style="flex:1;"/>
           <button class="btn-success" onclick="saveMonthlyFee()">שמור</button>
         </div>
         <div id="monthly-fee-note" style="font-size:12px;color:var(--gray-500);margin-top:4px;"></div>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
-        <label class="form-label">🏦 יתרת איזון (₪)</label>
-        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">סכום לאיזון המאזן באפליקציה עם הבנק בפועל.</div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input class="form-input" id="input-opening-balance" type="number" placeholder="0" style="flex:1;"/>
-          <button class="btn-success" onclick="saveOpeningBalance()">שמור</button>
+        <label class="form-label">🏦 יתרת פתיחה בבנק (₪)</label>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">סכום לאיזון המאזן באפליקציה עם הבנק בפועל, נכון לתאריך שתבחר.</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+          <input class="form-input" id="input-opening-balance" type="number" step="0.01" placeholder="0" style="flex:1;"/>
+          <input class="form-input" id="input-opening-balance-date" type="date" style="flex:1;"/>
         </div>
+        <button class="btn-success" style="width:100%;" onclick="saveOpeningBalance()">שמור יתרת פתיחה בבנק</button>
+      </div>
+      <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">💵 יתרת פתיחה מזומן (₪)</label>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">יתרת קופת המזומן בפועל, נכון לתאריך שתבחר.</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+          <input class="form-input" id="input-cash-opening-balance" type="number" step="0.01" placeholder="0" style="flex:1;"/>
+          <input class="form-input" id="input-cash-opening-balance-date" type="date" style="flex:1;"/>
+        </div>
+        <button class="btn-success" style="width:100%;" onclick="saveCashOpeningBalance()">שמור יתרת פתיחה מזומן</button>
+      </div>
+      <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">🔁 העברה חריגה (תשלום עבור כמה חודשים בבת אחת)</label>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">לדוגמה: דייר שהעביר בפברואר תשלום המכסה יולי-דצמבר של השנה הקודמת.</div>
+        <button class="btn-primary" style="width:100%;" onclick="closeAdminFinance();openAddPayment(true);">➕ הוסף העברה חריגה</button>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div style="display:flex;gap:8px;">
@@ -1110,7 +1138,7 @@
     <div style="font-size:13px;color:var(--gray-600);margin-bottom:12px;">הפקד סכום מקופת המזומן לחשבון הבנק</div>
     <div class="form-group">
       <label class="form-label">סכום להפקדה (₪) *</label>
-      <input class="form-input" id="deposit-amount" type="number" placeholder="0"/>
+      <input class="form-input" id="deposit-amount" type="number" step="0.01" placeholder="0"/>
     </div>
     <div class="form-group">
       <label class="form-label">תאריך</label>
@@ -1366,7 +1394,7 @@ function getGreeting() {
 }
 
 function fmtCurrency(n) {
-  return '₪' + Number(n).toLocaleString('he-IL');
+  return '₪' + Number(n).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 function monthLabel(ym) {
@@ -1379,6 +1407,21 @@ function monthLabel(ym) {
 function currentYM() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+function enumerateMonths(fromYm, toYm) {
+  const [fy, fm] = fromYm.split('-').map(Number);
+  const [ty, tm] = toYm.split('-').map(Number);
+  const months = [];
+  let y = fy, m = fm;
+  let guard = 0;
+  while ((y < ty || (y === ty && m <= tm)) && guard < 120) {
+    months.push(y + '-' + String(m).padStart(2,'0'));
+    m++;
+    if (m > 12) { m = 1; y++; }
+    guard++;
+  }
+  return months;
 }
 
 function aptFee(aptNum, resident) {
@@ -1566,7 +1609,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.2.0'; // פיצ'ר העברת בעלות: דייר-ועד יכול לקבל בעלות מלאה אם המנהל הראשי לא זמין יותר
+const APP_VERSION = '2.3.0'; // יתרת פתיחה בבנק+תאריך, יתרת פתיחה מזומן+תאריך, העברה חריגה מרובת חודשים, תמיכה בעשרוני בכל הסכומים
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -2772,17 +2815,38 @@ window.cancelPayment = async (id) => {
 window.saveOpeningBalance = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const val = parseFloat(document.getElementById('input-opening-balance').value) || 0;
+  const dateVal = document.getElementById('input-opening-balance-date').value || null;
   const previousVal = buildingData?.openingBalance || 0;
   const batch = writeBatch(db);
-  batch.update(doc(db, 'buildings', buildingId), { openingBalance: val });
+  batch.update(doc(db, 'buildings', buildingId), { openingBalance: val, openingBalanceDate: dateVal });
   const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
   batch.set(logRef, {
-    type: 'balance', action: 'balance_adjusted', amount: val, previousAmount: previousVal,
+    type: 'balance', action: 'balance_adjusted', amount: val, previousAmount: previousVal, asOfDate: dateVal,
     at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
   });
   await batch.commit();
   buildingData.openingBalance = val;
-  showToast('✅ יתרת פתיחה נשמרה');
+  buildingData.openingBalanceDate = dateVal;
+  showToast('✅ יתרת פתיחה בבנק נשמרה');
+  loadBalance();
+};
+
+window.saveCashOpeningBalance = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const val = parseFloat(document.getElementById('input-cash-opening-balance').value) || 0;
+  const dateVal = document.getElementById('input-cash-opening-balance-date').value || null;
+  const previousVal = buildingData?.cashOpeningBalance || 0;
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'buildings', buildingId), { cashOpeningBalance: val, cashOpeningBalanceDate: dateVal });
+  const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+  batch.set(logRef, {
+    type: 'cashBalance', action: 'cash_balance_adjusted', amount: val, previousAmount: previousVal, asOfDate: dateVal,
+    at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+  });
+  await batch.commit();
+  buildingData.cashOpeningBalance = val;
+  buildingData.cashOpeningBalanceDate = dateVal;
+  showToast('✅ יתרת פתיחה מזומן נשמרה');
   loadBalance();
 };
 
@@ -2796,6 +2860,9 @@ window.openAdminFinance = () => {
   document.getElementById('input-monthly-fee').value = fee;
   document.getElementById('monthly-fee-note').textContent = fee ? `נוכחי: ${fmtCurrency(fee)} לחודש` : 'לא הוגדר עדיין';
   document.getElementById('input-opening-balance').value = buildingData?.openingBalance || '';
+  document.getElementById('input-opening-balance-date').value = buildingData?.openingBalanceDate || '';
+  document.getElementById('input-cash-opening-balance').value = buildingData?.cashOpeningBalance || '';
+  document.getElementById('input-cash-opening-balance-date').value = buildingData?.cashOpeningBalanceDate || '';
 
   const ownershipSection = document.getElementById('ownership-transfer-section');
   const isCurrentOwner = auth.currentUser?.email === buildingData?.adminEmail;
@@ -2878,25 +2945,51 @@ window.saveMonthlyFee = async () => {
   }
 };
 
-window.openAddPayment = () => {
+window.openAddPayment = (isExceptional) => {
+  document.getElementById('p-is-exceptional').value = isExceptional ? 'true' : 'false';
+
   // Fill resident dropdown
   const sel = document.getElementById('p-apt');
   sel.innerHTML = allResidents.map(r => `<option value="${r.apt}">${r.apt} - ${r.name}</option>`).join('');
 
-  // Fill month dropdown
-  const msel = document.getElementById('p-month');
-  msel.innerHTML = '';
+  // Fill month dropdown(s) — offer a wider range (24 months back) since
+  // exceptional transfers often cover months from a previous year.
+  const monthOptionsHtml = [];
   const now = new Date();
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 24; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-    const opt = document.createElement('option');
-    opt.value = ym;
-    opt.textContent = monthLabel(ym);
-    msel.appendChild(opt);
+    monthOptionsHtml.push(`<option value="${ym}">${monthLabel(ym)}</option>`);
   }
+  document.getElementById('p-month').innerHTML = monthOptionsHtml.join('');
+  document.getElementById('p-month-to').innerHTML = monthOptionsHtml.join('');
+
   document.getElementById('p-amount').value = '';
   document.getElementById('p-note').value = '';
+  document.getElementById('p-amount-note').textContent = '';
+
+  const titleEl = document.getElementById('modal-payment-title');
+  const monthLabelEl = document.getElementById('p-month-label');
+  const amountLabelEl = document.getElementById('p-amount-label');
+  const monthToGroup = document.getElementById('p-month-to-group');
+  const actualDateGroup = document.getElementById('p-actual-date-group');
+
+  if (isExceptional) {
+    titleEl.textContent = 'הוסף העברה חריגה';
+    monthLabelEl.textContent = 'מחודש *';
+    amountLabelEl.textContent = 'סכום כולל להעברה (₪) *';
+    document.getElementById('p-amount-note').textContent = 'הסכום יחולק שווה בשווה בין החודשים שנבחרו.';
+    monthToGroup.style.display = '';
+    actualDateGroup.style.display = '';
+    document.getElementById('p-actual-date').value = new Date().toISOString().split('T')[0];
+  } else {
+    titleEl.textContent = 'רשום תשלום';
+    monthLabelEl.textContent = 'חודש *';
+    amountLabelEl.textContent = 'סכום (₪) *';
+    monthToGroup.style.display = 'none';
+    actualDateGroup.style.display = 'none';
+  }
+
   // מלא אופן תשלום לפי הגדרת הדייר הראשון
   const firstResident = allResidents.find(r => r.apt === parseInt(sel.value));
   document.getElementById('p-method').value = firstResident?.paymentMethod || 'transfer';
@@ -2909,30 +3002,71 @@ window.openAddPayment = () => {
 };
 
 window.savePayment = async () => {
+  const isExceptional = document.getElementById('p-is-exceptional').value === 'true';
   const apt = parseInt(document.getElementById('p-apt').value);
-  const month = document.getElementById('p-month').value;
-  const amount = parseInt(document.getElementById('p-amount').value);
+  const fromMonth = document.getElementById('p-month').value;
+  const amount = parseFloat(document.getElementById('p-amount').value);
   const note = document.getElementById('p-note').value.trim();
-  if (!apt || !month || !amount) { showToast('חובה למלא כל השדות'); return; }
+  const method = document.getElementById('p-method').value;
+  if (!apt || !fromMonth || !amount) { showToast('חובה למלא כל השדות'); return; }
   const resident = allResidents.find(r => r.apt === apt);
+
+  if (!isExceptional) {
+    try {
+      const batch = writeBatch(db);
+      const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+      batch.set(paymentRef, {
+        apt, name: resident?.name || '', amount, month: fromMonth, note,
+        method, paidAt: serverTimestamp(), recordedBy: currentUser.uid
+      });
+      const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+      batch.set(logRef, {
+        apt: parseInt(apt), name: resident?.name || '', amount, month: fromMonth, action: 'paid',
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
+      showToast('✅ תשלום נרשם');
+      closeModal('modal-payment');
+      loadPayments();
+      logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS' });
+    } catch(e) { showToast('שגיאה: ' + e.message); }
+    return;
+  }
+
+  // Exceptional multi-month transfer
+  const toMonth = document.getElementById('p-month-to').value;
+  const actualDateStr = document.getElementById('p-actual-date').value;
+  if (!toMonth || !actualDateStr) { showToast('חובה למלא עד חודש ותאריך העברה בפועל'); return; }
+  const months = enumerateMonths(fromMonth, toMonth);
+  if (!months.length) { showToast('טווח החודשים לא תקין'); return; }
+
+  const perMonth = Math.round((amount / months.length) * 100) / 100;
+  const roundedTotal = Math.round(perMonth * (months.length - 1) * 100) / 100;
+  const lastMonthAmount = Math.round((amount - roundedTotal) * 100) / 100; // absorb rounding remainder
+
   try {
-    const method = document.getElementById('p-method').value;
+    const actualDate = Timestamp.fromDate(new Date(actualDateStr));
     const batch = writeBatch(db);
-    const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
-    batch.set(paymentRef, {
-      apt, name: resident?.name || '', amount, month, note,
-      method, paidAt: serverTimestamp(), recordedBy: currentUser.uid
+    months.forEach((ym, i) => {
+      const monthAmount = (i === months.length - 1) ? lastMonthAmount : perMonth;
+      const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+      batch.set(paymentRef, {
+        apt, name: resident?.name || '', amount: monthAmount, month: ym,
+        note: note || `העברה חריגה עבור ${months.length} חודשים`,
+        method, paidAt: actualDate, recordedBy: currentUser.uid, exceptionalTransfer: true
+      });
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
-      apt: parseInt(apt), name: resident?.name || '', amount, month, action: 'paid',
+      type: 'payment', apt, name: resident?.name || '', amount, action: 'paid',
+      month: `${fromMonth} עד ${toMonth}`, exceptionalTransfer: true, actualDate: actualDateStr,
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
     });
     await batch.commit();
-    showToast('✅ תשלום נרשם');
+    showToast(`✅ העברה חריגה נרשמה עבור ${months.length} חודשים`);
     closeModal('modal-payment');
     loadPayments();
-    logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS' });
+    logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', exceptional: true });
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
@@ -2976,7 +3110,7 @@ function renderExpenses() {
   const total = allExpenses.reduce((s,e) => s + (e.amount||0), 0);
   let html = '<div style="padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;">'
     + '<span style="font-size:15px;font-weight:700;">סה"כ הוצאות</span>'
-    + '<span style="font-size:18px;font-weight:700;color:var(--red);">₪'+total.toLocaleString('he-IL')+'</span>'
+    + '<span style="font-size:18px;font-weight:700;color:var(--red);">₪'+total.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>';
   html += allExpenses.map(e => {
     const icon = catIcons[e.category] || '📋';
@@ -2986,7 +3120,7 @@ function renderExpenses() {
       + '<div style="font-size:15px;font-weight:700;">'+icon+' '+e.description+'</div>'
       + '<div style="font-size:12px;color:var(--gray-400);margin-top:4px;">'+e.category+' • '+(e.date||'')+'</div>'
       + '</div>'
-      + '<span style="font-size:17px;font-weight:700;color:var(--red);">₪'+(e.amount||0).toLocaleString('he-IL')+'</span>'
+      + '<span style="font-size:17px;font-weight:700;color:var(--red);">₪'+(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
       + '</div>'
       + (isAdmin ? '<div style="display:flex;gap:8px;border-top:1px solid var(--gray-100);padding-top:10px;">'
         + '<button class="btn-icon" style="flex:1;padding:8px;font-size:13px;" onclick="editExpense(\''+e.id+'\')">✏️ ערוך</button>'
@@ -3028,7 +3162,7 @@ window.saveExpense = async () => {
 
   const id = document.getElementById('edit-expense-id').value;
   const desc = document.getElementById('exp-desc').value.trim();
-  const amount = parseInt(document.getElementById('exp-amount').value);
+  const amount = parseFloat(document.getElementById('exp-amount').value);
   if (!desc || !amount) { showToast('חובה למלא תיאור וסכום'); return; }
   const category = document.getElementById('exp-cat').value;
   const method = document.getElementById('exp-method').value;
@@ -3140,8 +3274,9 @@ function renderBalance() {
   const totalDeposits = balDepositsAll.reduce((s,d) => s + (d.amount||0), 0);
 
   const openingBalance = buildingData?.openingBalance || 0;
+  const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
   const bankBalance = openingBalance + transferCollected + totalDeposits - bankExpenses;
-  const cashBalance = cashCollected - totalDeposits - cashExpenses;
+  const cashBalance = cashOpeningBalance + cashCollected - totalDeposits - cashExpenses;
   const balance = bankBalance + cashBalance;
   const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
   const balIcon = balance >= 0 ? '📈' : '📉';
@@ -3157,20 +3292,31 @@ function renderBalance() {
   // Main balance card - יתרה בחשבון הבנק
   html += '<div class="card" style="margin-bottom:16px;text-align:center;">'
     + '<div style="font-size:14px;color:var(--gray-600);margin-bottom:8px;">🏦 יתרה בחשבון הבנק</div>'
-    + '<div style="font-size:36px;font-weight:800;color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';">₪'+Math.abs(bankBalance).toLocaleString('he-IL')+'</div>'
+    + '<div style="font-size:36px;font-weight:800;color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';">₪'+Math.abs(bankBalance).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div>'
     + '<div style="font-size:13px;color:var(--gray-400);margin-top:4px;">'+(bankBalance>=0?'עודף':'גירעון')+'</div>'
     + '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
-    + '<div class="stat-card"><div class="stat-value green">₪'+transferCollected.toLocaleString('he-IL')+'</div><div class="stat-label">💳 העברות</div></div>'
-    + '<div class="stat-card"><div class="stat-value green">₪'+cashCollected.toLocaleString('he-IL')+'</div><div class="stat-label">💵 מזומן שנגבה</div></div>'
+    + '<div class="stat-card"><div class="stat-value green">₪'+transferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">💳 העברות</div></div>'
+    + '<div class="stat-card"><div class="stat-value green">₪'+cashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">💵 מזומן שנגבה</div></div>'
     + '</div>';
   html += '<div class="card" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
     + '<span style="font-size:13px;color:var(--gray-600);">💵 קופת מזומן</span>'
-    + '<span style="font-weight:700;font-size:18px;color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL')+'</span>'
+    + '<span style="font-weight:700;font-size:18px;color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>';
+  if (openingBalance || cashOpeningBalance) {
+    html += '<div class="card" style="margin-bottom:16px;font-size:13px;color:var(--gray-600);">'
+      + '<div style="font-weight:700;margin-bottom:6px;">יתרות פתיחה</div>'
+      + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
+      + '<span>🏦 בנק: ₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.openingBalanceDate ? ' (נכון ל-'+buildingData.openingBalanceDate+')' : '')+'</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
+      + '<span>💵 מזומן: ₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+buildingData.cashOpeningBalanceDate+')' : '')+'</span>'
+      + '</div>'
+      + '</div>';
+  }
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
-    + '<div class="stat-card"><div class="stat-value green">₪'+totalCollected.toLocaleString('he-IL')+'</div><div class="stat-label">סה"כ גבייה</div></div>'
-    + '<div class="stat-card"><div class="stat-value red">₪'+totalExpenses.toLocaleString('he-IL')+'</div><div class="stat-label">סה"כ הוצאות</div></div>'
+    + '<div class="stat-card"><div class="stat-value green">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">סה"כ גבייה</div></div>'
+    + '<div class="stat-card"><div class="stat-value red">₪'+totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">סה"כ הוצאות</div></div>'
     + '</div>';
   // Expenses by category
   if (Object.keys(byCat).length) {
@@ -3181,7 +3327,7 @@ function renderBalance() {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--gray-100);">'
         + '<span style="font-size:14px;">'+icon+' '+cat+'</span>'
         + '<div style="text-align:left;">'
-        + '<span style="font-weight:700;color:var(--red);">₪'+amt.toLocaleString('he-IL')+'</span>'
+        + '<span style="font-weight:700;color:var(--red);">₪'+amt.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
         + '<span style="font-size:11px;color:var(--gray-400);margin-right:6px;">'+pct+'%</span>'
         + '</div></div>';
     });
@@ -3199,7 +3345,7 @@ function renderBalance() {
     allExpenses.sort((a,b) => (b.date||'').localeCompare(a.date||'')).forEach(e => {
       html += '<tr>'
         + '<td style="border:1px solid #ddd;padding:8px;text-align:center;">'+(e.category||'').replace(/ /g,'\u00A0')+'</td>'
-        + '<td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪'+(e.amount||0).toLocaleString('he-IL')+'</td>'
+        + '<td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪'+(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td>'
         + '<td style="border:1px solid #ddd;padding:8px;text-align:right;">'+e.description+'</td>'
         + '<td style="border:1px solid #ddd;padding:8px;text-align:center;">'+e.date+'</td>'
         + '</tr>';
@@ -3287,7 +3433,7 @@ window.exportExcel = async () => {
       for (let C = 2; C <= payRange.e.c; C++) {
         const addr = XLSX.utils.encode_cell({r:R, c:C});
         if (paySheet[addr] && typeof paySheet[addr].v === 'number') {
-          paySheet[addr].z = '#,##0';
+          paySheet[addr].z = '#,##0.00';
         }
       }
     }
@@ -3326,7 +3472,7 @@ window.exportExcel = async () => {
         for (let C = 0; C <= range.e.c; C++) {
           const addr = XLSX.utils.encode_cell({r:R, c:C});
           if (expSheet[addr] && typeof expSheet[addr].v === 'number') {
-            expSheet[addr].z = '#,##0';
+            expSheet[addr].z = '#,##0.00';
           }
         }
       }
@@ -3337,7 +3483,20 @@ window.exportExcel = async () => {
     const totalCollected = grandTotal;
     const totalExpenses = expTotal;
     const openingBalance = buildingData?.openingBalance || 0;
-    const balance = openingBalance + totalCollected - totalExpenses;
+    const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
+
+    // מאזן אמיתי (כל הזמנים, לא רק השנה הנוכחית)
+    const allPaySnapBal = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
+    const cashCollectedAllBal = allPaySnapBal.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
+    const transferCollectedAllBal = allPaySnapBal.docs.reduce((s,d) => s + (d.data().amount||0), 0) - cashCollectedAllBal;
+    const allExpSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
+    const cashExpAllBal = allExpSnapBal.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
+    const bankExpAllBal = allExpSnapBal.docs.reduce((s,d) => s + (d.data().amount||0), 0) - cashExpAllBal;
+    const depositSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
+    const totalDepositsBal = depositSnapBal.docs.reduce((s,d) => s + (d.data().amount||0), 0);
+    const bankBalanceAll = openingBalance + transferCollectedAllBal + totalDepositsBal - bankExpAllBal;
+    const cashBalanceAll = cashOpeningBalance + cashCollectedAllBal - totalDepositsBal - cashExpAllBal;
+    const balance = bankBalanceAll + cashBalanceAll;
 
     // פירוט חודשי הוצאות
     const expByMonth = {};
@@ -3357,14 +3516,19 @@ window.exportExcel = async () => {
     }
 
     const balSheetData = [
-      ['סיכום מאזן', `${year}`],
+      ['סיכום מאזן (כל הזמנים)', `${year}`],
       [],
-      ['סה"כ גבייה', totalCollected],
-      ['סה"כ הוצאות', totalExpenses],
-      ['יתרת פתיחה', openingBalance],
-      ['יתרה נוכחית', balance],
+      ['יתרת פתיחה בבנק', openingBalance, buildingData?.openingBalanceDate ? `נכון ל-${buildingData.openingBalanceDate}` : ''],
+      ['יתרת פתיחה מזומן', cashOpeningBalance, buildingData?.cashOpeningBalanceDate ? `נכון ל-${buildingData.cashOpeningBalanceDate}` : ''],
+      [],
+      ['יתרה בחשבון הבנק (נוכחי)', bankBalanceAll],
+      ['יתרת קופת מזומן (נוכחית)', cashBalanceAll],
+      ['יתרה כוללת', balance],
       [], [],
-      ['פירוט חודשי'],
+      [`סה"כ גבייה (${year})`, totalCollected],
+      [`סה"כ הוצאות (${year})`, totalExpenses],
+      [], [],
+      ['פירוט חודשי', `${year}`],
       ['חודש', 'גבייה', 'הוצאות', 'הפרש'],
       ...monthlyRows
     ];
@@ -3376,7 +3540,7 @@ window.exportExcel = async () => {
         for (let C = 0; C <= range.e.c; C++) {
           const addr = XLSX.utils.encode_cell({r:R, c:C});
           if (balSheet[addr] && typeof balSheet[addr].v === 'number') {
-            balSheet[addr].z = '#,##0';
+            balSheet[addr].z = '#,##0.00';
           }
         }
       }
@@ -3443,8 +3607,20 @@ window.openLog = async () => {
       return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;">'
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
         + '<div>'
-        + '<div style="font-weight:700;">⚖️ עדכון יתרת איזון מול הבנק</div>'
-        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+'</div>'
+        + '<div style="font-weight:700;">🏦 עדכון יתרת פתיחה בבנק</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+(p.asOfDate ? ' (נכון ל-'+p.asOfDate+')' : '')+'</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
+        + '</div></div>';
+    }
+
+    if (type === 'cashBalance') {
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;">💵 עדכון יתרת פתיחה מזומן</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+(p.asOfDate ? ' (נכון ל-'+p.asOfDate+')' : '')+'</div>'
         + byLine
         + '</div>'
         + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
@@ -3551,7 +3727,7 @@ async function createPDFReport() {
     totalExpenses += (e.amount || 0);
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(e.description || '-').replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
     </tr>`;
@@ -3588,6 +3764,7 @@ async function createPDFReport() {
 
   // חישוב יתרות לדוח
   const openingBalance = buildingData?.openingBalance || 0;
+  const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
   const allPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
   const cashCollectedAll = allPaySnap.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
   const transferCollectedAll = allPaySnap.docs.reduce((s,d) => s + (d.data().amount||0), 0) - cashCollectedAll;
@@ -3597,7 +3774,7 @@ async function createPDFReport() {
   const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
   const totalDeposits = depositSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
   const bankBalance = openingBalance + transferCollectedAll + totalDeposits - bankExpAll;
-  const cashBalance = cashCollectedAll - totalDeposits - cashExpAll;
+  const cashBalance = cashOpeningBalance + cashCollectedAll - totalDeposits - cashExpAll;
 
   const html = `
     <html>
@@ -3657,7 +3834,7 @@ async function createPDFReport() {
               .map(([cat, sum]) => {
                 const pct = totalExpenses ? Math.round(sum/totalExpenses*100) : 0;
                 return '<tr><td style="text-align:right;border:1px solid #ddd;padding:8px;">'+cat.replace(/ /g,'\u00A0')+'</td>'
-                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪'+sum.toLocaleString('he-IL')+'</td>'
+                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪'+sum.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td>'
                   +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">'+pct+'%</td></tr>';
               }).join('') || '<tr><td colspan="3" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות</td></tr>';
           })()}
@@ -3680,12 +3857,13 @@ async function createPDFReport() {
       </table>
 
       <div class="summary">
-        ${openingBalance ? `<div class="summary-line"><span class="total">סה"כ איזון חד פעמי מול הבנק:</span> ₪${openingBalance.toLocaleString('he-IL')}</div>` : ''}
-        <div class="summary-line"><span class="total">סה"כ הכנסות:</span> ₪${totalCollected.toLocaleString('he-IL')}</div>
-        <div class="summary-line"><span class="total">סה"כ הוצאות:</span> ₪${totalExpenses.toLocaleString('he-IL')}</div>
+        ${openingBalance ? `<div class="summary-line"><span class="total">יתרת פתיחה בבנק${buildingData?.openingBalanceDate ? ' (נכון ל-'+buildingData.openingBalanceDate+')' : ''}:</span> ₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>` : ''}
+        ${cashOpeningBalance ? `<div class="summary-line"><span class="total">יתרת פתיחה מזומן${buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+buildingData.cashOpeningBalanceDate+')' : ''}:</span> ₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>` : ''}
+        <div class="summary-line"><span class="total">סה"כ הכנסות:</span> ₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
+        <div class="summary-line"><span class="total">סה"כ הוצאות:</span> ₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
-          <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק</span> &#8362;${bankBalance.toLocaleString('he-IL')}</div>
-          <div class="summary-line"><span class="total">יתרת&nbsp;מזומן</span> &#8362;${cashBalance.toLocaleString('he-IL')}</div>
+          <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק</span> &#8362;${bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
+          <div class="summary-line"><span class="total">יתרת&nbsp;מזומן</span> &#8362;${cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
         </div>
       </div>
     </body>
@@ -3898,7 +4076,7 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
       </div>
       <div class="amount-box">
         <div class="amount-label">סכום ששולם — דמי ועד בית</div>
-        <div class="amount-value">₪${Number(amount).toLocaleString('he-IL')}</div>
+        <div class="amount-value">₪${Number(amount).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
       </div>
       <div class="footer">
         <div class="footer-text">מסמך זה מהווה אסמכתא לתשלום דמי ועד בית</div>
