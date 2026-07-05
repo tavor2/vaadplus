@@ -1609,7 +1609,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.3.0'; // יתרת פתיחה בבנק+תאריך, יתרת פתיחה מזומן+תאריך, העברה חריגה מרובת חודשים, תמיכה בעשרוני בכל הסכומים
+const APP_VERSION = '2.3.1'; // תיקון כותרת ושורות סיכום בדוח PDF - החלפת bidi/isolate ב-flexbox פשוט שלא תלוי בתמיכת html2canvas
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -3797,7 +3797,7 @@ async function createPDFReport() {
       <h1 style="letter-spacing:4px;">דוח תשלומים לוועד הבית</h1>
       <h2>${(buildingData?.address || '').replace(/ /g, '\u00A0')}</h2>
       <h2>שנה&nbsp;${year}</h2>
-      <h2 style="font-size:13px;color:#999;">${(() => { const now = new Date(); const d = now.toLocaleDateString('he-IL'); const t = now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); return 'הופק <span dir="ltr" style="unicode-bidi:isolate">' + d + '</span> בשעה <span dir="ltr" style="unicode-bidi:isolate">' + t + '</span>'; })()}</h2>
+      <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:20px;">${(() => { const now = new Date(); const d = now.toLocaleDateString('he-IL'); const t = now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); return '<span>הופק</span><span dir="ltr">' + d + '</span><span>בשעה</span><span dir="ltr">' + t + '</span>'; })()}</div>
       
       <table>
         <thead>
@@ -3857,13 +3857,13 @@ async function createPDFReport() {
       </table>
 
       <div class="summary">
-        ${openingBalance ? `<div class="summary-line"><span class="total">יתרת פתיחה בבנק${buildingData?.openingBalanceDate ? ' (נכון ל-'+buildingData.openingBalanceDate+')' : ''}:</span> ₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>` : ''}
-        ${cashOpeningBalance ? `<div class="summary-line"><span class="total">יתרת פתיחה מזומן${buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+buildingData.cashOpeningBalanceDate+')' : ''}:</span> ₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>` : ''}
-        <div class="summary-line"><span class="total">סה"כ הכנסות:</span> ₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
-        <div class="summary-line"><span class="total">סה"כ הוצאות:</span> ₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
+        ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>(נכון ל-</span><span dir="ltr">${buildingData.openingBalanceDate}</span><span>)</span>` : ''}</div>` : ''}
+        ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>(נכון ל-</span><span dir="ltr">${buildingData.cashOpeningBalanceDate}</span><span>)</span>` : ''}</div>` : ''}
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הכנסות:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
-          <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק</span> &#8362;${bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
-          <div class="summary-line"><span class="total">יתרת&nbsp;מזומן</span> &#8362;${cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
+          <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">יתרה בחשבון הבנק:</span><span dir="ltr">&#8362;${bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+          <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">יתרת מזומן:</span><span dir="ltr">&#8362;${cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         </div>
       </div>
     </body>
