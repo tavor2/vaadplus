@@ -443,6 +443,19 @@
     <div class="modal-title" style="color:var(--blue);">⚙️ הגדרות מערכת</div>
 
     <div class="form-group">
+      <label class="form-label">🔒 הגבלת כניסת דיירים לאפליקציה</label>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px;line-height:1.6;">
+        כשמופעל: משתמשים שמוגדרים כ"דייר" (לא ועד בית ולא בעלים) לא יוכלו להתחבר לאפליקציה בכלל ויקבלו הודעה מתאימה. ועד הבית, מנהלים משותפים (co-admins) ובעלי הבניין ימשיכו להתחבר כרגיל, בכל הבניינים. הגדרה זו חלה על כל הבניינים במערכת.
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" id="input-tenant-login-toggle" style="width:22px;height:22px;cursor:pointer;" onchange="saveTenantLoginToggle()"/>
+        <label for="input-tenant-login-toggle" style="cursor:pointer;font-weight:600;">חסום כניסת דיירים לאפליקציה</label>
+      </div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
+
+    <div class="form-group">
       <label class="form-label">מספר בניינים מקסימלי בבטא</label>
       <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">בניינים קיימים כרגע: <span id="settings-current-count">-</span></div>
       <div style="display:flex;gap:8px;align-items:center;">
@@ -467,6 +480,19 @@
 
     <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
 
+    <div class="form-group">
+      <label class="form-label">ימי ניסיון חינם לבניין חדש מעל המכסה (שלב ב׳)</label>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;line-height:1.6;">
+        מספר הימים שבהם בניין חדש שנרשם מעבר למכסה יכול להשתמש ב"ניהול" בחינם, לפני שיידרש לרכוש מנוי. רלוונטי רק כש"דרישת תשלום" למעלה מופעלת.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="form-input" id="input-trial-days" type="number" min="0" style="flex:1;"/>
+        <button class="btn-success" onclick="saveTrialDays()">שמור</button>
+      </div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
+
     <div class="form-group" style="margin-bottom:0;">
       <label class="form-label">מחיר מנוי שנתי להצגה באפליקציה (₪)</label>
       <div style="font-size:12px;color:var(--red);margin-bottom:6px;line-height:1.6;">
@@ -476,6 +502,44 @@
         <input class="form-input" id="input-sub-price" type="number" min="0" style="flex:1;"/>
         <button class="btn-success" onclick="saveSubscriptionPrice()">שמור</button>
       </div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">💡 תמחור מוצג לפי מספר דירות בבניין</label>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px;line-height:1.6;">
+        כשמופעל: המחיר שמוצג לכל בניין במודל הפרימיום מחושב לפי מספר הדירות שבו, לפי שלושת הטווחים למטה, במקום המחיר הקבוע שלמעלה.
+        <b style="color:var(--red);">שים לב:</b> זו הצגה בלבד — הגבייה בפועל דרך Google Play עדיין אחידה לכל הבניינים (מוצר מנוי יחיד), עד שתוקם תשתית תמחור נפרד ב-Play Console.
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <input type="checkbox" id="input-apt-pricing-toggle" style="width:22px;height:22px;cursor:pointer;" onchange="saveAptPricingToggle()"/>
+        <label for="input-apt-pricing-toggle" style="cursor:pointer;font-weight:600;">הפעל תמחור לפי מספר דירות</label>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div>
+          <div style="font-size:11px;color:var(--gray-500);margin-bottom:3px;">עד מספר דירות (טווח 1)</div>
+          <input class="form-input" id="input-apt-tier1-max" type="number" min="1" placeholder="15"/>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-500);margin-bottom:3px;">מחיר טווח 1 (₪)</div>
+          <input class="form-input" id="input-apt-tier1-price" type="number" min="0" placeholder="99"/>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-500);margin-bottom:3px;">עד מספר דירות (טווח 2)</div>
+          <input class="form-input" id="input-apt-tier2-max" type="number" min="1" placeholder="40"/>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-500);margin-bottom:3px;">מחיר טווח 2 (₪)</div>
+          <input class="form-input" id="input-apt-tier2-price" type="number" min="0" placeholder="149"/>
+        </div>
+        <div style="grid-column:1/2;">
+          <div style="font-size:11px;color:var(--gray-500);margin-bottom:3px;">מעל טווח 2 — מחיר טווח 3 (₪)</div>
+          <input class="form-input" id="input-apt-tier3-price" type="number" min="0" placeholder="219"/>
+        </div>
+      </div>
+      <button class="btn-success" style="width:100%;" onclick="saveAptPricingTiers()">שמור טווחי תמחור</button>
     </div>
 
     <button class="btn-secondary" style="width:100%;margin-top:16px;" onclick="closeModal('modal-system-settings')">סגור</button>
@@ -547,6 +611,18 @@
   <div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:10px;">גרסת הבטא הסגורה מלאה</div>
   <div style="color:rgba(255,255,255,0.75);font-size:14px;line-height:1.7;margin-bottom:28px;max-width:320px;">
     גרסת הבטא הסגורה הגיעה למכסה המקסימלית. תוכלו לנסות במועד מאוחר יותר.
+  </div>
+  <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px;">
+    <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.3);" onclick="logout()">התנתק</button>
+  </div>
+</div>
+
+<!-- TENANT LOGIN DISABLED SCREEN (Super Admin toggle) -->
+<div id="tenant-blocked-screen" style="display:none;min-height:100vh;background:linear-gradient(160deg, var(--blue) 0%, #0f3a8a 100%);flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;">
+  <div style="font-size:52px;margin-bottom:16px;">🔒</div>
+  <div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:10px;">כניסת דיירים אינה זמינה כרגע</div>
+  <div style="color:rgba(255,255,255,0.75);font-size:14px;line-height:1.7;margin-bottom:28px;max-width:320px;">
+    הגישה לאפליקציה זמנית זמינה לועד הבית ולבעלי הבניין בלבד. לפרטים נוספים פנה/י לוועד הבית שלך.
   </div>
   <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px;">
     <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.3);" onclick="logout()">התנתק</button>
@@ -856,6 +932,7 @@
       <label class="form-label">אופן תשלום</label>
       <select class="form-select" id="r-payment-method">
         <option value="transfer">העברה בנקאית</option>
+        <option value="standingOrder">הוראת קבע</option>
         <option value="cash">מזומן</option>
         <option value="check">שיק</option>
       </select>
@@ -901,6 +978,7 @@
       <label class="form-label">אופן תשלום</label>
       <select class="form-select" id="p-method">
         <option value="transfer">💳 העברה בנקאית</option>
+        <option value="standingOrder">🔁 הוראת קבע</option>
         <option value="cash">💵 מזומן</option>
         <option value="check">🧾 שיק</option>
       </select>
@@ -1234,6 +1312,7 @@
       <div style="background:var(--blue-light);border-radius:var(--radius);padding:16px;margin-bottom:14px;">
         <div style="font-size:13px;color:var(--gray-600);margin-bottom:4px;">מנוי שנתי</div>
         <div style="font-size:28px;font-weight:800;color:var(--blue);" id="premium-price-display">₪119 / שנה</div>
+        <div id="premium-price-tier-note" style="display:none;font-size:11px;color:var(--gray-500);margin-top:4px;"></div>
       </div>
       <button class="btn-primary" id="btn-buy-premium" onclick="purchasePremium()">💳 רכוש מנוי דרך Google Play</button>
       <div id="premium-purchase-status" style="font-size:13px;color:var(--gray-600);margin-top:10px;min-height:18px;"></div>
@@ -1511,6 +1590,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('setup-screen').style.display = 'none';
     document.getElementById('app').style.display = 'none';
+    document.getElementById('tenant-blocked-screen').style.display = 'none';
     currentUser = null; isAdmin = false; buildingId = null;
     return;
   }
@@ -1554,8 +1634,28 @@ onAuthStateChanged(auth, async (user) => {
         currentResident = foundResident;
         const coAdmins = foundBuilding.data().coAdmins || [];
         isAdmin = foundResident.role === 'admin' || coAdmins.includes(user.email);
+
+        // הגבלת כניסת דיירים — הגדרה גלובלית של Super Admin, לא חלה על ועד/מנהלים
+        // משותפים/בעלי הבניין (isAdmin=true עבורם). אם הבדיקה עצמה נכשלת, לא
+        // חוסמים (עדיף גישה יתרה על פני חסימה שגויה עקב תקלת רשת).
+        if (!isAdmin) {
+          let tenantLoginDisabled = false;
+          try {
+            const settingsSnap = await getDoc(doc(db, 'meta', 'settings'));
+            tenantLoginDisabled = settingsSnap.exists() ? (settingsSnap.data().tenantLoginDisabled ?? false) : false;
+          } catch(e) { /* לא חוסם במקרה של שגיאה */ }
+          if (tenantLoginDisabled) {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('setup-screen').style.display = 'none';
+            document.getElementById('app').style.display = 'none';
+            document.getElementById('tenant-blocked-screen').style.display = 'flex';
+            return;
+          }
+        }
+
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('setup-screen').style.display = 'none';
+        document.getElementById('tenant-blocked-screen').style.display = 'none';
         document.getElementById('app').style.display = 'flex';
         document.getElementById('app').style.flexDirection = 'column';
         initUI();
@@ -1648,6 +1748,16 @@ window.confirmDeleteBuilding = async () => {
     // מחק את הבניין עצמו
     await deleteDoc(doc(db, 'buildings', buildingId));
 
+    // עדכן את מונה הבניינים הגלובלי כך שישקף את המצב בפועל
+    try {
+      const counterRef = doc(db, 'meta', 'stats');
+      await runTransaction(db, async (tx) => {
+        const counterSnap = await tx.get(counterRef);
+        const currentCount = counterSnap.exists() ? (counterSnap.data().buildingCount || 0) : 0;
+        tx.set(counterRef, { buildingCount: Math.max(0, currentCount - 1) }, { merge: true });
+      });
+    } catch(e) { /* לא קריטי — לא עוצר את תהליך המחיקה */ }
+
     showToast('✅ הבניין נמחק');
     setTimeout(() => location.reload(), 1500);
   } catch(e) {
@@ -1656,11 +1766,45 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.3.6'; // הסרת מקף שגוי ב"נכון ל" בדוח PDF + פיצול סה"כ הוצאות לבנק/מזומן במאזן, באקסל ובדוח PDF
+const APP_VERSION = '2.4.1'; // תמחור מוצג לפי מספר דירות בבניין (Super Admin) — הצגה בלבד, טרם משפיע על גבייה בפועל דרך Google Play
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
-const TRIAL_DAYS = 30; // Stage 2: buildings created past the cap (requiresPayment) get this many free days of "ניהול" access before a subscription is required.
+const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
+let trialDaysSetting = TRIAL_DAYS; // Effective trial length in days, loaded from meta/settings.trialDays on app load (see loadTrialDaysSetting()).
+
+// Reads the Super-Admin-configurable trial length from meta/settings and
+// updates trialDaysSetting accordingly. Called once per session in loadAll()
+// so isInTrialPeriod()/trialDaysRemaining() (which run synchronously) always
+// use an up-to-date value without needing to be async themselves.
+async function loadTrialDaysSetting() {
+  try {
+    const snap = await getDoc(doc(db, 'meta', 'settings'));
+    trialDaysSetting = snap.exists() ? (snap.data().trialDays ?? TRIAL_DAYS) : TRIAL_DAYS;
+  } catch(e) { trialDaysSetting = TRIAL_DAYS; }
+}
+
+// Display-only tiered pricing by apartment count (Stage 2 planning — no
+// actual Google Play billing distinction yet; all buildings still purchase
+// the same underlying subscription product). When aptPricingEnabled is off
+// (default), every building sees the single flat subscriptionPriceILS,
+// exactly as before this feature existed. When on, the displayed price
+// depends on how many apartments (residents) exist in the building at the
+// moment the premium modal is opened.
+function computeDisplayPrice(settings, apartmentCount) {
+  const flatPrice = settings.subscriptionPriceILS ?? 119;
+  if (!settings.aptPricingEnabled) return { price: flatPrice, tierLabel: null };
+
+  const tier1Max = settings.aptTier1Max ?? 15;
+  const tier1Price = settings.aptTier1Price ?? 99;
+  const tier2Max = settings.aptTier2Max ?? 40;
+  const tier2Price = settings.aptTier2Price ?? 149;
+  const tier3Price = settings.aptTier3Price ?? 219;
+
+  if (apartmentCount <= tier1Max) return { price: tier1Price, tierLabel: `עד ${tier1Max} דירות` };
+  if (apartmentCount <= tier2Max) return { price: tier2Price, tierLabel: `${tier1Max+1}–${tier2Max} דירות` };
+  return { price: tier3Price, tierLabel: `${tier2Max+1}+ דירות` };
+}
 
 // Stage 1: the app is fully free for everyone who got in during the beta —
 // no trial, no VIP tiers, no paywall. This function is kept as the single
@@ -1680,15 +1824,15 @@ function hasActiveSubscription() {
   return until > new Date();
 }
 
-// True during the first TRIAL_DAYS after a requiresPayment building was
-// created — lets a brand-new over-cap admin use "ניהול" for free before
-// the subscription gate kicks in. Buildings without requiresPayment never
-// need this (they're unrestricted regardless).
+// True during the first trialDaysSetting days after a requiresPayment
+// building was created — lets a brand-new over-cap admin use "ניהול" for
+// free before the subscription gate kicks in. Buildings without
+// requiresPayment never need this (they're unrestricted regardless).
 function isInTrialPeriod() {
   if (!buildingData?.createdAt) return false;
   const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
   const daysSinceCreation = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
-  return daysSinceCreation < TRIAL_DAYS;
+  return daysSinceCreation < trialDaysSetting;
 }
 
 // Days left in the trial (0 if not in trial / not applicable). Used only
@@ -1697,7 +1841,7 @@ function trialDaysRemaining() {
   if (!buildingData?.createdAt) return 0;
   const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
   const daysSinceCreation = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
-  return Math.max(0, Math.ceil(TRIAL_DAYS - daysSinceCreation));
+  return Math.max(0, Math.ceil(trialDaysSetting - daysSinceCreation));
 }
 
 // ===== GOOGLE PLAY BILLING =====
@@ -1725,8 +1869,15 @@ window.openPremiumModal = async function openPremiumModal() {
   }
   try {
     const settingsSnap = await getDoc(doc(db, 'meta', 'settings'));
-    const price = settingsSnap.exists() ? (settingsSnap.data().subscriptionPriceILS ?? 119) : 119;
+    const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+    const apartmentCount = allResidents.length;
+    const { price, tierLabel } = computeDisplayPrice(settings, apartmentCount);
     document.getElementById('premium-price-display').textContent = `₪${price} / שנה`;
+    const noteEl = document.getElementById('premium-price-tier-note');
+    if (noteEl) {
+      noteEl.textContent = tierLabel ? `תמחור לפי ${apartmentCount} דירות בבניין (${tierLabel})` : '';
+      noteEl.style.display = tierLabel ? '' : 'none';
+    }
   } catch(e) { /* fall back to whatever was already shown */ }
   openModal('modal-premium-upgrade');
 }
@@ -1828,11 +1979,27 @@ window.openSystemSettings = async () => {
     const limit = settings.betaBuildingLimit ?? BETA_BUILDING_LIMIT;
     const freemiumEnabled = settings.freemiumEnabled ?? false;
     const price = settings.subscriptionPriceILS ?? 119;
+    const trialDays = settings.trialDays ?? TRIAL_DAYS;
+    const tenantLoginDisabled = settings.tenantLoginDisabled ?? false;
+    const aptPricingEnabled = settings.aptPricingEnabled ?? false;
+    const aptTier1Max = settings.aptTier1Max ?? 15;
+    const aptTier1Price = settings.aptTier1Price ?? 99;
+    const aptTier2Max = settings.aptTier2Max ?? 40;
+    const aptTier2Price = settings.aptTier2Price ?? 149;
+    const aptTier3Price = settings.aptTier3Price ?? 219;
 
     document.getElementById('settings-current-count').textContent = currentCount;
     document.getElementById('input-beta-limit').value = limit;
     document.getElementById('input-freemium-toggle').checked = freemiumEnabled;
     document.getElementById('input-sub-price').value = price;
+    document.getElementById('input-trial-days').value = trialDays;
+    document.getElementById('input-tenant-login-toggle').checked = tenantLoginDisabled;
+    document.getElementById('input-apt-pricing-toggle').checked = aptPricingEnabled;
+    document.getElementById('input-apt-tier1-max').value = aptTier1Max;
+    document.getElementById('input-apt-tier1-price').value = aptTier1Price;
+    document.getElementById('input-apt-tier2-max').value = aptTier2Max;
+    document.getElementById('input-apt-tier2-price').value = aptTier2Price;
+    document.getElementById('input-apt-tier3-price').value = aptTier3Price;
   } catch(e) {
     showToast('שגיאה בטעינת ההגדרות: ' + e.message);
   }
@@ -1857,6 +2024,17 @@ window.saveBetaLimit = async () => {
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
+window.saveTenantLoginToggle = async () => {
+  const disabled = document.getElementById('input-tenant-login-toggle').checked;
+  try {
+    await setDoc(doc(db, 'meta', 'settings'), { tenantLoginDisabled: disabled }, { merge: true });
+    showToast(disabled ? '🔒 כניסת דיירים נחסמה בכל הבניינים' : '✅ כניסת דיירים פעילה שוב');
+  } catch(e) {
+    showToast('שגיאה: ' + e.message);
+    document.getElementById('input-tenant-login-toggle').checked = !disabled; // revert UI on failure
+  }
+};
+
 window.saveFreemiumToggle = async () => {
   const enabled = document.getElementById('input-freemium-toggle').checked;
   try {
@@ -1868,12 +2046,56 @@ window.saveFreemiumToggle = async () => {
   }
 };
 
+window.saveTrialDays = async () => {
+  const days = parseInt(document.getElementById('input-trial-days').value);
+  if (isNaN(days) || days < 0) { showToast('הכנס מספר ימים תקין'); return; }
+  try {
+    await setDoc(doc(db, 'meta', 'settings'), { trialDays: days }, { merge: true });
+    trialDaysSetting = days; // עדכן מיידית גם עבור הבניין הנוכחי בסשן הזה
+    showToast(`✅ ימי הניסיון עודכנו ל-${days}`);
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
 window.saveSubscriptionPrice = async () => {
   const price = parseFloat(document.getElementById('input-sub-price').value);
   if (!price || price <= 0) { showToast('הכנס מחיר תקין'); return; }
   try {
     await setDoc(doc(db, 'meta', 'settings'), { subscriptionPriceILS: price }, { merge: true });
     showToast('✅ המחיר עודכן — זכור לעדכן גם ב-Google Play Console');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.saveAptPricingToggle = async () => {
+  const enabled = document.getElementById('input-apt-pricing-toggle').checked;
+  try {
+    await setDoc(doc(db, 'meta', 'settings'), { aptPricingEnabled: enabled }, { merge: true });
+    showToast(enabled ? '✅ תמחור לפי מספר דירות מוצג מעכשיו' : '✅ חזרנו למחיר קבוע אחיד');
+  } catch(e) {
+    showToast('שגיאה: ' + e.message);
+    document.getElementById('input-apt-pricing-toggle').checked = !enabled; // revert UI on failure
+  }
+};
+
+window.saveAptPricingTiers = async () => {
+  const tier1Max = parseInt(document.getElementById('input-apt-tier1-max').value);
+  const tier1Price = parseFloat(document.getElementById('input-apt-tier1-price').value);
+  const tier2Max = parseInt(document.getElementById('input-apt-tier2-max').value);
+  const tier2Price = parseFloat(document.getElementById('input-apt-tier2-price').value);
+  const tier3Price = parseFloat(document.getElementById('input-apt-tier3-price').value);
+
+  if (!tier1Max || tier1Max < 1 || !tier2Max || tier2Max < 1) { showToast('הכנס מספרי דירות תקינים'); return; }
+  if (tier2Max <= tier1Max) { showToast('טווח 2 חייב להיות גדול מטווח 1'); return; }
+  if (!tier1Price || tier1Price <= 0 || !tier2Price || tier2Price <= 0 || !tier3Price || tier3Price <= 0) {
+    showToast('הכנס מחירים תקינים לכל הטווחים'); return;
+  }
+
+  try {
+    await setDoc(doc(db, 'meta', 'settings'), {
+      aptTier1Max: tier1Max, aptTier1Price: tier1Price,
+      aptTier2Max: tier2Max, aptTier2Price: tier2Price,
+      aptTier3Price: tier3Price
+    }, { merge: true });
+    showToast('✅ טווחי התמחור נשמרו');
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
@@ -2030,7 +2252,10 @@ window.executeRestoreBuilding = async (event) => {
 
     // 2. צור בניין חדש עם אותם פרטים
     const newBuildingRef = doc(collection(db, 'buildings'));
+    const counterRef = doc(db, 'meta', 'stats');
     await runTransaction(db, async (tx) => {
+      const counterSnap = await tx.get(counterRef);
+      const currentCount = counterSnap.exists() ? (counterSnap.data().buildingCount || 0) : 0;
       tx.set(newBuildingRef, {
         address: info.address,
         adminName: info.adminName,
@@ -2041,6 +2266,7 @@ window.executeRestoreBuilding = async (event) => {
         createdAt: serverTimestamp()
       });
       tx.set(addrRef, { buildingId: newBuildingRef.id, createdAt: serverTimestamp() });
+      tx.set(counterRef, { buildingCount: currentCount + 1 }, { merge: true });
     });
 
     const newBuildingId = newBuildingRef.id;
@@ -2145,7 +2371,7 @@ window.completeSetup = async () => {
     });
 
     buildingId = newBuildingRef.id;
-    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal, requiresPayment };
+    buildingData = { address, adminName: name, adminEmail: user.email, monthlyFee: feeVal, requiresPayment, createdAt: new Date() };
     currentUser = { uid: user.uid, name, email: user.email, role: 'admin' };
     isAdmin = true;
 
@@ -2156,9 +2382,6 @@ window.completeSetup = async () => {
     initUI();
     loadAll();
     logAnalyticsEvent('building_created');
-    if (requiresPayment) {
-      setTimeout(() => showToast('🔒 בניין זה נרשם מעבר למכסה החינמית — ניהול הבניין ידרוש רכישת מנוי'), 800);
-    }
   } catch(e) {
     if (e.message === '__BETA_FULL__') {
       document.getElementById('setup-screen').style.display = 'none';
@@ -2251,6 +2474,7 @@ window.addEventListener('popstate', (e) => {
 // ===== LOAD ALL =====
 function loadAll() {
   navigate('home');
+  loadTrialDaysSetting();
   loadResidents();
   loadIssues();
   loadAnnouncements();
@@ -4086,7 +4310,7 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
     }
 
     const amount = payment?.amount || fee;
-    const methodMap = { transfer: 'העברה בנקאית', cash: 'מזומן', check: 'שיק' };
+    const methodMap = { transfer: 'העברה בנקאית', standingOrder: 'הוראת קבע', cash: 'מזומן', check: 'שיק' };
     const methodLabel = methodMap[payment?.method] || payment?.method || '-';
     const paidDate = payment?.paidAt ? new Date(payment.paidAt.toDate()).toLocaleDateString('he-IL') : new Date().toLocaleDateString('he-IL');
     const [year, month] = ym.split('-');
