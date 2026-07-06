@@ -409,8 +409,8 @@
     <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20H24v8h11.3C33.7 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.1 18.9 12 24 12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.4-5l-6.2-5.2C29.4 35.5 26.8 36 24 36c-5.2 0-9.6-2.9-11.3-7.1L6 34c3.3 6.5 9.9 10 18 10z"/><path fill="#1565C0" d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.4-4.6 5.8l6.2 5.2C40.6 35.6 44 30.2 44 24c0-1.3-.1-2.7-.4-4z"/></svg>
     כניסה עם Google
   </button>
-  <a href="https://youtu.be/Z_bCafjNyJo?si=k_b8I7l2Mhq-HtEB" target="_blank"
-     style="display:flex;align-items:center;gap:8px;color:rgba(255,255,255,0.8);font-size:14px;text-decoration:none;margin-top:4px;padding:10px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.1);">
+  <a href="https://youtu.be/4WPXmnRcn8o?si=_rsTj1fBOii7qwt6" target="_blank"
+     style="display:flex;align-items:center;gap:8px;color:rgba(255,255,255,0.8);font-size:14px;text-decoration:none;margin-top:auto;padding:10px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.1);">
     <span style="font-size:20px;">▶️</span> סרטון הדרכה
   </a>
   <div id="auth-error"></div>
@@ -559,7 +559,7 @@
   <!-- HOME SCREEN -->
   <div id="screen-home" class="screen">
     <div class="home-header-area">
-      <div style="display:grid; grid-template-columns:1fr auto 1fr; align-items:center; width:100%;">
+      <div style="display:grid; grid-template-columns:1fr auto 1fr; align-items:start; width:100%;">
         <div style="justify-self:start;">
           <div class="home-greeting" id="home-greeting">שלום,</div>
           <div class="home-name" id="home-name">טוען...</div>
@@ -1397,11 +1397,18 @@ function fmtCurrency(n) {
   return '₪' + Number(n).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+// Shared across monthLabel(), exportExcel(), createPDFReport(), generateReceipt()
+// and renderHistoryGrid() — was previously duplicated 5x in the file.
+const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+// Shared across renderExpenses(), renderBalance() and openLog() — was
+// previously duplicated 3x in the file with identical contents.
+const EXPENSE_CATEGORY_ICONS = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
+
 function monthLabel(ym) {
   // ym = "2026-06"
   const [y, m] = ym.split('-');
-  const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-  return months[parseInt(m)-1] + ' ' + y;
+  return HEBREW_MONTHS[parseInt(m)-1] + ' ' + y;
 }
 
 function currentYM() {
@@ -1440,6 +1447,35 @@ function normalizeAddress(address) {
     .replace(/תל אביב.*/g, 'תל אביב') // גרסאות של ת"א
     .replace(/\s+/g, ' ')             // collapse whitespace
     .trim();
+}
+
+// Shared bank/cash balance formula. Takes plain data arrays (already
+// .data()'d from Firestore docs, from either a live onSnapshot cache or a
+// one-off getDocs fetch) plus the building's opening balances, and returns
+// every figure the balance tab, Excel export and PDF report all need.
+// Previously this exact formula was hand-copied 3x across the file — a
+// change to the math (e.g. a new payment method) had to be made in sync in
+// all 3 places or the reports would silently disagree with each other.
+function computeBalanceFigures(payments, expenses, deposits, openingBalance, cashOpeningBalance) {
+  const totalCollected = payments.reduce((s,p) => s + (p.amount||0), 0);
+  const cashCollected = payments.filter(p => p.method === 'cash').reduce((s,p) => s + (p.amount||0), 0);
+  const transferCollected = totalCollected - cashCollected;
+
+  const totalExpenses = expenses.reduce((s,e) => s + (e.amount||0), 0);
+  const cashExpenses = expenses.filter(e => e.method === 'cash').reduce((s,e) => s + (e.amount||0), 0);
+  const bankExpenses = totalExpenses - cashExpenses;
+
+  const totalDeposits = deposits.reduce((s,d) => s + (d.amount||0), 0);
+
+  const bankBalance = (openingBalance||0) + transferCollected + totalDeposits - bankExpenses;
+  const cashBalance = (cashOpeningBalance||0) + cashCollected - totalDeposits - cashExpenses;
+
+  return {
+    totalCollected, cashCollected, transferCollected,
+    totalExpenses, cashExpenses, bankExpenses,
+    totalDeposits, bankBalance, cashBalance,
+    balance: bankBalance + cashBalance
+  };
 }
 
 // ===== AUTH =====
@@ -1609,10 +1645,11 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.3.1'; // תיקון כותרת ושורות סיכום בדוח PDF - החלפת bidi/isolate ב-flexbox פשוט שלא תלוי בתמיכת html2canvas
+const APP_VERSION = '2.3.5'; // הוספת 30 ימי ניסיון לכפתור ניהול (מנגנון תשלום שלב ב׳) + איחוד קוד כפול (מערך חודשים עברי, מפת אייקוני קטגוריות, נוסחת יתרות בנק/מזומן) למקור אחד
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
+const TRIAL_DAYS = 30; // Stage 2: buildings created past the cap (requiresPayment) get this many free days of "ניהול" access before a subscription is required.
 
 // Stage 1: the app is fully free for everyone who got in during the beta —
 // no trial, no VIP tiers, no paywall. This function is kept as the single
@@ -1630,6 +1667,26 @@ function hasActiveSubscription() {
   if (!buildingData?.premiumUntil) return false;
   const until = buildingData.premiumUntil.toDate ? buildingData.premiumUntil.toDate() : new Date(buildingData.premiumUntil);
   return until > new Date();
+}
+
+// True during the first TRIAL_DAYS after a requiresPayment building was
+// created — lets a brand-new over-cap admin use "ניהול" for free before
+// the subscription gate kicks in. Buildings without requiresPayment never
+// need this (they're unrestricted regardless).
+function isInTrialPeriod() {
+  if (!buildingData?.createdAt) return false;
+  const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
+  const daysSinceCreation = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
+  return daysSinceCreation < TRIAL_DAYS;
+}
+
+// Days left in the trial (0 if not in trial / not applicable). Used only
+// for display purposes (e.g. a note in the finance menu).
+function trialDaysRemaining() {
+  if (!buildingData?.createdAt) return 0;
+  const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
+  const daysSinceCreation = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
+  return Math.max(0, Math.ceil(TRIAL_DAYS - daysSinceCreation));
 }
 
 // ===== GOOGLE PLAY BILLING =====
@@ -2851,8 +2908,8 @@ window.saveCashOpeningBalance = async () => {
 };
 
 window.openAdminFinance = () => {
-  if (buildingData?.requiresPayment && !hasActiveSubscription() && auth.currentUser?.email !== SUPER_ADMIN_EMAIL) {
-    showToast('🔒 ניהול הבניין דורש רכישת מנוי');
+  if (buildingData?.requiresPayment && !hasActiveSubscription() && !isInTrialPeriod() && auth.currentUser?.email !== SUPER_ADMIN_EMAIL) {
+    showToast('🔒 תקופת הניסיון הסתיימה — ניהול הבניין דורש רכישת מנוי');
     setTimeout(() => openPremiumModal(), 400);
     return;
   }
@@ -2875,6 +2932,10 @@ window.openAdminFinance = () => {
   }
 
   document.getElementById('modal-admin-finance').classList.add('open');
+
+  if (buildingData?.requiresPayment && !hasActiveSubscription() && isInTrialPeriod() && auth.currentUser?.email !== SUPER_ADMIN_EMAIL) {
+    showToast(`ניסיון חינם — נותרו ${trialDaysRemaining()} ימים`);
+  }
 };
 
 window.closeAdminFinance = () => {
@@ -3106,7 +3167,7 @@ function renderExpenses() {
     container.innerHTML = '<div class="card-empty" style="margin:16px;">אין הוצאות רשומות</div>';
     return;
   }
-  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
+  const catIcons = EXPENSE_CATEGORY_ICONS;
   const total = allExpenses.reduce((s,e) => s + (e.amount||0), 0);
   let html = '<div style="padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;">'
     + '<span style="font-size:15px;font-weight:700;">סה"כ הוצאות</span>'
@@ -3261,23 +3322,13 @@ function renderBalance() {
   const container = document.getElementById('balance-content');
   if (!container) return;
 
-  // Total collected (all time)
-  const totalCollected = balPaymentsAll.reduce((s,p) => s + (p.amount||0), 0);
-  const cashCollected = balPaymentsAll.filter(p => p.method === 'cash').reduce((s,p) => s + (p.amount||0), 0);
-  const transferCollected = totalCollected - cashCollected;
-
-  // Total expenses (all time)
-  const totalExpenses = allExpenses.reduce((s,e) => s + (e.amount||0), 0);
-  const cashExpenses = allExpenses.filter(e => e.method === 'cash').reduce((s,e) => s + (e.amount||0), 0);
-  const bankExpenses = totalExpenses - cashExpenses;
-
-  const totalDeposits = balDepositsAll.reduce((s,d) => s + (d.amount||0), 0);
-
   const openingBalance = buildingData?.openingBalance || 0;
   const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
-  const bankBalance = openingBalance + transferCollected + totalDeposits - bankExpenses;
-  const cashBalance = cashOpeningBalance + cashCollected - totalDeposits - cashExpenses;
-  const balance = bankBalance + cashBalance;
+  const {
+    totalCollected, cashCollected, transferCollected,
+    totalExpenses, cashExpenses, bankExpenses,
+    totalDeposits, bankBalance, cashBalance, balance
+  } = computeBalanceFigures(balPaymentsAll, allExpenses, balDepositsAll, openingBalance, cashOpeningBalance);
   const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
   const balIcon = balance >= 0 ? '📈' : '📉';
 
@@ -3286,7 +3337,7 @@ function renderBalance() {
   allExpenses.forEach(e => {
     byCat[e.category] = (byCat[e.category]||0) + (e.amount||0);
   });
-  const catIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
+  const catIcons = EXPENSE_CATEGORY_ICONS;
 
   let html = '<div style="padding:16px;">';
   // Main balance card - יתרה בחשבון הבנק
@@ -3369,7 +3420,7 @@ window.exportExcel = async () => {
     }
 
     const year = new Date().getFullYear();
-    const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+    const months = HEBREW_MONTHS;
 
     // טען נתונים
     const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
@@ -3487,16 +3538,14 @@ window.exportExcel = async () => {
 
     // מאזן אמיתי (כל הזמנים, לא רק השנה הנוכחית)
     const allPaySnapBal = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
-    const cashCollectedAllBal = allPaySnapBal.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
-    const transferCollectedAllBal = allPaySnapBal.docs.reduce((s,d) => s + (d.data().amount||0), 0) - cashCollectedAllBal;
     const allExpSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
-    const cashExpAllBal = allExpSnapBal.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
-    const bankExpAllBal = allExpSnapBal.docs.reduce((s,d) => s + (d.data().amount||0), 0) - cashExpAllBal;
     const depositSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-    const totalDepositsBal = depositSnapBal.docs.reduce((s,d) => s + (d.data().amount||0), 0);
-    const bankBalanceAll = openingBalance + transferCollectedAllBal + totalDepositsBal - bankExpAllBal;
-    const cashBalanceAll = cashOpeningBalance + cashCollectedAllBal - totalDepositsBal - cashExpAllBal;
-    const balance = bankBalanceAll + cashBalanceAll;
+    const { bankBalance: bankBalanceAll, cashBalance: cashBalanceAll, balance } = computeBalanceFigures(
+      allPaySnapBal.docs.map(d => d.data()),
+      allExpSnapBal.docs.map(d => d.data()),
+      depositSnapBal.docs.map(d => d.data()),
+      openingBalance, cashOpeningBalance
+    );
 
     // פירוט חודשי הוצאות
     const expByMonth = {};
@@ -3568,7 +3617,7 @@ window.openLog = async () => {
     return;
   }
 
-  const expCatIcons = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
+  const expCatIcons = EXPENSE_CATEGORY_ICONS;
 
   function renderLogCard(p) {
     const dateStr = p.at ? new Date(p.at.toDate()).toLocaleString('he-IL') : '-';
@@ -3712,7 +3761,7 @@ async function createPDFReport() {
     paymentMap[key] = p;
   });
 
-  const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  const months = HEBREW_MONTHS;
   
   // Load expenses
   const expSnap = await getDocs(query(
@@ -3766,15 +3815,15 @@ async function createPDFReport() {
   const openingBalance = buildingData?.openingBalance || 0;
   const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
   const allPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
-  const cashCollectedAll = allPaySnap.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
-  const transferCollectedAll = allPaySnap.docs.reduce((s,d) => s + (d.data().amount||0), 0) - cashCollectedAll;
   const allExpSnap = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
-  const cashExpAll = allExpSnap.docs.filter(d => d.data().method === 'cash').reduce((s,d) => s + (d.data().amount||0), 0);
-  const bankExpAll = allExpSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0) - cashExpAll;
   const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-  const totalDeposits = depositSnap.docs.reduce((s,d) => s + (d.data().amount||0), 0);
-  const bankBalance = openingBalance + transferCollectedAll + totalDeposits - bankExpAll;
-  const cashBalance = cashOpeningBalance + cashCollectedAll - totalDeposits - cashExpAll;
+  const { bankBalance, cashBalance } = computeBalanceFigures(
+    allPaySnap.docs.map(d => d.data()),
+    allExpSnap.docs.map(d => d.data()),
+    depositSnap.docs.map(d => d.data()),
+    openingBalance, cashOpeningBalance
+  );
+
 
   const html = `
     <html>
@@ -3857,8 +3906,8 @@ async function createPDFReport() {
       </table>
 
       <div class="summary">
-        ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>(נכון ל-</span><span dir="ltr">${buildingData.openingBalanceDate}</span><span>)</span>` : ''}</div>` : ''}
-        ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>(נכון ל-</span><span dir="ltr">${buildingData.cashOpeningBalanceDate}</span><span>)</span>` : ''}</div>` : ''}
+        ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${buildingData.openingBalanceDate}</span>` : ''}</div>` : ''}
+        ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${buildingData.cashOpeningBalanceDate}</span>` : ''}</div>` : ''}
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הכנסות:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
@@ -3905,7 +3954,7 @@ window.showResidentHistory = async (apt, name, fee) => {
 
 async function renderHistoryGrid(apt, name, fee) {
   const year = new Date().getFullYear();
-  const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  const monthNames = HEBREW_MONTHS;
   const snap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('apt','==', parseInt(apt))));
   const paidMonths = {};
   snap.docs.forEach(d => {
@@ -4020,7 +4069,7 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
     const methodLabel = methodMap[payment?.method] || payment?.method || '-';
     const paidDate = payment?.paidAt ? new Date(payment.paidAt.toDate()).toLocaleDateString('he-IL') : new Date().toLocaleDateString('he-IL');
     const [year, month] = ym.split('-');
-    const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+    const monthNames = HEBREW_MONTHS;
     const monthLabel = monthNames[parseInt(month)-1] + ' ' + year;
     const receiptNum = `${year}${month}${String(apt).padStart(2,'0')}`;
     const buildingAddress = buildingData?.address || '';
