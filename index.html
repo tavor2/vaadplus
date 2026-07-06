@@ -1449,6 +1449,17 @@ function normalizeAddress(address) {
     .trim();
 }
 
+// Splits any list of {amount, method} items (payments or expenses) into
+// cash vs bank(=everything else) totals. Used where we need a bank/cash
+// breakdown for a scoped subset of data (e.g. a single year in the Excel
+// export or PDF report) rather than the all-time figures computeBalanceFigures()
+// below returns.
+function splitCashBank(items) {
+  const cash = items.reduce((s,i) => s + (i.method === 'cash' ? (i.amount||0) : 0), 0);
+  const total = items.reduce((s,i) => s + (i.amount||0), 0);
+  return { cash, bank: total - cash, total };
+}
+
 // Shared bank/cash balance formula. Takes plain data arrays (already
 // .data()'d from Firestore docs, from either a live onSnapshot cache or a
 // one-off getDocs fetch) plus the building's opening balances, and returns
@@ -1645,7 +1656,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.3.5'; // הוספת 30 ימי ניסיון לכפתור ניהול (מנגנון תשלום שלב ב׳) + איחוד קוד כפול (מערך חודשים עברי, מפת אייקוני קטגוריות, נוסחת יתרות בנק/מזומן) למקור אחד
+const APP_VERSION = '2.3.6'; // הסרת מקף שגוי ב"נכון ל" בדוח PDF + פיצול סה"כ הוצאות לבנק/מזומן במאזן, באקסל ובדוח PDF
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -3365,9 +3376,13 @@ function renderBalance() {
       + '</div>'
       + '</div>';
   }
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
     + '<div class="stat-card"><div class="stat-value green">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">סה"כ גבייה</div></div>'
     + '<div class="stat-card"><div class="stat-value red">₪'+totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">סה"כ הוצאות</div></div>'
+    + '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+    + '<div class="stat-card"><div class="stat-value red">₪'+bankExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">🏦 הוצאות מהבנק</div></div>'
+    + '<div class="stat-card"><div class="stat-value red">₪'+cashExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">💵 הוצאות במזומן</div></div>'
     + '</div>';
   // Expenses by category
   if (Object.keys(byCat).length) {
@@ -3533,6 +3548,7 @@ window.exportExcel = async () => {
     // ===== גיליון 3 — מאזן (כולל פירוט חודשי גבייה/הוצאות) =====
     const totalCollected = grandTotal;
     const totalExpenses = expTotal;
+    const { bank: bankExpensesYear, cash: cashExpensesYear } = splitCashBank(expenses);
     const openingBalance = buildingData?.openingBalance || 0;
     const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
 
@@ -3576,6 +3592,8 @@ window.exportExcel = async () => {
       [], [],
       [`סה"כ גבייה (${year})`, totalCollected],
       [`סה"כ הוצאות (${year})`, totalExpenses],
+      [`מתוכן הוצאות מהבנק (${year})`, bankExpensesYear],
+      [`מתוכן הוצאות במזומן (${year})`, cashExpensesYear],
       [], [],
       ['פירוט חודשי', `${year}`],
       ['חודש', 'גבייה', 'הוצאות', 'הפרש'],
@@ -3781,6 +3799,7 @@ async function createPDFReport() {
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
     </tr>`;
   }).join('');
+  const { bank: bankExpensesYear, cash: cashExpensesYear } = splitCashBank(expenses);
   
   let tableRows = '';
   let totalCollected = 0;
@@ -3906,10 +3925,12 @@ async function createPDFReport() {
       </table>
 
       <div class="summary">
-        ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${buildingData.openingBalanceDate}</span>` : ''}</div>` : ''}
-        ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${buildingData.cashOpeningBalanceDate}</span>` : ''}</div>` : ''}
+        ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל</span><span dir="ltr">${buildingData.openingBalanceDate}</span>` : ''}</div>` : ''}
+        ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל</span><span dir="ltr">${buildingData.cashOpeningBalanceDate}</span>` : ''}</div>` : ''}
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הכנסות:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות במזומן:</span><span dir="ltr">₪${cashExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
           <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">יתרה בחשבון הבנק:</span><span dir="ltr">&#8362;${bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
           <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">יתרת מזומן:</span><span dir="ltr">&#8362;${cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
