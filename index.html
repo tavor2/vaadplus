@@ -1778,7 +1778,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.4.4'; // תיקון הפקת קבלות לא עקבית (PDF ריק לפעמים) — תוספת paint-tick לפני html2canvas + מניעת קריאות חופפות ל-#pdf-container
+const APP_VERSION = '2.4.5'; // תיקון אמיתי לקבלה ריקה: הוחלף display:grid בפריסת flexbox בתבנית הקבלה — CSS Grid לא נתמך באופן אמין ב-html2canvas (השורש להתנהגות הלא-עקבית, לא בעיית תזמון)
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -4367,8 +4367,8 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
       .receipt-page .receipt-label { text-align: left; }
       .receipt-page .receipt-word { font-size: 22px; font-weight: 900; color: #1A56DB; letter-spacing: 1px; }
       .receipt-page .receipt-num { font-size: 11px; color: #6b7280; margin-top: 2px; }
-      .receipt-page .body-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 12px; }
-      .receipt-page .field { display: flex; flex-direction: column; gap: 1px; }
+      .receipt-page .body-grid { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 12px; }
+      .receipt-page .field { flex: 1 1 45%; display: flex; flex-direction: column; gap: 1px; }
       .receipt-page .field-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; font-weight: 600; }
       .receipt-page .field-value { font-size: 13px; font-weight: 700; color: #111827; }
       .receipt-page .amount-box { background: #EBF2FF; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
