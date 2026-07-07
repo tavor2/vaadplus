@@ -1778,7 +1778,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.4.3'; // תיקון תצוגת "נכון ל" ביתרות פתיחה (רווח חסר) + הצגת תאריך בפורמט dd/mm/yyyy בכל מקום (דוח PDF, מאזן, אקסל, יומן)
+const APP_VERSION = '2.4.4'; // תיקון הפקת קבלות לא עקבית (PDF ריק לפעמים) — תוספת paint-tick לפני html2canvas + מניעת קריאות חופפות ל-#pdf-container
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -3977,6 +3977,11 @@ window.openLog = async () => {
 };
 
 window.generatePDF = async () => {
+  if (receiptGenerationInProgress) {
+    showToast('פעולת PDF אחרת עדיין בתהליך, רגע בבקשה...');
+    return;
+  }
+  receiptGenerationInProgress = true;
   try {
     showToast('📄 מכין דוח...');
     // Load html2pdf library
@@ -3992,6 +3997,8 @@ window.generatePDF = async () => {
     await createPDFReport();
   } catch(e) {
     showToast('שגיאה: ' + e.message);
+  } finally {
+    receiptGenerationInProgress = false;
   }
 };
 
@@ -4186,6 +4193,10 @@ async function createPDFReport() {
   pdfContainer.innerHTML = '';
   pdfContainer.appendChild(element);
 
+  // Same paint-tick fix as generateReceipt() — ensures the freshly-injected
+  // off-screen content is actually painted before html2canvas snapshots it.
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
   const opt = {
     margin: 10,
     filename: `vaad_bait_${year}.pdf`,
@@ -4305,7 +4316,14 @@ async function renderHistoryGrid(apt, name, fee) {
 
 
 // ===== RECEIPT GENERATION =====
+let receiptGenerationInProgress = false; // guards the shared #pdf-container from being clobbered by an overlapping call
+
 window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
+  if (receiptGenerationInProgress) {
+    showToast('קבלה קודמת עדיין בהכנה, רגע בבקשה...');
+    return;
+  }
+  receiptGenerationInProgress = true;
   try {
     showToast('מכין קבלה...');
     if (!window.html2pdf) {
@@ -4401,6 +4419,13 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
     pdfContainer.innerHTML = '';
     pdfContainer.appendChild(el);
 
+    // Give the browser an actual paint cycle before html2canvas snapshots
+    // this off-screen (position:fixed;left:-99999px) element. Without this,
+    // on some devices/loads the snapshot can fire before layout/paint has
+    // caught up with the just-injected HTML, producing a blank/empty PDF —
+    // inconsistently, since it depends on device speed/timing.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
     const opt = {
       margin: 0,
       filename: `קבלה_דירה${apt}_${monthLabel}.pdf`,
@@ -4413,6 +4438,7 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
     showToast('🧾 קבלה הורדה בהצלחה');
     logAnalyticsEvent('receipt_generated');
   } catch(e) { showToast('שגיאה: ' + e.message); }
+  finally { receiptGenerationInProgress = false; }
 };
 
 // ===== ISSUES =====
