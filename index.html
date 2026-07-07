@@ -1778,7 +1778,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.4.7'; // שיפור איתור כתובות: fallback למספר בית שהמשתמש הקליד כשה-geocoder לא מכיר אותו, יותר שדות fallback, והודעת "לא נמצאו תוצאות"
+const APP_VERSION = '2.4.8'; // הפקת קבלות: מעבר לצילום html2canvas ידני עם זיהוי-תוצאה-ריקה + ניסיון חוזר אוטומטי (עד 4 ניסיונות), במקום html2pdf().save() חד-פעמי — מטפל בבאג הקבלה הריקה גם בלי לדעת את הגורם המדויק
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -4318,6 +4318,55 @@ async function renderHistoryGrid(apt, name, fee) {
 // ===== RECEIPT GENERATION =====
 let receiptGenerationInProgress = false; // guards the shared #pdf-container from being clobbered by an overlapping call
 
+// Loads html2canvas + jsPDF as standalone libraries (rather than relying on
+// html2pdf.js's bundled/internal copies, whose global exposure varies by
+// version). Used by generateReceipt() so we get a raw canvas we can inspect
+// before committing to a PDF — see captureReceiptCanvas() below.
+async function ensureCanvasPdfLibs() {
+  if (!window.html2canvas) {
+    const s1 = document.createElement('script');
+    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    await new Promise((resolve, reject) => { s1.onload = resolve; s1.onerror = reject; document.head.appendChild(s1); });
+  }
+  if (!window.jspdf) {
+    const s2 = document.createElement('script');
+    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    await new Promise((resolve, reject) => { s2.onload = resolve; s2.onerror = reject; document.head.appendChild(s2); });
+  }
+}
+
+// Samples pixels across the canvas to detect an all-white/empty render —
+// the exact failure mode behind the intermittent blank-receipt bug. Lets
+// generateReceipt() retry the capture instead of silently saving a blank PDF.
+function isCanvasBlank(canvas) {
+  if (!canvas.width || !canvas.height) return true;
+  const ctx = canvas.getContext('2d');
+  const cols = 24, rows = 8;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = Math.min(canvas.width - 1, Math.floor((canvas.width / cols) * c));
+      const y = Math.min(canvas.height - 1, Math.floor((canvas.height / rows) * r));
+      const [red, green, blue, alpha] = ctx.getImageData(x, y, 1, 1).data;
+      if (alpha > 0 && (red < 250 || green < 250 || blue < 250)) return false; // found real (non-white) content
+    }
+  }
+  return true;
+}
+
+// Renders el via html2canvas, retrying with a longer paint-tick delay each
+// time if the result comes back blank (see isCanvasBlank). This replaces
+// the previous approach of guessing at timing fixes — it self-heals against
+// whatever intermittent condition was causing blank captures.
+async function captureReceiptCanvas(el, maxAttempts = 4) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (attempt > 1) await new Promise(r => setTimeout(r, 300 * attempt));
+    const canvas = await window.html2canvas(el, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+    if (!isCanvasBlank(canvas)) return canvas;
+  }
+  return null; // every attempt came back blank
+}
+
 window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
   if (receiptGenerationInProgress) {
     showToast('קבלה קודמת עדיין בהכנה, רגע בבקשה...');
@@ -4339,11 +4388,7 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
 
   try {
     showToast('מכין קבלה...');
-    if (!window.html2pdf) {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-      await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
-    }
+    await ensureCanvasPdfLibs();
 
     let payment = null;
     if (paymentId) {
@@ -4432,22 +4477,24 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
     pdfContainer.innerHTML = '';
     pdfContainer.appendChild(el);
 
-    // Give the browser an actual paint cycle before html2canvas snapshots
-    // this off-screen (position:fixed;left:-99999px) element. Without this,
-    // on some devices/loads the snapshot can fire before layout/paint has
-    // caught up with the just-injected HTML, producing a blank/empty PDF —
-    // inconsistently, since it depends on device speed/timing.
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-    const opt = {
-      margin: 0,
-      filename: `קבלה_דירה${apt}_${monthLabel}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 3, useCORS: true },
-      jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a6' }
-    };
-    await html2pdf().set(opt).from(el).save();
+    // Capture with automatic retry if the render comes back blank — see
+    // captureReceiptCanvas()/isCanvasBlank() above. This replaces relying
+    // on a single timing guess, which repeatedly failed to fully fix the
+    // intermittent blank-receipt bug.
+    const canvas = await captureReceiptCanvas(el);
     pdfContainer.innerHTML = '';
+    if (!canvas) {
+      throw new Error('לא הצלחנו להפיק את הקבלה כרגע — נסה/י שוב בעוד רגע');
+    }
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a6' });
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgData = canvas.toDataURL('image/jpeg', 0.98);
+    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`קבלה_דירה${apt}_${monthLabel}.pdf`);
+
     showToast('🧾 קבלה הורדה בהצלחה');
     logAnalyticsEvent('receipt_generated');
   } catch(e) { showToast('שגיאה: ' + e.message); }
