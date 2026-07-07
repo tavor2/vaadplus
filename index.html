@@ -1778,7 +1778,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.4.5'; // תיקון אמיתי לקבלה ריקה: הוחלף display:grid בפריסת flexbox בתבנית הקבלה — CSS Grid לא נתמך באופן אמין ב-html2canvas (השורש להתנהגות הלא-עקבית, לא בעיית תזמון)
+const APP_VERSION = '2.4.6'; // תיקון נוסף לקבלה ריקה: השהיית ה-listener החי של תשלומי החודש הנוכחי בזמן הפקת קבלה — מנע התנגשות בין רינדור רקע של Firestore לבין צילום html2canvas
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -4324,6 +4324,19 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
     return;
   }
   receiptGenerationInProgress = true;
+
+  // Temporarily pause the live payments listener (if the currently-viewed
+  // month happens to be the same month we're generating a receipt for).
+  // Root cause of the intermittent blank-receipt bug: onSnapshot can fire a
+  // background re-render of the whole payments overview (server-confirmation
+  // round-trip, even with no real data change) at the exact moment
+  // html2canvas is trying to paint+snapshot the off-screen receipt element.
+  // That main-thread churn was starving the receipt's paint from completing
+  // in time, despite the paint-tick wait below. Unsubscribing here removes
+  // the race entirely; loadPayments() re-subscribes once we're done.
+  const pausedListener = !!unsubPayments;
+  if (pausedListener) { unsubPayments(); unsubPayments = null; currentPaymentsYm = null; }
+
   try {
     showToast('מכין קבלה...');
     if (!window.html2pdf) {
@@ -4438,7 +4451,10 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId) => {
     showToast('🧾 קבלה הורדה בהצלחה');
     logAnalyticsEvent('receipt_generated');
   } catch(e) { showToast('שגיאה: ' + e.message); }
-  finally { receiptGenerationInProgress = false; }
+  finally {
+    receiptGenerationInProgress = false;
+    if (pausedListener) loadPayments(); // re-subscribe to the live listener we paused above
+  }
 };
 
 // ===== ISSUES =====
