@@ -1476,6 +1476,18 @@ function fmtCurrency(n) {
   return '₪' + Number(n).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+// Converts a yyyy-mm-dd date-input value (as stored for openingBalanceDate /
+// cashOpeningBalanceDate / paymentLog asOfDate) into dd/mm/yyyy for display.
+// Shared across renderBalance(), exportExcel(), createPDFReport() and openLog()
+// so opening-balance dates are shown consistently everywhere in the app.
+function fmtDateDMY(dateStr) {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
+}
+
 // Shared across monthLabel(), exportExcel(), createPDFReport(), generateReceipt()
 // and renderHistoryGrid() — was previously duplicated 5x in the file.
 const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
@@ -1766,7 +1778,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.4.1'; // תמחור מוצג לפי מספר דירות בבניין (Super Admin) — הצגה בלבד, טרם משפיע על גבייה בפועל דרך Google Play
+const APP_VERSION = '2.4.3'; // תיקון תצוגת "נכון ל" ביתרות פתיחה (רווח חסר) + הצגת תאריך בפורמט dd/mm/yyyy בכל מקום (דוח PDF, מאזן, אקסל, יומן)
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -3593,10 +3605,10 @@ function renderBalance() {
     html += '<div class="card" style="margin-bottom:16px;font-size:13px;color:var(--gray-600);">'
       + '<div style="font-weight:700;margin-bottom:6px;">יתרות פתיחה</div>'
       + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
-      + '<span>🏦 בנק: ₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.openingBalanceDate ? ' (נכון ל-'+buildingData.openingBalanceDate+')' : '')+'</span>'
+      + '<span>🏦 בנק: ₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.openingBalanceDate ? ' (נכון ל-'+fmtDateDMY(buildingData.openingBalanceDate)+')' : '')+'</span>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
-      + '<span>💵 מזומן: ₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+buildingData.cashOpeningBalanceDate+')' : '')+'</span>'
+      + '<span>💵 מזומן: ₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+fmtDateDMY(buildingData.cashOpeningBalanceDate)+')' : '')+'</span>'
       + '</div>'
       + '</div>';
   }
@@ -3807,8 +3819,8 @@ window.exportExcel = async () => {
     const balSheetData = [
       ['סיכום מאזן (כל הזמנים)', `${year}`],
       [],
-      ['יתרת פתיחה בבנק', openingBalance, buildingData?.openingBalanceDate ? `נכון ל-${buildingData.openingBalanceDate}` : ''],
-      ['יתרת פתיחה מזומן', cashOpeningBalance, buildingData?.cashOpeningBalanceDate ? `נכון ל-${buildingData.cashOpeningBalanceDate}` : ''],
+      ['יתרת פתיחה בבנק', openingBalance, buildingData?.openingBalanceDate ? `נכון ל-${fmtDateDMY(buildingData.openingBalanceDate)}` : ''],
+      ['יתרת פתיחה מזומן', cashOpeningBalance, buildingData?.cashOpeningBalanceDate ? `נכון ל-${fmtDateDMY(buildingData.cashOpeningBalanceDate)}` : ''],
       [],
       ['יתרה בחשבון הבנק (נוכחי)', bankBalanceAll],
       ['יתרת קופת מזומן (נוכחית)', cashBalanceAll],
@@ -3899,7 +3911,7 @@ window.openLog = async () => {
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
         + '<div>'
         + '<div style="font-weight:700;">🏦 עדכון יתרת פתיחה בבנק</div>'
-        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+(p.asOfDate ? ' (נכון ל-'+p.asOfDate+')' : '')+'</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+(p.asOfDate ? ' (נכון ל-'+fmtDateDMY(p.asOfDate)+')' : '')+'</div>'
         + byLine
         + '</div>'
         + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
@@ -3911,7 +3923,7 @@ window.openLog = async () => {
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
         + '<div>'
         + '<div style="font-weight:700;">💵 עדכון יתרת פתיחה מזומן</div>'
-        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+(p.asOfDate ? ' (נכון ל-'+p.asOfDate+')' : '')+'</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">₪'+(p.previousAmount||0)+' ← ₪'+(p.amount||0)+(p.asOfDate ? ' (נכון ל-'+fmtDateDMY(p.asOfDate)+')' : '')+'</div>'
         + byLine
         + '</div>'
         + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
@@ -4016,11 +4028,13 @@ async function createPDFReport() {
   let totalExpenses = 0;
   const expenseRows = expenses.map(e => {
     totalExpenses += (e.amount || 0);
+    const methodLabel = e.method === 'cash' ? 'מזומן' : 'בנק';
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(e.description || '-').replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
   }).join('');
   const { bank: bankExpensesYear, cash: cashExpensesYear } = splitCashBank(expenses);
@@ -4137,20 +4151,21 @@ async function createPDFReport() {
       <table style="width:100%;table-layout:fixed;">
         <thead>
           <tr>
-            <th style="width:25%;">קטגוריה</th>
-            <th style="width:20%;">סכום</th>
-            <th style="width:35%;">תיאור</th>
-            <th style="width:20%;">תאריך</th>
+            <th style="width:18%;">קטגוריה</th>
+            <th style="width:15%;">סכום</th>
+            <th style="width:30%;">תיאור</th>
+            <th style="width:17%;">תאריך</th>
+            <th style="width:20%;">אמצעי תשלום</th>
           </tr>
         </thead>
         <tbody>
-          ${expenseRows || '<tr><td colspan="4" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
+          ${expenseRows || '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
         </tbody>
       </table>
 
       <div class="summary">
-        ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל</span><span dir="ltr">${buildingData.openingBalanceDate}</span>` : ''}</div>` : ''}
-        ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל</span><span dir="ltr">${buildingData.cashOpeningBalanceDate}</span>` : ''}</div>` : ''}
+        ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.openingBalanceDate)}</span>` : ''}</div>` : ''}
+        ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.cashOpeningBalanceDate)}</span>` : ''}</div>` : ''}
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הכנסות:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
