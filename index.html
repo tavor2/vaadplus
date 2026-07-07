@@ -1778,7 +1778,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.4.8'; // הפקת קבלות: מעבר לצילום html2canvas ידני עם זיהוי-תוצאה-ריקה + ניסיון חוזר אוטומטי (עד 4 ניסיונות), במקום html2pdf().save() חד-פעמי — מטפל בבאג הקבלה הריקה גם בלי לדעת את הגורם המדויק
+const APP_VERSION = '2.4.9'; // תיקון: כל מודל נפתח עכשיו גלול לראש (במקום להישאר בעמדת הגלילה מהפעם הקודמת) — פתר את הבעיה שמודל "הוסף דייר" נפתח חתוך מתחת לשדה מספר דירה/קומה
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -4744,7 +4744,14 @@ function updateHomeStats() {
 
 // ===== MODAL HELPERS =====
 window.openModal = (id) => {
-  document.getElementById(id).classList.add('open');
+  const overlay = document.getElementById(id);
+  overlay.classList.add('open');
+  // Reset scroll position — without this, a modal reopens wherever it was
+  // scrolled to when last closed (e.g. after scrolling down to Save), so
+  // fields like apartment/floor at the top stay hidden until the user
+  // manually scrolls up again.
+  const inner = overlay.querySelector('.modal');
+  if (inner) inner.scrollTop = 0;
   history.pushState({ modal: id }, '', '');
 };
 window.closeModal = (id) => {
