@@ -1778,7 +1778,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.4.6'; // תיקון נוסף לקבלה ריקה: השהיית ה-listener החי של תשלומי החודש הנוכחי בזמן הפקת קבלה — מנע התנגשות בין רינדור רקע של Firestore לבין צילום html2canvas
+const APP_VERSION = '2.4.7'; // שיפור איתור כתובות: fallback למספר בית שהמשתמש הקליד כשה-geocoder לא מכיר אותו, יותר שדות fallback, והודעת "לא נמצאו תוצאות"
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const MY_BUILDING_ADDRESS = 'זרחין 10, רעננה ';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
@@ -4743,15 +4743,24 @@ window.addressAutocomplete = (val) => {
   clearTimeout(addressTimer);
   addressTimer = setTimeout(async () => {
     try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&countrycodes=il&format=json&addressdetails=1&limit=5&accept-language=he`;
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&countrycodes=il&format=json&addressdetails=1&limit=10&accept-language=he`;
       const res = await fetch(url, { headers: { 'Accept-Language': 'he' } });
       const data = await res.json();
-      if (!data.length) { box.style.display = 'none'; return; }
+      if (!data.length) {
+        box.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--gray-400);">לא נמצאו תוצאות תואמות</div>';
+        box.style.display = 'block';
+        return;
+      }
+      // אם המשתמש הקליד מספר בית שהשרת לא מחזיר עבור הרחוב הזה (מצב נפוץ
+      // ברחובות רבים בישראל שאינם ממופים ברמת מספר בית ב-OpenStreetMap) —
+      // נשתמש במספר שהמשתמש הקליד בעצמו, כדי לא לאבד אותו מההצעה.
+      const typedHouseNumberMatch = val.match(/\d+/);
+      const typedHouseNumber = typedHouseNumberMatch ? typedHouseNumberMatch[0] : '';
       box.innerHTML = data.map(item => {
         const addr = item.address;
-        const road = addr.road || addr.pedestrian || '';
-        const num = addr.house_number || '';
-        const city = addr.city || addr.town || addr.village || '';
+        const road = addr.road || addr.pedestrian || addr.suburb || '';
+        const num = addr.house_number || typedHouseNumber;
+        const city = addr.city || addr.town || addr.village || addr.city_district || '';
         const street = [road, num].filter(Boolean).join(' ');
         const label = street && city ? street + ', ' + city : item.display_name.split(',').slice(0,2).join(',').trim();
         return `<div onclick="selectAddress('${label.replace(/'/g,"\'")}', this.parentElement)"
