@@ -1865,7 +1865,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.7.1'; // הוספת "הפק PDF חודשי" בתפריט ניהול כספים — דוח לחודש הנבחר: מי שילם/לא שילם, כל ההוצאות, ומאזן (חודשי + מצטבר עד סוף החודש)
+const APP_VERSION = '2.7.2'; // תיקון ריווח בדוח PDF החודשי — כותרות ומחרוזות רב-מיליות עברו ל-nbsp (אותה תקלת html2canvas+RTL שכבר תוקנה בדוח השנתי), והוסרו סוגריים/נקודותיים מבלוק המאזן בסוף הדוח
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4996,6 +4996,12 @@ async function createMonthlyPDFReport() {
   // דוח נבנה לפי החודש שנבחר בסלקטור של מסך "כספים"
   const ym = document.getElementById('payment-month-select').value;
   const monthLbl = monthLabel(ym);
+  // html2canvas + RTL: regular spaces between pure-Hebrew words (and in
+  // mixed Hebrew/number headers) intermittently collapse when rendered —
+  // same root cause documented for the yearly report's category-summary
+  // header. \u00A0 (non-breaking space) is the reliable fix; used below for
+  // every multi-word label in this report.
+  const monthLblNbsp = monthLbl.replace(/ /g, '\u00A0');
 
   // תשלומי החודש
   const paySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','==', ym)));
@@ -5078,22 +5084,22 @@ async function createMonthlyPDFReport() {
       .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; }
       .total { font-weight: bold; color: #1A56DB; }
     </style></head><body>
-      <h1>דוח חודשי — הכנסות, הוצאות ומאזן</h1>
+      <h1>דוח&nbsp;חודשי&nbsp;—&nbsp;הכנסות,&nbsp;הוצאות&nbsp;ומאזן</h1>
       <h2>${(buildingData?.address||'').replace(/ /g,'\u00A0')}</h2>
-      <h2>${monthLbl}</h2>
+      <h2>${monthLblNbsp}</h2>
       <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:16px;">${(() => { const now=new Date(); return '<span>הופק</span><span dir="ltr">'+now.toLocaleDateString('he-IL')+'</span><span>בשעה</span><span dir="ltr">'+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})+'</span>'; })()}</div>
 
-      <h2>תשלומי דיירים</h2>
+      <h2>תשלומי&nbsp;דיירים</h2>
       <table><thead><tr><th>דירה</th><th>שם</th><th>קומה</th><th>סטטוס</th><th>סכום</th><th>אופן</th></tr></thead>
       <tbody>${residentRows}</tbody></table>
-      <div style="font-size:13px;color:#555;margin-bottom:16px;">${paidCount} מתוך ${residents.length} דירות שילמו החודש</div>
+      <div style="font-size:13px;color:#555;margin-bottom:16px;">${paidCount}&nbsp;מתוך&nbsp;${residents.length}&nbsp;דירות&nbsp;שילמו&nbsp;החודש</div>
 
-      <h2>הוצאות החודש</h2>
+      <h2>הוצאות&nbsp;החודש</h2>
       <table style="table-layout:fixed;"><thead><tr>
         <th style="width:18%;">קטגוריה</th><th style="width:15%;">סכום</th><th style="width:32%;">תיאור</th><th style="width:17%;">תאריך</th><th style="width:18%;">אופן</th>
       </tr></thead><tbody>${expenseRows || '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות החודש</td></tr>'}</tbody></table>
 
-      <h2>סיכום הוצאות לפי קטגוריה</h2>
+      <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
       <table style="table-layout:fixed;"><thead><tr><th style="width:50%;">קטגוריה</th><th style="width:30%;">סכום</th><th style="width:20%;">אחוז</th></tr></thead>
       <tbody>${catRowsHtml}</tbody></table>
 
@@ -5105,10 +5111,11 @@ async function createMonthlyPDFReport() {
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מהבנק:</span><span dir="ltr">₪${bankExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מזומן:</span><span dir="ltr">₪${cashExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div style="border-top:2px solid #000;margin:14px 0;padding:10px 0;">
-          <div class="summary-line"><span class="total">מאזן החודש (הכנסות פחות הוצאות):</span><span dir="ltr" style="color:${monthNet>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${monthNet.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-          <div class="summary-line"><span class="total">יתרה בחשבון הבנק (נכון לסוף ${monthLbl}):</span><span dir="ltr">₪${bankBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-          <div class="summary-line"><span class="total">יתרת קופת מזומן (נכון לסוף ${monthLbl}):</span><span dir="ltr">₪${cashBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-          <div class="summary-line"><span class="total">סה"כ יתרה מצטברת:</span><span dir="ltr" style="color:${(bankBalance+cashBalance)>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${(bankBalance+cashBalance).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">מאזן&nbsp;החודש</span><span dir="ltr" style="color:${monthNet>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${monthNet.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+          <div style="font-size:11px;color:#999;margin:-2px 0 10px;">הכנסות&nbsp;פחות&nbsp;הוצאות&nbsp;לחודש&nbsp;${monthLblNbsp}</div>
+          <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק&nbsp;לסוף&nbsp;${monthLblNbsp}</span><span dir="ltr">₪${bankBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">יתרת&nbsp;קופת&nbsp;מזומן&nbsp;לסוף&nbsp;${monthLblNbsp}</span><span dir="ltr">₪${cashBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">סה"כ&nbsp;יתרה&nbsp;מצטברת</span><span dir="ltr" style="color:${(bankBalance+cashBalance)>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${(bankBalance+cashBalance).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         </div>
       </div>
     </body></html>
