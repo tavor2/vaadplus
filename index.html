@@ -488,6 +488,17 @@
 
     <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
 
+    <div class="form-group">
+      <label class="form-label">📷 אילו קטגוריות הוצאה מאפשרות צירוף קבלה</label>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px;line-height:1.6;">
+        הוצאות שוטפות/קבועות (חשמל, מים, ביטוח, גינון, מעלית וכו') כבר מופיעות בדף חשבון הבנק מדי חודש ולרוב אינן דורשות קבלה נפרדת. אפשר להגביל את אפשרות צירוף התמונה רק לקטגוריות שבאמת דורשות אסמכתא (למשל תיקונים ורכישות שונות) — זה גם חוסך מקום ב-Firebase Storage. תמונות שכבר צורפו להוצאות קיימות בקטגוריה שתבטל לא יימחקו — רק לא ניתן יהיה לצרף תמונה חדשה מאותה קטגוריה.
+      </div>
+      <div id="receipt-cat-checkboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;"></div>
+      <button class="btn-success" style="width:100%;" onclick="saveReceiptCategories()">שמור</button>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:16px 0;"/>
+
     <div class="form-group" style="margin-bottom:0;">
       <label class="form-label">מחיר מנוי שנתי להצגה באפליקציה (₪)</label>
       <div style="font-size:12px;color:var(--red);margin-bottom:6px;line-height:1.6;">
@@ -1075,7 +1086,7 @@
     <input type="hidden" id="edit-expense-id"/>
     <div class="form-group">
       <label class="form-label">קטגוריה *</label>
-      <select class="form-select" id="exp-cat" onchange="toggleExpenseContractorFields()">
+      <select class="form-select" id="exp-cat" onchange="onExpenseCategoryChange()">
         <option value="חשמל">חשמל</option>
         <option value="מים">מים</option>
         <option value="ניקיון">ניקיון</option>
@@ -1117,7 +1128,7 @@
       <label class="form-label">תאריך</label>
       <input class="form-input" id="exp-date" type="date"/>
     </div>
-    <div class="form-group">
+    <div class="form-group" id="exp-receipt-section">
       <label class="form-label">📷 צילום קבלה/חשבונית (אופציונלי)</label>
       <input type="hidden" id="exp-receipt-url"/>
       <input type="hidden" id="exp-receipt-removed" value="false"/>
@@ -1127,11 +1138,12 @@
       </div>
       <input type="file" accept="image/*" capture="environment" id="exp-receipt-file-camera" style="display:none;" onchange="onExpenseReceiptFileSelected(event)"/>
       <input type="file" accept="image/*" id="exp-receipt-file-gallery" style="display:none;" onchange="onExpenseReceiptFileSelected(event)"/>
-      <div style="display:flex;gap:8px;">
+      <div id="exp-receipt-upload-buttons" style="display:flex;gap:8px;">
         <button type="button" class="btn-icon" style="flex:1;" onclick="document.getElementById('exp-receipt-file-camera').click()">📷 צלם תמונה</button>
         <button type="button" class="btn-icon" style="flex:1;" onclick="document.getElementById('exp-receipt-file-gallery').click()">🖼️ בחר מהגלריה</button>
       </div>
       <div id="exp-receipt-note" style="font-size:13px;font-weight:600;color:var(--blue);margin-top:4px;"></div>
+      <div id="exp-receipt-disabled-note" style="display:none;font-size:12px;color:var(--gray-500);margin-top:4px;line-height:1.6;">קטגוריה זו הוגדרה על ידי מנהל המערכת כלא-דורשת קבלה (הוצאה שוטפת שמופיעה בדף הבנק).</div>
     </div>
     <button class="btn-primary" onclick="saveExpense()">שמור הוצאה</button>
     <button class="btn-secondary" onclick="closeModal('modal-expense')">ביטול</button>
@@ -1865,14 +1877,16 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.7.2'; // תיקון ריווח בדוח PDF החודשי — כותרות ומחרוזות רב-מיליות עברו ל-nbsp (אותה תקלת html2canvas+RTL שכבר תוקנה בדוח השנתי), והוסרו סוגריים/נקודותיים מבלוק המאזן בסוף הדוח
+const APP_VERSION = '2.7.3'; // Super Admin יכול כעת להגביל אילו קטגוריות הוצאה מאפשרות צירוף קבלה (ברירת מחדל: רק תיקון ואחר) — חוסך אחסון ב-Storage ומייתר צילום קבלות להוצאות שוטפות שכבר מופיעות בדף הבנק
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
 const MAX_CO_ADMINS_DEFAULT = 1; // Default fallback if meta/settings.maxCoAdmins doesn't exist yet — matches the original hardcoded "1 additional committee member" limit.
 const REMINDER_THRESHOLD_DEFAULT = 3; // Default fallback if buildingData.reminderThresholdMonths doesn't exist yet (per-building setting, not global — each vaad sets its own via saveReminderThreshold()).
+const RECEIPT_ENABLED_CATEGORIES_DEFAULT = ['תיקון', 'אחר']; // Default fallback if meta/settings.receiptEnabledCategories doesn't exist yet. Per feedback from several vaadim: recurring/fixed expenses (חשמל, מים, ביטוח, גינון, מעלית, כיבוי אש, עמלות בנק) already show up on the bank statement every month and don't need a separately-attached receipt — only one-off repairs and misc purchases ("אחר") really benefit from a photo.
 let trialDaysSetting = TRIAL_DAYS; // Effective trial length in days, loaded from meta/settings.trialDays on app load (see loadSessionSettings()).
 let maxCoAdminsSetting = MAX_CO_ADMINS_DEFAULT; // Effective max number of additional committee members (beyond the primary admin) allowed per building, loaded from meta/settings.maxCoAdmins.
+let receiptEnabledCategoriesSetting = RECEIPT_ENABLED_CATEGORIES_DEFAULT; // Effective list of expense categories that may have a receipt photo attached, loaded from meta/settings.receiptEnabledCategories.
 
 // Reads Super-Admin-configurable session-wide settings (trial length, max
 // committee members) from meta/settings in a single read and updates the
@@ -1886,9 +1900,11 @@ async function loadSessionSettings() {
     const settings = snap.exists() ? snap.data() : {};
     trialDaysSetting = settings.trialDays ?? TRIAL_DAYS;
     maxCoAdminsSetting = settings.maxCoAdmins ?? MAX_CO_ADMINS_DEFAULT;
+    receiptEnabledCategoriesSetting = settings.receiptEnabledCategories ?? RECEIPT_ENABLED_CATEGORIES_DEFAULT;
   } catch(e) {
     trialDaysSetting = TRIAL_DAYS;
     maxCoAdminsSetting = MAX_CO_ADMINS_DEFAULT;
+    receiptEnabledCategoriesSetting = RECEIPT_ENABLED_CATEGORIES_DEFAULT;
   }
 }
 
@@ -2110,6 +2126,14 @@ window.openSystemSettings = async () => {
     document.getElementById('input-apt-tier2-price').value = aptTier2Price;
     document.getElementById('input-apt-tier3-price').value = aptTier3Price;
     document.getElementById('input-max-co-admins').value = maxCoAdmins;
+
+    const receiptCats = settings.receiptEnabledCategories ?? RECEIPT_ENABLED_CATEGORIES_DEFAULT;
+    document.getElementById('receipt-cat-checkboxes').innerHTML = Object.keys(EXPENSE_CATEGORY_ICONS).map(cat => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" class="receipt-cat-chk" value="${cat}" ${receiptCats.includes(cat) ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;"/>
+        ${EXPENSE_CATEGORY_ICONS[cat]} ${cat}
+      </label>
+    `).join('');
   } catch(e) {
     showToast('שגיאה בטעינת ההגדרות: ' + e.message);
   }
@@ -2144,6 +2168,15 @@ window.saveMaxCoAdmins = async () => {
     note.textContent = `✅ נשמר: ${newMax} חברי ועד נוספים מקסימום`;
     note.style.color = 'var(--green)';
     showToast('✅ המגבלה עודכנה');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.saveReceiptCategories = async () => {
+  const selected = [...document.querySelectorAll('.receipt-cat-chk:checked')].map(c => c.value);
+  try {
+    await setDoc(doc(db, 'meta', 'settings'), { receiptEnabledCategories: selected }, { merge: true });
+    receiptEnabledCategoriesSetting = selected; // עדכן מיידית גם עבור הבניין הנוכחי בסשן הזה
+    showToast('✅ קטגוריות הקבלות עודכנו');
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
@@ -3894,13 +3927,34 @@ window.removeExpenseReceiptImage = () => {
   if (_expReceiptOriginalUrl) document.getElementById('exp-receipt-removed').value = 'true';
 };
 
-// Shows the contractor name/phone fields only when the "תיקון" (repair)
-// category is selected — those two fields are irrelevant for every other
-// expense category and stay hidden (and get cleared on save, see
-// saveExpense()) otherwise.
-window.toggleExpenseContractorFields = () => {
-  const isRepair = document.getElementById('exp-cat').value === 'תיקון';
+// True if the given expense category is currently allowed to have a
+// receipt photo attached, per the Super Admin's meta/settings.receiptEnabledCategories
+// (see saveReceiptCategories()). Default: only 'תיקון' and 'אחר' — recurring/
+// fixed expenses (electricity, water, insurance, etc.) already show up on
+// the bank statement every month and don't need a separately-attached receipt.
+function categoryAllowsReceipt(category) {
+  return receiptEnabledCategoriesSetting.includes(category);
+}
+
+// Shows/hides the contractor name/phone fields (only for "תיקון") and the
+// receipt-photo section (only for categories the Super Admin has enabled)
+// whenever the expense category changes. Renamed from
+// toggleExpenseContractorFields() now that it covers more than just the
+// contractor fields.
+// Edge case: if this expense already has a photo attached (from before the
+// category was disabled, or before this feature existed), we still show the
+// section — so the existing photo stays visible/removable — but hide just
+// the upload buttons, so a new photo can't be added to a now-disabled category.
+window.onExpenseCategoryChange = () => {
+  const cat = document.getElementById('exp-cat').value;
+  const isRepair = cat === 'תיקון';
   document.getElementById('exp-contractor-fields').style.display = isRepair ? '' : 'none';
+
+  const allowed = categoryAllowsReceipt(cat);
+  const hasExistingPhoto = !!_expReceiptOriginalUrl || !!_expReceiptPendingFile;
+  document.getElementById('exp-receipt-section').style.display = (allowed || hasExistingPhoto) ? '' : 'none';
+  document.getElementById('exp-receipt-upload-buttons').style.display = allowed ? '' : 'none';
+  document.getElementById('exp-receipt-disabled-note').style.display = (!allowed && hasExistingPhoto) ? '' : 'none';
 };
 
 window.openAddExpense = () => {
@@ -3921,7 +3975,7 @@ window.openAddExpense = () => {
   document.getElementById('exp-receipt-preview-wrap').style.display = 'none';
   document.getElementById('exp-receipt-preview').src = '';
   document.getElementById('exp-receipt-note').textContent = '';
-  toggleExpenseContractorFields();
+  onExpenseCategoryChange();
   openModal('modal-expense');
 };
 
@@ -3952,7 +4006,7 @@ window.editExpense = (id) => {
     document.getElementById('exp-receipt-preview').src = '';
     document.getElementById('exp-receipt-preview-wrap').style.display = 'none';
   }
-  toggleExpenseContractorFields();
+  onExpenseCategoryChange();
   openModal('modal-expense');
 };
 
