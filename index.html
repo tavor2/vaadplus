@@ -1152,6 +1152,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
@@ -1864,7 +1865,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.7.0'; // הוספת טאב "תחזית" בכספים — תחזית יתרה ל-6 חודשים קדימה מבוססת הכנסה צפויה + ממוצע הוצאות שוטפות, עם אפשרות להוסיף הוצאות ידועות מראש (forecastExpenses)
+const APP_VERSION = '2.7.1'; // הוספת "הפק PDF חודשי" בתפריט ניהול כספים — דוח לחודש הנבחר: מי שילם/לא שילם, כל ההוצאות, ומאזן (חודשי + מצטבר עד סוף החודש)
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4964,6 +4965,175 @@ async function createPDFReport() {
   pdfContainer.innerHTML = '';
   showToast('📄 דוח PDF הורד בהצלחה');
   logAnalyticsEvent('pdf_report_generated');
+}
+
+window.generateMonthlyPDF = async () => {
+  if (receiptGenerationInProgress) {
+    showToast('פעולת PDF אחרת עדיין בתהליך, רגע בבקשה...');
+    return;
+  }
+  receiptGenerationInProgress = true;
+  try {
+    showToast('📄 מכין דוח חודשי...');
+    if (!window.html2pdf) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      await new Promise((resolve, reject) => {
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+    await createMonthlyPDFReport();
+  } catch(e) {
+    showToast('שגיאה: ' + e.message);
+  } finally {
+    receiptGenerationInProgress = false;
+  }
+};
+
+async function createMonthlyPDFReport() {
+  // דוח נבנה לפי החודש שנבחר בסלקטור של מסך "כספים"
+  const ym = document.getElementById('payment-month-select').value;
+  const monthLbl = monthLabel(ym);
+
+  // תשלומי החודש
+  const paySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','==', ym)));
+  const paymentMap = {};
+  paySnap.docs.forEach(d => { const p = d.data(); paymentMap[p.apt] = p; });
+
+  const residents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  let totalCollected = 0, paidCount = 0;
+  const residentRows = residents.map(r => {
+    const fee = aptFee(r.apt, r);
+    const p = paymentMap[r.apt];
+    if (p) { totalCollected += (p.amount || fee); paidCount++; }
+    const statusHtml = p
+      ? '<span style="color:#0E9F6E;font-weight:bold;">✓ שולם</span>'
+      : '<span style="color:#E02424;font-weight:bold;">✗ לא שולם</span>';
+    return `<tr>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${r.apt}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${r.name||''}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${r.floor !== undefined ? r.floor : '-'}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${statusHtml}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${(p ? (p.amount||fee) : fee).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${p ? (PAYMENT_METHOD_ICONS[p.method]||'') : '-'}</td>
+    </tr>`;
+  }).join('');
+
+  const { cash: cashCollectedMonth, bank: bankCollectedMonth } = splitCashBank(paySnap.docs.map(d => d.data()));
+
+  // הוצאות החודש
+  const expSnap = await getDocs(query(
+    collection(db, 'buildings', buildingId, 'expenses'),
+    where('date', '>=', ym + '-01'),
+    where('date', '<=', ym + '-31')
+  ));
+  const expenses = expSnap.docs.map(d => ({id:d.id, ...d.data()}));
+  const totalExpenses = expenses.reduce((s,e) => s + (e.amount||0), 0);
+  const { cash: cashExpensesMonth, bank: bankExpensesMonth } = splitCashBank(expenses);
+  const expenseRows = expenses.map(e => {
+    const methodLabel = e.method === 'cash' ? 'מזומן' : 'בנק';
+    return `<tr>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category||'-').replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(e.description||'-').replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date||'-'}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+    </tr>`;
+  }).join('');
+  const catTotals = {};
+  expenses.forEach(e => { const cat = e.category || 'אחר'; catTotals[cat] = (catTotals[cat]||0) + (e.amount||0); });
+  const catRowsHtml = Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).map(([cat,sum]) => {
+    const pct = totalExpenses ? Math.round(sum/totalExpenses*100) : 0;
+    return `<tr><td style="text-align:right;border:1px solid #ddd;padding:8px;">${cat.replace(/ /g,'\u00A0')}</td>
+      <td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪${sum.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+      <td style="text-align:center;border:1px solid #ddd;padding:8px;">${pct}%</td></tr>`;
+  }).join('') || '<tr><td colspan="3" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות</td></tr>';
+
+  // מאזן מצטבר נכון לסוף החודש הנבחר (לא רק החודש הזה) — עקבי עם computeBalanceFigures
+  const openingBalance = buildingData?.openingBalance || 0;
+  const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
+  const cumPaySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','<=', ym)));
+  const cumExpSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<=', ym + '-31')));
+  const cumDepSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<=', ym + '-31')));
+  const { bankBalance, cashBalance } = computeBalanceFigures(
+    cumPaySnap.docs.map(d => d.data()),
+    cumExpSnap.docs.map(d => d.data()),
+    cumDepSnap.docs.map(d => d.data()),
+    openingBalance, cashOpeningBalance
+  );
+  const monthNet = totalCollected - totalExpenses;
+
+  const html = `
+    <html><head><meta charset="utf-8"/><style>
+      body { font-family: Arial, Helvetica, sans-serif; direction: rtl; text-align: right; padding: 20px; word-spacing: normal; }
+      td, th { word-spacing: normal; letter-spacing: normal; word-break: normal; white-space: normal; }
+      h1 { text-align: center; color: #1A56DB; margin-bottom: 5px; }
+      h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; }
+      table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+      th { background: #1A56DB; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
+      td { padding: 8px; border: 1px solid #ddd; }
+      .summary { margin-top: 20px; font-size: 15px; }
+      .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; }
+      .total { font-weight: bold; color: #1A56DB; }
+    </style></head><body>
+      <h1>דוח חודשי — הכנסות, הוצאות ומאזן</h1>
+      <h2>${(buildingData?.address||'').replace(/ /g,'\u00A0')}</h2>
+      <h2>${monthLbl}</h2>
+      <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:16px;">${(() => { const now=new Date(); return '<span>הופק</span><span dir="ltr">'+now.toLocaleDateString('he-IL')+'</span><span>בשעה</span><span dir="ltr">'+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})+'</span>'; })()}</div>
+
+      <h2>תשלומי דיירים</h2>
+      <table><thead><tr><th>דירה</th><th>שם</th><th>קומה</th><th>סטטוס</th><th>סכום</th><th>אופן</th></tr></thead>
+      <tbody>${residentRows}</tbody></table>
+      <div style="font-size:13px;color:#555;margin-bottom:16px;">${paidCount} מתוך ${residents.length} דירות שילמו החודש</div>
+
+      <h2>הוצאות החודש</h2>
+      <table style="table-layout:fixed;"><thead><tr>
+        <th style="width:18%;">קטגוריה</th><th style="width:15%;">סכום</th><th style="width:32%;">תיאור</th><th style="width:17%;">תאריך</th><th style="width:18%;">אופן</th>
+      </tr></thead><tbody>${expenseRows || '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות החודש</td></tr>'}</tbody></table>
+
+      <h2>סיכום הוצאות לפי קטגוריה</h2>
+      <table style="table-layout:fixed;"><thead><tr><th style="width:50%;">קטגוריה</th><th style="width:30%;">סכום</th><th style="width:20%;">אחוז</th></tr></thead>
+      <tbody>${catRowsHtml}</tbody></table>
+
+      <div class="summary">
+        <div class="summary-line"><span class="total">סה"כ נגבה החודש:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן העברות/בנק:</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מזומן:</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total">סה"כ הוצאות החודש:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מהבנק:</span><span dir="ltr">₪${bankExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מזומן:</span><span dir="ltr">₪${cashExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div style="border-top:2px solid #000;margin:14px 0;padding:10px 0;">
+          <div class="summary-line"><span class="total">מאזן החודש (הכנסות פחות הוצאות):</span><span dir="ltr" style="color:${monthNet>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${monthNet.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">יתרה בחשבון הבנק (נכון לסוף ${monthLbl}):</span><span dir="ltr">₪${bankBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">יתרת קופת מזומן (נכון לסוף ${monthLbl}):</span><span dir="ltr">₪${cashBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">סה"כ יתרה מצטברת:</span><span dir="ltr" style="color:${(bankBalance+cashBalance)>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${(bankBalance+cashBalance).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        </div>
+      </div>
+    </body></html>
+  `;
+
+  const element = document.createElement('div');
+  element.innerHTML = html;
+  const pdfContainer = document.getElementById('pdf-container');
+  pdfContainer.innerHTML = '';
+  pdfContainer.appendChild(element);
+
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  const opt = {
+    margin: 10,
+    filename: `vaad_bait_${ym}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+  };
+
+  await html2pdf().set(opt).from(element).save();
+  pdfContainer.innerHTML = '';
+  showToast('📄 דוח חודשי הורד בהצלחה');
+  logAnalyticsEvent('monthly_pdf_report_generated');
 }
 
 // ===== RESIDENT PAYMENT HISTORY =====
