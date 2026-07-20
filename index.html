@@ -412,6 +412,7 @@
     <button class="btn-primary" style="background:rgba(255,255,255,0.15);color:#fff;border:2px solid rgba(255,255,255,0.4);font-size:16px;padding:16px;" onclick="openSystemSettings()">
       ⚙️ הגדרות מערכת
     </button>
+    <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.5);font-size:12px;border:1px dashed rgba(255,255,255,0.3);" onclick="runResidentEmailsMigration()">🔧 מיגרציה חד-פעמית: residentEmails</button>
     <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.6);border:none;margin-top:8px;" onclick="logout()">התנתק</button>
     <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:16px;">v<span id="app-version"></span></div>
   </div>
@@ -2411,6 +2412,10 @@ window.executeRestoreBuilding = async (event) => {
           await addDoc(collection(db, 'buildings', newBuildingId, colName), fields);
         }
         imported++;
+
+        if (colName === 'residents' && fields.email) {
+          try { await setDoc(doc(db, 'buildings', newBuildingId, 'residentEmails', fields.email), { residentId: id || null, role: fields.role || 'tenant' }, { merge: true }); } catch(e) { /* לא קריטי */ }
+        }
       }
     }
 
@@ -2421,6 +2426,32 @@ window.executeRestoreBuilding = async (event) => {
   } catch(e) {
     showToast('שגיאה בשחזור: ' + e.message);
   }
+};
+
+// מיגרציה חד-פעמית: ממלאת buildings/{id}/residentEmails/{email} עבור כל
+// הדיירים הקיימים היום בכל הבניינים, לפני שה-Security Rules מתעדכנים
+// להסתמך על האוסף הזה (isResidentOfBuilding). ניתן להריץ כמה פעמים בלי
+// נזק — רק מוסיפה/מעדכנת, לא מוחקת.
+window.runResidentEmailsMigration = async () => {
+  if (auth.currentUser?.email !== SUPER_ADMIN_EMAIL) { showToast('Super Admin בלבד'); return; }
+  const ok = await customConfirm('להריץ מיגרציה חד-פעמית שממלאת residentEmails לכל הדיירים הקיימים בכל הבניינים?\n\nלא מוחקת כלום — רק מוסיפה. אפשר להריץ כמה פעמים בלי נזק.');
+  if (!ok) return;
+  showToast('מריץ מיגרציה...');
+  try {
+    const buildingsSnap = await getDocs(collection(db, 'buildings'));
+    let totalResidents = 0, totalWritten = 0;
+    for (const bDoc of buildingsSnap.docs) {
+      const residentsSnap = await getDocs(collection(db, 'buildings', bDoc.id, 'residents'));
+      for (const rDoc of residentsSnap.docs) {
+        totalResidents++;
+        const r = rDoc.data();
+        if (!r.email) continue;
+        await setDoc(doc(db, 'buildings', bDoc.id, 'residentEmails', r.email), { residentId: rDoc.id, role: r.role || 'tenant' }, { merge: true });
+        totalWritten++;
+      }
+    }
+    showToast(`✅ מיגרציה הושלמה: ${totalWritten}/${totalResidents} דיירים עם אימייל`);
+  } catch(e) { showToast('שגיאה במיגרציה: ' + e.message); }
 };
 
 window.showSetupAsNewAdmin = () => {
@@ -2754,7 +2785,11 @@ window.deleteResident = async () => {
   if (!id) return;
   if (!(await customConfirm('למחוק את הדייר? פעולה זו אינה הפיכה.'))) return;
   try {
+    const resident = allResidents.find(r => r.id === id);
     await deleteDoc(doc(db, 'buildings', buildingId, 'residents', id));
+    if (resident?.email) {
+      try { await deleteDoc(doc(db, 'buildings', buildingId, 'residentEmails', resident.email)); } catch(e) { /* לא קריטי */ }
+    }
     showToast('🗑️ הדייר נמחק');
     closeModal('modal-resident');
   } catch(e) { showToast('שגיאה: ' + e.message); }
@@ -2918,6 +2953,13 @@ window.importData = async (event) => {
           await addDoc(collection(db, 'buildings', buildingId, colName), fields);
         }
         imported++;
+
+        // שמירה על residentEmails מעודכן — הכרחי כדי שדיירים ששוחזרו/יובאו
+        // יוכלו להמשיך לקרוא תשלומים/הוצאות/תקלות של הבניין שלהם (ראה
+        // isResidentOfBuilding ב-Security Rules).
+        if (colName === 'residents' && fields.email) {
+          try { await setDoc(doc(db, 'buildings', buildingId, 'residentEmails', fields.email), { residentId: id || null, role: fields.role || 'tenant' }, { merge: true }); } catch(e) { /* לא קריטי */ }
+        }
       }
     }
     showToast(`✅ יובאו ${imported} רשומות בהצלחה`);
@@ -2930,6 +2972,8 @@ window.saveResident = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
 
   const id = document.getElementById('edit-resident-id').value;
+  const oldResident = id ? allResidents.find(r => r.id === id) : null;
+  const oldEmail = oldResident?.email || '';
   const apt = document.getElementById('r-apt').value.trim();
   const name = document.getElementById('r-name').value.trim();
   if (!apt || !name) { showToast('חובה למלא דירה ושם'); return; }
@@ -2997,13 +3041,25 @@ window.saveResident = async () => {
   }
 
   try {
+    let residentDocId = id;
     if (id) {
       await updateDoc(doc(db, 'buildings', buildingId, 'residents', id), data);
       showToast('✅ הדייר עודכן');
     } else {
       data.createdAt = serverTimestamp();
-      await addDoc(collection(db, 'buildings', buildingId, 'residents'), data);
+      const newRef = await addDoc(collection(db, 'buildings', buildingId, 'residents'), data);
+      residentDocId = newRef.id;
       showToast('✅ הדייר נוסף');
+    }
+
+    // residentEmails index — נצרך ע"י Firestore Security Rules (isResidentOfBuilding)
+    // כדי לאמת שדייר קורא רק תשלומים/הוצאות/תקלות/הודעות של הבניין שלו,
+    // בלי לחשוף מידע של בניינים אחרים. קיום המסמך הוא כל מה שחשוב לחוקים.
+    if (oldEmail && oldEmail !== email) {
+      try { await deleteDoc(doc(db, 'buildings', buildingId, 'residentEmails', oldEmail)); } catch(e) { /* לא קריטי */ }
+    }
+    if (email) {
+      try { await setDoc(doc(db, 'buildings', buildingId, 'residentEmails', email), { residentId: residentDocId, role }, { merge: true }); } catch(e) { /* לא קריטי */ }
     }
 
     if (email) {
