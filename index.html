@@ -1877,7 +1877,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.7.4'; // תוקן באג: סלקטור החודש במסך כספים הציג רק 12 חודשים אחורה ולא אפשר לבחור חודשים עתידיים באותה שנה (רלוונטי לצפייה בתשלומים מראש)
+const APP_VERSION = '2.7.5'; // תוקן באג: סלקטור החודש במסך כספים לא כלל חודשים עתידיים באותה שנה, ובתיקון הראשוני הרשימה יצאה לא ממוינת כרונולוגית (עבר ועתיד נבנו כשני טווחים נפרדים ופשוט חוברו). כעת כל החודשים ממוינים ברשימה אחת רציפה, מהמאוחר למוקדם
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2620,30 +2620,31 @@ function initUI() {
   }
 
   // Month selector
+  // אוספים לקבוצה אחת גם את 12 החודשים האחרונים וגם את שאר חודשי השנה
+  // הנוכחית שעוד לא הגיעו (כדי לצפות/לנהל תשלומים שנרשמו מראש — למשל דרך
+  // תא "חודש עתידי" בהיסטוריית דייר, או העברה חריגה שמכסה חודשים קדימה),
+  // ואז ממיינים כרונולוגית יורד (מהמאוחר למוקדם) כרשימה אחת רציפה. בעבר
+  // שני הטווחים נבנו בלולאות נפרדות ופשוט חוברו זה אחרי זה — מה שיצר קפיצה
+  // מבלבלת בסדר (למשל "אוגוסט 2025" ואז מיד "אוגוסט 2026").
   const sel = document.getElementById('payment-month-select');
   sel.innerHTML = '';
   const now = new Date();
   const currentYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const ymsSet = new Set();
   for (let i = 0; i < 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-    const opt = document.createElement('option');
-    opt.value = ym;
-    opt.textContent = monthLabel(ym);
-    sel.appendChild(opt);
+    ymsSet.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
   }
-  // חודשים עתידיים עד סוף השנה הנוכחית — מאפשר לצפות/לנהל תשלומים שנרשמו
-  // מראש (למשל דרך תא "חודש עתידי" בהיסטוריית דייר, או העברה חריגה שמכסה
-  // חודשים קדימה). בלי זה, הסלקטור הציע רק את 12 החודשים האחרונים ולא
-  // אפשר לבחור חודש עתידי בכלל.
   for (let m = now.getMonth() + 1; m <= 11; m++) {
     const d = new Date(now.getFullYear(), m, 1);
-    const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    ymsSet.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+  }
+  [...ymsSet].sort().reverse().forEach(ym => {
     const opt = document.createElement('option');
     opt.value = ym;
     opt.textContent = monthLabel(ym);
     sel.appendChild(opt);
-  }
+  });
   sel.value = currentYm;
 }
 
