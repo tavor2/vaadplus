@@ -1878,7 +1878,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.7.6'; // נוסף: דוח חצי שנתי (generateSemiAnnualPDF) — עומד בדרישת הדיווח החצי-שנתי לפי חוק המקרקעין, לפי אותו דפוס כמו הדוח השנתי/חודשי. התקופה (ינואר-יוני / יולי-דצמבר) נקבעת אוטומטית לפי מחצית החודש הנבחר בסלקטור של מסך כספים.
+const APP_VERSION = '2.7.7'; // תיקון עיצוב בדוח החצי שנתי: הוסרו הסוגריים סביב טווח החודשים (ינואר-יוני / יולי-דצמבר) והוסרו הנקודותיים בשורות יתרות הפתיחה והסגירה (בנק/מזומן/מצטברת).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5253,7 +5253,7 @@ async function createSemiAnnualPDFReport() {
   const toYm = `${year}-${String(startMonthIdx+6).padStart(2,'0')}`;
   const fromDate = `${fromYm}-01`;
   const toDateLastDay = isFirstHalf ? `${year}-06-30` : `${year}-12-31`;
-  const halfLabel = isFirstHalf ? `מחצית ראשונה ${year} (ינואר–יוני)` : `מחצית שנייה ${year} (יולי–דצמבר)`;
+  const halfLabel = isFirstHalf ? `מחצית ראשונה ${year} ינואר–יוני` : `מחצית שנייה ${year} יולי–דצמבר`;
   const halfLabelNbsp = halfLabel.replace(/ /g, '\u00A0');
 
   // דיירים ותשלומי התקופה
@@ -5430,13 +5430,13 @@ async function createSemiAnnualPDFReport() {
         <div class="summary-line"><span class="total" style="color:${periodNet>=0?'#0E9F6E':'#E02424'};">מאזן התקופה:</span><span dir="ltr" style="font-weight:bold;color:${periodNet>=0?'#0E9F6E':'#E02424'};">₪${periodNet.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
 
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
-          <div class="summary-line"><span class="total">יתרת&nbsp;פתיחה&nbsp;בבנק&nbsp;(תחילת&nbsp;התקופה):</span><span dir="ltr">₪${bankBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-          <div class="summary-line"><span class="total">יתרת&nbsp;פתיחה&nbsp;מזומן&nbsp;(תחילת&nbsp;התקופה):</span><span dir="ltr">₪${cashBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">יתרת&nbsp;פתיחה&nbsp;בבנק&nbsp;(תחילת&nbsp;התקופה)</span><span dir="ltr">₪${bankBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">יתרת&nbsp;פתיחה&nbsp;מזומן&nbsp;(תחילת&nbsp;התקופה)</span><span dir="ltr">₪${cashBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         </div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
-          <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק&nbsp;(סוף&nbsp;התקופה):</span><span dir="ltr">₪${bankBalanceEnd.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-          <div class="summary-line"><span class="total">יתרת&nbsp;מזומן&nbsp;(סוף&nbsp;התקופה):</span><span dir="ltr">₪${cashBalanceEnd.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-          <div class="summary-line"><span class="total">סה"כ&nbsp;יתרה&nbsp;מצטברת:</span><span dir="ltr" style="font-weight:bold;color:${(bankBalanceEnd+cashBalanceEnd)>=0?'#0E9F6E':'#E02424'};">₪${(bankBalanceEnd+cashBalanceEnd).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק&nbsp;(סוף&nbsp;התקופה)</span><span dir="ltr">₪${bankBalanceEnd.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">יתרת&nbsp;מזומן&nbsp;(סוף&nbsp;התקופה)</span><span dir="ltr">₪${cashBalanceEnd.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+          <div class="summary-line"><span class="total">סה"כ&nbsp;יתרה&nbsp;מצטברת</span><span dir="ltr" style="font-weight:bold;color:${(bankBalanceEnd+cashBalanceEnd)>=0?'#0E9F6E':'#E02424'};">₪${(bankBalanceEnd+cashBalanceEnd).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         </div>
       </div>
     </body>
