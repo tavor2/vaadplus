@@ -1045,7 +1045,8 @@
 <!-- Add Announcement -->
 <div class="modal-overlay" id="modal-announce">
   <div class="modal">
-    <div class="modal-title">הודעה חדשה</div>
+    <div class="modal-title" id="modal-announce-title">הודעה חדשה</div>
+    <input type="hidden" id="edit-announce-id"/>
     <div class="form-group">
       <label class="form-label">כותרת *</label>
       <input class="form-input" id="a-title" placeholder="כותרת ההודעה"/>
@@ -1063,7 +1064,7 @@
       <label class="form-label">תוכן *</label>
       <textarea class="form-textarea" id="a-body" placeholder="כתוב את תוכן ההודעה כאן..."></textarea>
     </div>
-    <button class="btn-primary" onclick="saveAnnounce()">פרסם הודעה 📢</button>
+    <button class="btn-primary" id="btn-save-announce" onclick="saveAnnounce()">פרסם הודעה 📢</button>
     <button class="btn-secondary" onclick="closeModal('modal-announce')">ביטול</button>
   </div>
 </div>
@@ -1878,7 +1879,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.7.7'; // תיקון עיצוב בדוח החצי שנתי: הוסרו הסוגריים סביב טווח החודשים (ינואר-יוני / יולי-דצמבר) והוסרו הנקודותיים בשורות יתרות הפתיחה והסגירה (בנק/מזומן/מצטברת).
+const APP_VERSION = '2.8.0'; // הוספת אפשרות לעריכת הודעה קיימת (לא רק מחיקה) — כפתור "✏️ ערוך" לצד "🗑 מחק" בכל הודעה, פותח את אותו מודל במצב עריכה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6177,7 +6178,7 @@ function renderAnnouncements() {
         </div>
         <div class="announce-meta">${dateStr}</div>
         <div class="announce-body">${a.body}</div>
-        ${isAdmin ? `<div style="margin-top:10px;"><button class="btn-danger" onclick="deleteAnnounce('${a.id}')">🗑 מחק</button></div>` : ''}
+        ${isAdmin ? `<div style="margin-top:10px;display:flex;gap:8px;"><button class="btn-icon" onclick="editAnnounce('${a.id}')">✏️ ערוך</button><button class="btn-danger" onclick="deleteAnnounce('${a.id}')">🗑 מחק</button></div>` : ''}
       </div>
     `;
   }).join('');
@@ -6205,26 +6206,53 @@ function renderHomeAnnouncements() {
 }
 
 window.openAddAnnounce = () => {
+  document.getElementById('edit-announce-id').value = '';
+  document.getElementById('modal-announce-title').textContent = 'הודעה חדשה';
+  document.getElementById('btn-save-announce').textContent = 'פרסם הודעה 📢';
   document.getElementById('a-title').value = '';
   document.getElementById('a-cat').value = 'כללי';
   document.getElementById('a-body').value = '';
   openModal('modal-announce');
 };
 
+window.editAnnounce = (id) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const a = allAnnouncements.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('edit-announce-id').value = id;
+  document.getElementById('modal-announce-title').textContent = 'עריכת הודעה';
+  document.getElementById('btn-save-announce').textContent = 'שמור שינויים 💾';
+  document.getElementById('a-title').value = a.title || '';
+  document.getElementById('a-cat').value = a.category || 'כללי';
+  document.getElementById('a-body').value = a.body || '';
+  openModal('modal-announce');
+};
+
 window.saveAnnounce = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
 
+  const id = document.getElementById('edit-announce-id').value;
   const title = document.getElementById('a-title').value.trim();
   const body = document.getElementById('a-body').value.trim();
   if (!title || !body) { showToast('חובה למלא כותרת ותוכן'); return; }
   try {
-    await addDoc(collection(db, 'buildings', buildingId, 'announcements'), {
-      title, body,
-      category: document.getElementById('a-cat').value,
-      createdAt: serverTimestamp(),
-      createdBy: currentUser.uid
-    });
-    showToast('📢 הודעה פורסמה');
+    if (id) {
+      await updateDoc(doc(db, 'buildings', buildingId, 'announcements', id), {
+        title, body,
+        category: document.getElementById('a-cat').value,
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser.uid
+      });
+      showToast('✅ ההודעה עודכנה');
+    } else {
+      await addDoc(collection(db, 'buildings', buildingId, 'announcements'), {
+        title, body,
+        category: document.getElementById('a-cat').value,
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.uid
+      });
+      showToast('📢 הודעה פורסמה');
+    }
     closeModal('modal-announce');
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
