@@ -1100,6 +1100,14 @@
         <option value="אחר">אחר</option>
       </select>
     </div>
+    <div class="form-group">
+      <label class="form-label">סוג הוצאה</label>
+      <select class="form-select" id="exp-type" onchange="_expTypeManuallySet=true">
+        <option value="recurring">🔁 שוטף</option>
+        <option value="oneoff">⚡ חריג</option>
+      </select>
+      <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">קובע אם ההוצאה נכללת בממוצע החודשי בתחזית ("שוטף") או מוצגת בנפרד כהוצאה חד-פעמית ("חריג"). ברירת המחדל נקבעת לפי הקטגוריה — ניתן לשנות ידנית.</div>
+    </div>
     <div class="form-group" id="exp-contractor-fields" style="display:none;">
       <label class="form-label">שם מבצע התיקון</label>
       <input class="form-input" id="exp-contractor-name" placeholder="שם בעל המקצוע" style="margin-bottom:10px;"/>
@@ -1879,7 +1887,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.8.0'; // הוספת אפשרות לעריכת הודעה קיימת (לא רק מחיקה) — כפתור "✏️ ערוך" לצד "🗑 מחק" בכל הודעה, פותח את אותו מודל במצב עריכה.
+const APP_VERSION = '2.9.0'; // הוספת שדה "סוג הוצאה" (שוטף/חריג) לטופס הוצאה — קובע ידנית אילו הוצאות נכללות בממוצע החודשי בתחזית, במקום היסק אוטומטי לפי קטגוריה בלבד. הוצאות ישנות ללא השדה ממשיכות להתנהג לפי הקטגוריה כמו קודם.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3802,6 +3810,13 @@ let expensesListenerBuildingId = null; // which building the expenses listener i
 // either because it was replaced by a new photo or explicitly removed.
 let _expReceiptPendingFile = null;
 let _expReceiptOriginalUrl = null;
+// True once the admin has explicitly touched the exp-type (שוטף/חריג)
+// dropdown for the currently-open form — so onExpenseCategoryChange()
+// knows not to silently overwrite a deliberate choice when the category
+// is changed afterwards. Reset to false in openAddExpense(); set to true
+// in editExpense() too, since an existing saved value (or its category-based
+// fallback) should likewise not be auto-overwritten by a later category tweak.
+let _expTypeManuallySet = false;
 
 function ensureExpensesListener() {
   if (expensesListenerBuildingId === buildingId && unsubExpenses) return; // already listening for this building
@@ -3851,10 +3866,14 @@ function renderExpenses() {
     const receiptThumb = e.receiptImageUrl
       ? '<img src="'+e.receiptImageUrl+'" onclick="event.stopPropagation();window.open(\''+e.receiptImageUrl+'\',\'_blank\')" style="width:48px;height:48px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--gray-200);flex-shrink:0;"/>'
       : '';
+    // תג "חריג" מוצג רק להוצאות חד-פעמיות — כדי לא להציף את הרשימה, מכיוון
+    // ש"שוטף" הוא המצב הנפוץ/ברירת המחדל ולא מוסיף מידע חדש בכל שורה.
+    const isOneOff = e.expenseType ? e.expenseType === 'oneoff' : !RECURRING_EXPENSE_CATEGORIES.includes(e.category);
+    const typeBadge = isOneOff ? ' <span class="badge badge-orange">⚡ חריג</span>' : '';
     return '<div class="card" style="margin:8px 16px;">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:10px;">'
       + '<div style="flex:1;">'
-      + '<div style="font-size:15px;font-weight:700;">'+icon+' '+e.description+'</div>'
+      + '<div style="font-size:15px;font-weight:700;">'+icon+' '+e.description+typeBadge+'</div>'
       + '<div style="font-size:12px;color:var(--gray-400);margin-top:4px;">'+e.category+' • '+(e.date||'')+'</div>'
       + contractorLine
       + repairNoteLine
@@ -3967,6 +3986,14 @@ window.onExpenseCategoryChange = () => {
   const isRepair = cat === 'תיקון';
   document.getElementById('exp-contractor-fields').style.display = isRepair ? '' : 'none';
 
+  // עדכן את ברירת המחדל של "סוג הוצאה" (שוטף/חריג) לפי הקטגוריה שנבחרה —
+  // אך ורק אם המשתמש עדיין לא שינה את הבחירה ידנית בטופס הנוכחי, כדי לא
+  // לדרוס בחירה מודעת (למשל "כיבוי אש" שסומן כ"חריג" כי זו רכישת ציוד
+  // חד-פעמית ולא מילוי מטפים שוטף).
+  if (!_expTypeManuallySet) {
+    document.getElementById('exp-type').value = defaultExpenseType(cat);
+  }
+
   const allowed = categoryAllowsReceipt(cat);
   const hasExistingPhoto = !!_expReceiptOriginalUrl || !!_expReceiptPendingFile;
   document.getElementById('exp-receipt-section').style.display = (allowed || hasExistingPhoto) ? '' : 'none';
@@ -3979,6 +4006,7 @@ window.openAddExpense = () => {
   document.getElementById('edit-expense-id').value = '';
   document.getElementById('exp-cat').value = 'חשמל';
   document.getElementById('exp-method').value = 'bank';
+  _expTypeManuallySet = false;
   document.getElementById('exp-desc').value = '';
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-date').value = new Date().toISOString().split('T')[0];
@@ -4005,6 +4033,11 @@ window.editExpense = (id) => {
   document.getElementById('edit-expense-id').value = id;
   document.getElementById('exp-cat').value = e.category || 'אחר';
   document.getElementById('exp-method').value = e.method || 'bank';
+  // הוצאה קיימת: השתמש בערך השמור אם קיים, אחרת נפול על ההיסק הישן לפי
+  // הקטגוריה (ראה defaultExpenseType) — ותמיד מסומן כ"נבחר ידנית" כדי
+  // שעריכת הקטגוריה בהמשך לא תדרוס את הערך שכבר נטען כאן.
+  document.getElementById('exp-type').value = e.expenseType || defaultExpenseType(e.category || 'אחר');
+  _expTypeManuallySet = true;
   document.getElementById('exp-desc').value = e.description || '';
   document.getElementById('exp-amount').value = e.amount || '';
   document.getElementById('exp-date').value = e.date || '';
@@ -4036,8 +4069,10 @@ window.saveExpense = async () => {
   if (!desc || !amount) { showToast('חובה למלא תיאור וסכום'); return; }
   const category = document.getElementById('exp-cat').value;
   const method = document.getElementById('exp-method').value;
+  const expenseType = document.getElementById('exp-type').value;
   const data = {
     category,
+    expenseType,
     description: desc, amount,
     method,
     date: document.getElementById('exp-date').value,
@@ -4287,6 +4322,16 @@ function renderBalance() {
 
 // ===== FORECAST =====
 const RECURRING_EXPENSE_CATEGORIES = ['חשמל','מים','ניקיון','מעלית','ביטוח','כיבוי אש','עמלות בנק'];
+
+// ברירת מחדל לשדה exp-type (סוג הוצאה: שוטף/חריג) כשנבחרת קטגוריה, וגם
+// ה-fallback להוצאות ישנות שנשמרו לפני שהשדה expenseType נוסף למסמך —
+// לפני העדכון הזה הסיווג שוטף/חריג נקבע אך ורק לפי הקטגוריה
+// (RECURRING_EXPENSE_CATEGORIES), אז זה בדיוק ההתנהגות ההיסטורית שצריך
+// לשמר עבור הוצאות בלי השדה.
+function defaultExpenseType(category) {
+  return RECURRING_EXPENSE_CATEGORIES.includes(category) ? 'recurring' : 'oneoff';
+}
+
 const FORECAST_MONTHS_AHEAD = 6;
 const FORECAST_HISTORY_MONTHS = 6; // כמה חודשים אחורה משמשים לחישוב ממוצע ההוצאות השוטפות
 
@@ -4314,17 +4359,23 @@ function loadForecast() {
   if (alreadyListening) renderForecast();
 }
 
-// ממוצע חודשי להוצאות שוטפות/קבועות בלבד (RECURRING_EXPENSE_CATEGORIES) על
-// FORECAST_HISTORY_MONTHS החודשים האחרונים. הוצאות מקטגוריות חד-פעמיות
-// (תיקון/גינון/אחר) לא נכללות בחישוב — הן היו מעוותות "חודש טיפוסי" —
-// ומוצגות בנפרד כהערת מידע בלבד.
+// ממוצע חודשי להוצאות שוטפות/קבועות בלבד על FORECAST_HISTORY_MONTHS
+// החודשים האחרונים. הסיווג שוטף/חריג נקבע לפי השדה expenseType שנבחר
+// ידנית בטופס ההוצאה (ולא רק לפי הקטגוריה כמו בעבר) — כך שאפשר למשל
+// לסמן רכישת ציוד כיבוי אש חד-פעמית כ"חריג" גם שהקטגוריה "כיבוי אש"
+// עצמה מוגדרת כשוטפת כברירת מחדל. הוצאות ישנות בלי השדה (מלפני
+// העדכון) נופלות חזרה על ההיסק הישן לפי RECURRING_EXPENSE_CATEGORIES,
+// כדי לא לשנות רטרואקטיבית איך הן מוצגות בתחזית. הוצאות "חריג" לא
+// נכללות בחישוב הממוצע — הן היו מעוותות "חודש טיפוסי" — ומוצגות בנפרד
+// כהערת מידע בלבד.
 function computeRecurringMonthlyAverage() {
   const now = new Date();
   const cutoff = new Date(now.getFullYear(), now.getMonth() - FORECAST_HISTORY_MONTHS, 1);
   const cutoffStr = cutoff.getFullYear() + '-' + String(cutoff.getMonth()+1).padStart(2,'0') + '-01';
 
-  const recurring = allExpenses.filter(e => RECURRING_EXPENSE_CATEGORIES.includes(e.category) && (e.date||'') >= cutoffStr);
-  const oneOff = allExpenses.filter(e => !RECURRING_EXPENSE_CATEGORIES.includes(e.category) && (e.date||'') >= cutoffStr);
+  const isRecurring = e => e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category);
+  const recurring = allExpenses.filter(e => isRecurring(e) && (e.date||'') >= cutoffStr);
+  const oneOff = allExpenses.filter(e => !isRecurring(e) && (e.date||'') >= cutoffStr);
 
   return {
     recurringMonthlyAvg: recurring.reduce((s,e) => s + (e.amount||0), 0) / FORECAST_HISTORY_MONTHS,
