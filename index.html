@@ -1112,9 +1112,7 @@
       <label class="form-label">שם מבצע התיקון</label>
       <input class="form-input" id="exp-contractor-name" placeholder="שם בעל המקצוע" style="margin-bottom:10px;"/>
       <label class="form-label">טלפון מבצע התיקון</label>
-      <input class="form-input" id="exp-contractor-phone" type="tel" placeholder="050-0000000" style="margin-bottom:10px;"/>
-      <label class="form-label">הערה</label>
-      <input class="form-input" id="exp-repair-note" placeholder="לדוגמה: תשלום 1 מתוך 2"/>
+      <input class="form-input" id="exp-contractor-phone" type="tel" placeholder="050-0000000"/>
     </div>
     <div class="form-group">
       <label class="form-label">אמצעי תשלום</label>
@@ -1128,6 +1126,10 @@
     <div class="form-group">
       <label class="form-label">תיאור *</label>
       <input class="form-input" id="exp-desc" placeholder="פירוט ההוצאה"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">הערה</label>
+      <input class="form-input" id="exp-note" placeholder="לדוגמה: תשלום 1 מתוך 2"/>
     </div>
     <div class="form-group">
       <label class="form-label">סכום (₪) *</label>
@@ -1887,7 +1889,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.9.0'; // הוספת שדה "סוג הוצאה" (שוטף/חריג) לטופס הוצאה — קובע ידנית אילו הוצאות נכללות בממוצע החודשי בתחזית, במקום היסק אוטומטי לפי קטגוריה בלבד. הוצאות ישנות ללא השדה ממשיכות להתנהג לפי הקטגוריה כמו קודם.
+const APP_VERSION = '2.9.1'; // הפיכת שדה "הערה" בהוצאה לזמין לכל הקטגוריות (לא רק "תיקון") — למשל "תשלום 1 מתוך 3" עבור כל סוג הוצאה. הוצאות ישנות עם repairNote ממשיכות להיטען ולהוצג כרגיל.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3860,8 +3862,8 @@ function renderExpenses() {
     const contractorLine = e.contractorName
       ? '<div style="font-size:12px;color:var(--gray-500);margin-top:2px;">🔧 '+e.contractorName+(e.contractorPhone ? ' • <a href="tel:'+e.contractorPhone+'" style="color:var(--blue);text-decoration:none;">'+e.contractorPhone+'</a>' : '')+'</div>'
       : '';
-    const repairNoteLine = e.repairNote
-      ? '<div style="font-size:12px;color:var(--gray-500);margin-top:2px;">📝 '+e.repairNote+'</div>'
+    const noteLine = (e.note || e.repairNote)
+      ? '<div style="font-size:12px;color:var(--gray-500);margin-top:2px;">📝 '+(e.note || e.repairNote)+'</div>'
       : '';
     const receiptThumb = e.receiptImageUrl
       ? '<img src="'+e.receiptImageUrl+'" onclick="event.stopPropagation();window.open(\''+e.receiptImageUrl+'\',\'_blank\')" style="width:48px;height:48px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--gray-200);flex-shrink:0;"/>'
@@ -3876,7 +3878,7 @@ function renderExpenses() {
       + '<div style="font-size:15px;font-weight:700;">'+icon+' '+e.description+typeBadge+'</div>'
       + '<div style="font-size:12px;color:var(--gray-400);margin-top:4px;">'+e.category+' • '+(e.date||'')+'</div>'
       + contractorLine
-      + repairNoteLine
+      + noteLine
       + '</div>'
       + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">'
       + receiptThumb
@@ -4008,11 +4010,11 @@ window.openAddExpense = () => {
   document.getElementById('exp-method').value = 'bank';
   _expTypeManuallySet = false;
   document.getElementById('exp-desc').value = '';
+  document.getElementById('exp-note').value = '';
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('exp-contractor-name').value = '';
   document.getElementById('exp-contractor-phone').value = '';
-  document.getElementById('exp-repair-note').value = '';
   _expReceiptPendingFile = null;
   _expReceiptOriginalUrl = null;
   document.getElementById('exp-receipt-url').value = '';
@@ -4039,11 +4041,14 @@ window.editExpense = (id) => {
   document.getElementById('exp-type').value = e.expenseType || defaultExpenseType(e.category || 'אחר');
   _expTypeManuallySet = true;
   document.getElementById('exp-desc').value = e.description || '';
+  // תאימות לאחור: הוצאות ישנות שנשמרו לפני הכללת שדה ההערה לכל הקטגוריות
+  // (לא רק "תיקון") שמרו את הטקסט תחת repairNote — נציג אותו כאן גם אם
+  // המסמך עוד לא עודכן ל-note.
+  document.getElementById('exp-note').value = e.note || e.repairNote || '';
   document.getElementById('exp-amount').value = e.amount || '';
   document.getElementById('exp-date').value = e.date || '';
   document.getElementById('exp-contractor-name').value = e.contractorName || '';
   document.getElementById('exp-contractor-phone').value = e.contractorPhone || '';
-  document.getElementById('exp-repair-note').value = e.repairNote || '';
   _expReceiptPendingFile = null;
   _expReceiptOriginalUrl = e.receiptImageUrl || null;
   document.getElementById('exp-receipt-url').value = e.receiptImageUrl || '';
@@ -4070,21 +4075,26 @@ window.saveExpense = async () => {
   const category = document.getElementById('exp-cat').value;
   const method = document.getElementById('exp-method').value;
   const expenseType = document.getElementById('exp-type').value;
+  const note = document.getElementById('exp-note').value.trim();
   const data = {
     category,
     expenseType,
     description: desc, amount,
     method,
+    note: note || null,
     date: document.getElementById('exp-date').value,
     updatedAt: serverTimestamp()
   };
 
   // מבצע התיקון (שם + טלפון) רלוונטי רק לקטגוריית "תיקון" — בכל קטגוריה
   // אחרת מנקים את השדות (למשל אם ההוצאה נערכה ושונתה הקטגוריה בדיעבד).
+  // שדה ההערה עצמו (note) כבר רלוונטי לכל הקטגוריות ונשמר תמיד למעלה —
+  // repairNote הישן נשמר null בכוונה עבור הוצאות חדשות/נערכות; ערכים
+  // ישנים שכבר קיימים במסמכים מלפני העדכון עדיין נטענים לעריכה דרך
+  // e.note || e.repairNote ב-editExpense() לעיל.
   if (category === 'תיקון') {
     const contractorName = document.getElementById('exp-contractor-name').value.trim();
     const contractorPhone = document.getElementById('exp-contractor-phone').value.trim();
-    const repairNote = document.getElementById('exp-repair-note').value.trim();
     if (contractorPhone) {
       const phoneDigits = contractorPhone.replace(/\D/g, '');
       if (phoneDigits.length !== 10) {
@@ -4094,7 +4104,7 @@ window.saveExpense = async () => {
     }
     data.contractorName = contractorName || null;
     data.contractorPhone = contractorPhone || null;
-    data.repairNote = repairNote || null;
+    data.repairNote = null;
   } else {
     data.contractorName = null;
     data.contractorPhone = null;
