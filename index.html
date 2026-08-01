@@ -1662,6 +1662,19 @@ function splitCashBank(items) {
   return { cash, bank: total - cash, total };
 }
 
+// Combines an expense's description with its optional note (e.g. "תשלום 1
+// מתוך 3") for display in reports — shared across createPDFReport()
+// (yearly), createMonthlyPDFReport(), createSemiAnnualPDFReport() and
+// exportExcel(), so the note travels with the description in every table
+// that lists expenses, instead of being visible only inside the app
+// itself. Falls back to the legacy repairNote field for expenses saved
+// before the note field was generalized beyond the "תיקון" category.
+function descWithNote(e) {
+  const desc = e.description || '-';
+  const note = e.note || e.repairNote;
+  return note ? desc + ' (' + note + ')' : desc;
+}
+
 // Shared bank/cash balance formula. Takes plain data arrays (already
 // .data()'d from Firestore docs, from either a live onSnapshot cache or a
 // one-off getDocs fetch) plus the building's opening balances, and returns
@@ -1889,7 +1902,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.9.1'; // הפיכת שדה "הערה" בהוצאה לזמין לכל הקטגוריות (לא רק "תיקון") — למשל "תשלום 1 מתוך 3" עבור כל סוג הוצאה. הוצאות ישנות עם repairNote ממשיכות להיטען ולהוצג כרגיל.
+const APP_VERSION = '2.9.2'; // הערת ההוצאה (note/repairNote) מוצגת עכשיו גם בטבלאות ההוצאות בכל הדוחות — PDF שנתי, חודשי, חצי שנתי, ואקסל — לצד התיאור בסוגריים, ולא רק בתוך האפליקציה עצמה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4608,7 +4621,7 @@ window.exportExcel = async () => {
 
     // ===== גיליון 2 — הוצאות (פירוט + סיכום קטגוריות) =====
     const expHeader = ['תאריך', 'קטגוריה', 'תיאור', 'אמצעי תשלום', 'סכום'];
-    const expRows = expenses.map(e => [e.date||'', e.category||'', e.description||'', e.method==='cash'?'מזומן':'בנק', e.amount||0]);
+    const expRows = expenses.map(e => [e.date||'', e.category||'', descWithNote(e), e.method==='cash'?'מזומן':'בנק', e.amount||0]);
     const expTotal = expenses.reduce((s,e)=>s+(e.amount||0),0);
     expRows.push(['','','','סה"כ', expTotal]);
 
@@ -4927,7 +4940,7 @@ async function createPDFReport() {
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(e.description || '-').replace(/ /g, '\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e).replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
@@ -5175,7 +5188,7 @@ async function createMonthlyPDFReport() {
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category||'-').replace(/ /g,'\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(e.description||'-').replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e).replace(/ /g,'\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date||'-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
@@ -5369,7 +5382,7 @@ async function createSemiAnnualPDFReport() {
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(e.description || '-').replace(/ /g, '\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e).replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
