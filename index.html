@@ -1199,6 +1199,16 @@
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
+        <label class="form-label">📊 טווח חודשים אחורה לחישוב ממוצע הוצאות שוטפות (תחזית)</label>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">כמה חודשים אחורה נלקחים בחשבון בחישוב "הוצאות שוטפות ממוצעות" בלשונית התחזית. טווח קצר מדי (למשל 6 חודשים) רגיש לתנודות עונתיות; טווח ארוך יותר (24-36 חודשים) משקף "שנה טיפוסית" בצורה יציבה יותר.</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-input" id="input-forecast-history-months" type="number" min="1" placeholder="24" style="flex:1;"/>
+          <button class="btn-success" onclick="saveForecastHistoryMonths()">שמור</button>
+        </div>
+        <div id="forecast-history-months-note" style="font-size:12px;color:var(--gray-500);margin-top:4px;"></div>
+      </div>
+      <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
+      <div class="form-group" style="margin:0;">
         <label class="form-label">🏦 יתרת פתיחה בבנק (₪)</label>
         <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">סכום לאיזון המאזן באפליקציה עם הבנק בפועל, נכון לתאריך שתבחר.</div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
@@ -1902,7 +1912,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.9.2'; // הערת ההוצאה (note/repairNote) מוצגת עכשיו גם בטבלאות ההוצאות בכל הדוחות — PDF שנתי, חודשי, חצי שנתי, ואקסל — לצד התיאור בסוגריים, ולא רק בתוך האפליקציה עצמה.
+const APP_VERSION = '2.9.5'; // כשמסננים הוצאות (בלשונית "הוצאות" או בטבלת "פירוט הוצאות" במאזן) מוצג עכשיו גם ממוצע חודשי לצד הסה"כ המסונן — מחושב לפי טווח התאריכים שנבחר, ואם לא נבחר טווח מפורש, לפי טווח התאריכים בפועל של התוצאות המסוננות.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3462,6 +3472,9 @@ window.openAdminFinance = () => {
   const reminderThreshold = buildingData?.reminderThresholdMonths ?? REMINDER_THRESHOLD_DEFAULT;
   document.getElementById('input-reminder-threshold').value = reminderThreshold;
   document.getElementById('reminder-threshold-note').textContent = `נוכחי: ${reminderThreshold} חודשים`;
+  const forecastHistoryMonths = forecastHistoryMonthsSetting();
+  document.getElementById('input-forecast-history-months').value = forecastHistoryMonths;
+  document.getElementById('forecast-history-months-note').textContent = `נוכחי: ${forecastHistoryMonths} חודשים`;
   document.getElementById('input-opening-balance').value = buildingData?.openingBalance || '';
   document.getElementById('input-opening-balance-date').value = buildingData?.openingBalanceDate || '';
   document.getElementById('input-cash-opening-balance').value = buildingData?.cashOpeningBalance || '';
@@ -3570,6 +3583,28 @@ window.saveReminderThreshold = async () => {
     buildingData.reminderThresholdMonths = val;
     document.getElementById('reminder-threshold-note').textContent = `נשמר: ${val} חודשים`;
     showToast('✅ סף התזכורות נשמר');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.saveForecastHistoryMonths = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+
+  const val = parseInt(document.getElementById('input-forecast-history-months').value);
+  if (!val || val < 1) { showToast('הכנס מספר חודשים תקין'); return; }
+  try {
+    const previousVal = forecastHistoryMonthsSetting();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'buildings', buildingId), { forecastHistoryMonths: val });
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      type: 'forecastHistoryMonths', action: 'forecast_history_months_adjusted', amount: val, previousAmount: previousVal,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    buildingData.forecastHistoryMonths = val;
+    document.getElementById('forecast-history-months-note').textContent = `נשמר: ${val} חודשים`;
+    showToast('✅ טווח התחזית נשמר');
+    renderForecast();
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
@@ -3816,6 +3851,88 @@ let allExpenses = [];
 let unsubExpenses = null;
 let expensesListenerBuildingId = null; // which building the expenses listener is attached to
 
+// ===== EXPENSE FILTERS (shared logic between the "הוצאות" list tab and the
+// "פירוט הוצאות" detail table inside the "מאזן" tab) =====
+// Two independent filter states — a user might want a narrower view in one
+// tab without it silently affecting the other. Neither filter touches the
+// balance tab's summary cards/category breakdown/bank totals above the
+// detail table — those must always reflect the true, unfiltered figures;
+// only the detail table rows (and the expenses-tab list + its "סה"כ" line,
+// since that tab is list-only) are affected.
+let expListFilters = { category: '', type: '', from: '', to: '' };
+let balListFilters = { category: '', type: '', from: '', to: '' };
+
+function expenseMatchesFilters(e, filters) {
+  if (filters.category && e.category !== filters.category) return false;
+  if (filters.type) {
+    const isRecurring = e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category);
+    if ((isRecurring ? 'recurring' : 'oneoff') !== filters.type) return false;
+  }
+  if (filters.from && (e.date||'') < filters.from) return false;
+  if (filters.to && (e.date||'') > filters.to) return false;
+  return true;
+}
+
+// Number of calendar months spanned by two yyyy-mm-dd strings, inclusive of
+// both end months (e.g. 2026-06-15..2026-08-02 → 3: יוני/יולי/אוגוסט).
+// Always at least 1, so a same-month range (or a single expense) never
+// divides by zero.
+function monthsBetweenInclusive(fromStr, toStr) {
+  const [fy, fm] = fromStr.split('-').map(Number);
+  const [ty, tm] = toStr.split('-').map(Number);
+  return Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
+}
+
+// Total + monthly average for a filtered set of expenses. The "months" the
+// average is divided over come from the explicit from/to filter dates when
+// both are set; if the person only narrowed by category/type (no date
+// range), the span is derived from the actual dates found in the filtered
+// results themselves, so the average still means something concrete
+// ("what we actually spent on X per month, over the months we have data
+// for") rather than being divided by an arbitrary/undefined period.
+function computeFilteredExpenseSummary(filtered, filters) {
+  const total = filtered.reduce((s,e) => s + (e.amount||0), 0);
+  if (!filtered.length) return { total, avgPerMonth: 0, monthsCount: 0 };
+  let fromStr = filters.from, toStr = filters.to;
+  if (!fromStr || !toStr) {
+    const dates = filtered.map(e => e.date).filter(Boolean).sort();
+    if (!fromStr) fromStr = dates[0];
+    if (!toStr) toStr = dates[dates.length - 1];
+  }
+  const monthsCount = (fromStr && toStr) ? monthsBetweenInclusive(fromStr, toStr) : 1;
+  return { total, avgPerMonth: total / monthsCount, monthsCount };
+}
+
+// Builds the filter-bar markup (category / שוטף-חריג / date range). Shared
+// between the two tabs via setFnName/clearFnName so each keeps its own
+// independent state — see expListFilters/balListFilters above. Rebuilt from
+// scratch on every render (like the rest of these screens); acceptable
+// since these are discrete select/date inputs, not free-text typing that
+// would lose focus/cursor position on re-render.
+function buildExpenseFilterBarHtml(filters, setFnName, clearFnName) {
+  const catOptions = '<option value="">כל הקטגוריות</option>'
+    + Object.keys(EXPENSE_CATEGORY_ICONS).map(c => `<option value="${c}" ${filters.category===c?'selected':''}>${EXPENSE_CATEGORY_ICONS[c]}\u00A0${c}</option>`).join('');
+  const typeOptions = `
+    <option value="" ${filters.type===''?'selected':''}>כל הסוגים</option>
+    <option value="recurring" ${filters.type==='recurring'?'selected':''}>🔁 שוטף</option>
+    <option value="oneoff" ${filters.type==='oneoff'?'selected':''}>⚡ חריג</option>
+  `;
+  const hasActive = !!(filters.category || filters.type || filters.from || filters.to);
+  return '<div style="padding:10px 16px 2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">'
+    + '<select class="form-select" style="flex:1;min-width:130px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'category\', this.value)">'+catOptions+'</select>'
+    + '<select class="form-select" style="flex:1;min-width:110px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'type\', this.value)">'+typeOptions+'</select>'
+    + '<input class="form-input" type="date" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" value="'+(filters.from||'')+'" onchange="'+setFnName+'(\'from\', this.value)"/>'
+    + '<span style="font-size:12px;color:var(--gray-400);">עד</span>'
+    + '<input class="form-input" type="date" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" value="'+(filters.to||'')+'" onchange="'+setFnName+'(\'to\', this.value)"/>'
+    + (hasActive ? '<button class="btn-icon" style="padding:8px 12px;font-size:12px;white-space:nowrap;" onclick="'+clearFnName+'()">✖ נקה סינון</button>' : '')
+    + '</div>';
+}
+
+window.setExpListFilter = (field, value) => { expListFilters[field] = value; renderExpenses(); };
+window.clearExpListFilters = () => { expListFilters = { category:'', type:'', from:'', to:'' }; renderExpenses(); };
+window.setBalListFilter = (field, value) => { balListFilters[field] = value; renderBalance(); };
+window.clearBalListFilters = () => { balListFilters = { category:'', type:'', from:'', to:'' }; renderBalance(); };
+
 // Receipt-photo upload state for the currently-open modal-expense form.
 // _expReceiptPendingFile: a newly-selected+compressed image (Blob) waiting to be
 // uploaded to Storage on save — null if the user hasn't picked a new photo.
@@ -3860,17 +3977,30 @@ function loadExpenses() {
 function renderExpenses() {
   const container = document.getElementById('expenses-list');
   if (!container) return;
+  const filterBarHtml = buildExpenseFilterBarHtml(expListFilters, 'setExpListFilter', 'clearExpListFilters');
+  const filtered = allExpenses.filter(e => expenseMatchesFilters(e, expListFilters));
+  const filtersActive = !!(expListFilters.category || expListFilters.type || expListFilters.from || expListFilters.to);
+
   if (!allExpenses.length) {
-    container.innerHTML = '<div class="card-empty" style="margin:16px;">אין הוצאות רשומות</div>';
+    container.innerHTML = filterBarHtml + '<div class="card-empty" style="margin:16px;">אין הוצאות רשומות</div>';
+    return;
+  }
+  if (!filtered.length) {
+    container.innerHTML = filterBarHtml + '<div class="card-empty" style="margin:16px;">אין הוצאות התואמות לסינון שנבחר</div>';
     return;
   }
   const catIcons = EXPENSE_CATEGORY_ICONS;
-  const total = allExpenses.reduce((s,e) => s + (e.amount||0), 0);
-  let html = '<div style="padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;">'
-    + '<span style="font-size:15px;font-weight:700;">סה"כ הוצאות</span>'
+  const { total, avgPerMonth, monthsCount } = computeFilteredExpenseSummary(filtered, expListFilters);
+  let html = filterBarHtml
+    + '<div style="padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;">'
+    + '<span style="font-size:15px;font-weight:700;">'+(filtersActive ? 'סה"כ מסונן' : 'סה"כ הוצאות')+'</span>'
     + '<span style="font-size:18px;font-weight:700;color:var(--red);">₪'+total.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
-    + '</div>';
-  html += allExpenses.map(e => {
+    + '</div>'
+    + (filtersActive ? '<div style="padding:0 16px 8px;display:flex;justify-content:space-between;align-items:center;">'
+        + '<span style="font-size:12px;color:var(--gray-500);">ממוצע חודשי ('+monthsCount+'\u00A0חוד\')</span>'
+        + '<span style="font-size:13px;font-weight:600;color:var(--gray-600);">₪'+avgPerMonth.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+        + '</div>' : '');
+  html += filtered.map(e => {
     const icon = catIcons[e.category] || '📋';
     const contractorLine = e.contractorName
       ? '<div style="font-size:12px;color:var(--gray-500);margin-top:2px;">🔧 '+e.contractorName+(e.contractorPhone ? ' • <a href="tel:'+e.contractorPhone+'" style="color:var(--blue);text-decoration:none;">'+e.contractorPhone+'</a>' : '')+'</div>'
@@ -4319,8 +4449,22 @@ function renderBalance() {
         + '</div></div>';
     });
     
-    // Expenses detail table
-    html += '<div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:10px;">פירוט הוצאות</div>';
+    // Expenses detail table — filterable independently from the category
+    // breakdown above (which always reflects the true, unfiltered totals).
+    const balFiltered = allExpenses.filter(e => expenseMatchesFilters(e, balListFilters));
+    const balFiltersActive = !!(balListFilters.category || balListFilters.type || balListFilters.from || balListFilters.to);
+    html += '<div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:6px;">פירוט הוצאות</div>';
+    html += buildExpenseFilterBarHtml(balListFilters, 'setBalListFilter', 'clearBalListFilters').replace('padding:10px 16px 2px;', 'padding:0 0 10px;');
+    if (!balFiltered.length) {
+      html += '<div class="card-empty" style="margin-bottom:10px;">אין הוצאות התואמות לסינון שנבחר</div>';
+    } else {
+    if (balFiltersActive) {
+      const balSummary = computeFilteredExpenseSummary(balFiltered, balListFilters);
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:10px;">'
+        + '<div><div style="font-size:12px;color:var(--gray-500);">סה"כ מסונן</div><div style="font-size:16px;font-weight:700;color:var(--red);">₪'+balSummary.total.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div></div>'
+        + '<div style="text-align:left;"><div style="font-size:12px;color:var(--gray-500);">ממוצע חודשי ('+balSummary.monthsCount+'\u00A0חוד\')</div><div style="font-size:14px;font-weight:600;color:var(--gray-600);">₪'+balSummary.avgPerMonth.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div></div>'
+        + '</div>';
+    }
     html += '<div style="overflow-x:auto;">'
       + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
       + '<thead><tr style="background-color:var(--blue);color:white;">'
@@ -4329,7 +4473,7 @@ function renderBalance() {
       + '<th style="border:1px solid #ddd;padding:8px;text-align:right;">תיאור</th>'
       + '<th style="border:1px solid #ddd;padding:8px;text-align:center;">תאריך</th>'
       + '</tr></thead><tbody>';
-    allExpenses.sort((a,b) => (b.date||'').localeCompare(a.date||'')).forEach(e => {
+    balFiltered.sort((a,b) => (b.date||'').localeCompare(a.date||'')).forEach(e => {
       html += '<tr>'
         + '<td style="border:1px solid #ddd;padding:8px;text-align:center;">'+(e.category||'').replace(/ /g,'\u00A0')+'</td>'
         + '<td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪'+(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td>'
@@ -4338,6 +4482,7 @@ function renderBalance() {
         + '</tr>';
     });
     html += '</tbody></table></div>';
+    }
   }
   html += '</div>';
   container.innerHTML = html;
@@ -4356,7 +4501,7 @@ function defaultExpenseType(category) {
 }
 
 const FORECAST_MONTHS_AHEAD = 6;
-const FORECAST_HISTORY_MONTHS = 6; // כמה חודשים אחורה משמשים לחישוב ממוצע ההוצאות השוטפות
+const FORECAST_HISTORY_MONTHS_DEFAULT = 24; // Default fallback if buildingData.forecastHistoryMonths doesn't exist yet (per-building setting, not global — each vaad sets its own via saveForecastHistoryMonths()). 24 חודשים כברירת מחדל, במקום 6 — טווח קצר מדי היה רגיש מדי לתנודות עונתיות (למשל חשמל בקיץ מול חורף) ולא ייצג נכון "שנה טיפוסית".
 
 let allForecastExpenses = [];
 let unsubForecastExpenses = null;
@@ -4382,18 +4527,24 @@ function loadForecast() {
   if (alreadyListening) renderForecast();
 }
 
-// ממוצע חודשי להוצאות שוטפות/קבועות בלבד על FORECAST_HISTORY_MONTHS
-// החודשים האחרונים. הסיווג שוטף/חריג נקבע לפי השדה expenseType שנבחר
-// ידנית בטופס ההוצאה (ולא רק לפי הקטגוריה כמו בעבר) — כך שאפשר למשל
-// לסמן רכישת ציוד כיבוי אש חד-פעמית כ"חריג" גם שהקטגוריה "כיבוי אש"
-// עצמה מוגדרת כשוטפת כברירת מחדל. הוצאות ישנות בלי השדה (מלפני
-// העדכון) נופלות חזרה על ההיסק הישן לפי RECURRING_EXPENSE_CATEGORIES,
-// כדי לא לשנות רטרואקטיבית איך הן מוצגות בתחזית. הוצאות "חריג" לא
-// נכללות בחישוב הממוצע — הן היו מעוותות "חודש טיפוסי" — ומוצגות בנפרד
-// כהערת מידע בלבד.
+// ממוצע חודשי להוצאות שוטפות/קבועות בלבד על פני forecastHistoryMonthsSetting()
+// החודשים האחרונים (ברירת מחדל 24 — ניתן לשינוי לכל בניין דרך ניהול
+// כספים, ראה saveForecastHistoryMonths()). הסיווג שוטף/חריג נקבע לפי
+// השדה expenseType שנבחר ידנית בטופס ההוצאה (ולא רק לפי הקטגוריה כמו
+// בעבר) — כך שאפשר למשל לסמן רכישת ציוד כיבוי אש חד-פעמית כ"חריג" גם
+// שהקטגוריה "כיבוי אש" עצמה מוגדרת כשוטפת כברירת מחדל. הוצאות ישנות בלי
+// השדה (מלפני העדכון) נופלות חזרה על ההיסק הישן לפי
+// RECURRING_EXPENSE_CATEGORIES, כדי לא לשנות רטרואקטיבית איך הן מוצגות
+// בתחזית. הוצאות "חריג" לא נכללות בחישוב הממוצע — הן היו מעוותות "חודש
+// טיפוסי" — ומוצגות בנפרד כהערת מידע בלבד.
+function forecastHistoryMonthsSetting() {
+  return buildingData?.forecastHistoryMonths ?? FORECAST_HISTORY_MONTHS_DEFAULT;
+}
+
 function computeRecurringMonthlyAverage() {
+  const historyMonths = forecastHistoryMonthsSetting();
   const now = new Date();
-  const cutoff = new Date(now.getFullYear(), now.getMonth() - FORECAST_HISTORY_MONTHS, 1);
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - historyMonths, 1);
   const cutoffStr = cutoff.getFullYear() + '-' + String(cutoff.getMonth()+1).padStart(2,'0') + '-01';
 
   const isRecurring = e => e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category);
@@ -4401,8 +4552,8 @@ function computeRecurringMonthlyAverage() {
   const oneOff = allExpenses.filter(e => !isRecurring(e) && (e.date||'') >= cutoffStr);
 
   return {
-    recurringMonthlyAvg: recurring.reduce((s,e) => s + (e.amount||0), 0) / FORECAST_HISTORY_MONTHS,
-    oneOffMonthlyAvg: oneOff.reduce((s,e) => s + (e.amount||0), 0) / FORECAST_HISTORY_MONTHS
+    recurringMonthlyAvg: recurring.reduce((s,e) => s + (e.amount||0), 0) / historyMonths,
+    oneOffMonthlyAvg: oneOff.reduce((s,e) => s + (e.amount||0), 0) / historyMonths
   };
 }
 
@@ -4475,7 +4626,7 @@ function renderForecast() {
   html += '<div class="card" style="margin-bottom:14px;font-size:13px;color:var(--gray-600);line-height:1.8;">'
     + '<div style="font-weight:700;margin-bottom:6px;color:var(--gray-800);">📊 הנחות התחזית</div>'
     + '<div>💰 הכנסה חודשית צפויה: <strong>' + fmtCurrency(monthlyIncome) + '</strong> (בהנחת גבייה מלאה)</div>'
-    + '<div>📉 הוצאות שוטפות ממוצעות: <strong>' + fmtCurrency(recurringMonthlyAvg) + '</strong> לחודש (ממוצע ' + FORECAST_HISTORY_MONTHS + ' חודשים אחרונים)</div>'
+    + '<div>📉 הוצאות שוטפות ממוצעות: <strong>' + fmtCurrency(recurringMonthlyAvg) + '</strong> לחודש (ממוצע ' + forecastHistoryMonthsSetting() + ' חודשים אחרונים)</div>'
     + (oneOffMonthlyAvg > 0 ? '<div style="color:var(--orange);">⚠️ בממוצע ' + fmtCurrency(oneOffMonthlyAvg) + ' לחודש בהוצאות לא-קבועות (תיקונים/גינון/אחר) — <u>לא</u> נכלל בתחזית</div>' : '')
     + '</div>';
 
@@ -4836,6 +4987,18 @@ window.openLog = async () => {
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
         + '<div>'
         + '<div style="font-weight:700;">🔔 שינוי סף חודשים לתזכורת תשלום</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.previousAmount||0)+' ← '+(p.amount||0)+' חודשים</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
+        + '</div></div>';
+    }
+
+    if (type === 'forecastHistoryMonths') {
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;">📊 שינוי טווח חודשים לחישוב תחזית</div>'
         + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.previousAmount||0)+' ← '+(p.amount||0)+' חודשים</div>'
         + byLine
         + '</div>'
