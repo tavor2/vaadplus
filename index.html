@@ -1912,7 +1912,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.9.5'; // כשמסננים הוצאות (בלשונית "הוצאות" או בטבלת "פירוט הוצאות" במאזן) מוצג עכשיו גם ממוצע חודשי לצד הסה"כ המסונן — מחושב לפי טווח התאריכים שנבחר, ואם לא נבחר טווח מפורש, לפי טווח התאריכים בפועל של התוצאות המסוננות.
+const APP_VERSION = '2.9.6'; // סינון ההוצאות (בלשונית "הוצאות" ובטבלת "פירוט הוצאות" במאזן) נפתח כעת עם ברירת מחדל של טווח תאריכים "מתחילת השנה הנוכחית ועד היום", במקום ריק/כל הזמנים. "נקה סינון" עדיין מאפס לתצוגת כל הזמנים ללא הגבלה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3851,6 +3851,17 @@ let allExpenses = [];
 let unsubExpenses = null;
 let expensesListenerBuildingId = null; // which building the expenses listener is attached to
 
+// yyyy-mm-dd for today, and for Jan 1st of the current year — used as the
+// default date-range filter below so both expense screens open already
+// scoped to "this year to date" instead of an unfiltered/all-time view.
+function todayDateStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function jan1CurrentYearStr() {
+  return new Date().getFullYear() + '-01-01';
+}
+
 // ===== EXPENSE FILTERS (shared logic between the "הוצאות" list tab and the
 // "פירוט הוצאות" detail table inside the "מאזן" tab) =====
 // Two independent filter states — a user might want a narrower view in one
@@ -3858,9 +3869,12 @@ let expensesListenerBuildingId = null; // which building the expenses listener i
 // balance tab's summary cards/category breakdown/bank totals above the
 // detail table — those must always reflect the true, unfiltered figures;
 // only the detail table rows (and the expenses-tab list + its "סה"כ" line,
-// since that tab is list-only) are affected.
-let expListFilters = { category: '', type: '', from: '', to: '' };
-let balListFilters = { category: '', type: '', from: '', to: '' };
+// since that tab is list-only) are affected. Date range defaults to
+// Jan 1st of the current year through today ("שנה עד היום") rather than
+// starting blank — "נקה סינון" clears everything, including the dates, to
+// show the full all-time history as an explicit opt-out of the default.
+let expListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: todayDateStr() };
+let balListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: todayDateStr() };
 
 function expenseMatchesFilters(e, filters) {
   if (filters.category && e.category !== filters.category) return false;
