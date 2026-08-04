@@ -1209,6 +1209,16 @@
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
+        <label class="form-label">🏦 אחוז קרן רזרבה מומלצת (מהכנסה שנתית)</label>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">כרית ביטחון מומלצת למקרה חירום, כאחוז מהכנסה שנתית צפויה (בהנחת גבייה מלאה) — מוצג בלשונית התחזית. מקובל בעולם הוועדים בטווח 10%-15%.</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-input" id="input-reserve-fund-percent" type="number" min="1" max="100" step="0.5" placeholder="12" style="flex:1;"/>
+          <button class="btn-success" onclick="saveReserveFundPercent()">שמור</button>
+        </div>
+        <div id="reserve-fund-percent-note" style="font-size:12px;color:var(--gray-500);margin-top:4px;"></div>
+      </div>
+      <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
+      <div class="form-group" style="margin:0;">
         <label class="form-label">🏦 יתרת פתיחה בבנק (₪)</label>
         <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">סכום לאיזון המאזן באפליקציה עם הבנק בפועל, נכון לתאריך שתבחר.</div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
@@ -1912,12 +1922,13 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.9.6'; // סינון ההוצאות (בלשונית "הוצאות" ובטבלת "פירוט הוצאות" במאזן) נפתח כעת עם ברירת מחדל של טווח תאריכים "מתחילת השנה הנוכחית ועד היום", במקום ריק/כל הזמנים. "נקה סינון" עדיין מאפס לתצוגת כל הזמנים ללא הגבלה.
+const APP_VERSION = '2.9.8'; // (1) ברירת המחדל של "עד תאריך" בסינון הוצאות (הוצאות/מאזן) עברה מ"היום" ל"סוף החודש הנוכחי" — כדי שהוצאות/שיקים דחויים שכבר הוזנו לחודש הנוכחי יופיעו מיד. (2) גרף התחזית מציג עכשיו גם בר ראשון של "שאר החודש הנוכחי" (מחושב לפי מה שעדיין צפוי, לא כפול על מה שכבר נגבה/הוצא החודש) בנוסף ל-6 החודשים הבאים.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
 const MAX_CO_ADMINS_DEFAULT = 1; // Default fallback if meta/settings.maxCoAdmins doesn't exist yet — matches the original hardcoded "1 additional committee member" limit.
 const REMINDER_THRESHOLD_DEFAULT = 3; // Default fallback if buildingData.reminderThresholdMonths doesn't exist yet (per-building setting, not global — each vaad sets its own via saveReminderThreshold()).
+const RESERVE_FUND_PERCENT_DEFAULT = 12; // Default fallback if buildingData.reserveFundPercent doesn't exist yet (per-building setting, not global). Sits mid-range of the 10%-15% commonly recommended for a vaad bait's emergency/reserve buffer, sized against expected annual collection — see reserveFundPercentSetting()/renderForecast().
 const RECEIPT_ENABLED_CATEGORIES_DEFAULT = ['תיקון', 'אחר']; // Default fallback if meta/settings.receiptEnabledCategories doesn't exist yet. Per feedback from several vaadim: recurring/fixed expenses (חשמל, מים, ביטוח, גינון, מעלית, כיבוי אש, עמלות בנק) already show up on the bank statement every month and don't need a separately-attached receipt — only one-off repairs and misc purchases ("אחר") really benefit from a photo.
 let trialDaysSetting = TRIAL_DAYS; // Effective trial length in days, loaded from meta/settings.trialDays on app load (see loadSessionSettings()).
 let maxCoAdminsSetting = MAX_CO_ADMINS_DEFAULT; // Effective max number of additional committee members (beyond the primary admin) allowed per building, loaded from meta/settings.maxCoAdmins.
@@ -3475,6 +3486,9 @@ window.openAdminFinance = () => {
   const forecastHistoryMonths = forecastHistoryMonthsSetting();
   document.getElementById('input-forecast-history-months').value = forecastHistoryMonths;
   document.getElementById('forecast-history-months-note').textContent = `נוכחי: ${forecastHistoryMonths} חודשים`;
+  const reserveFundPercent = reserveFundPercentSetting();
+  document.getElementById('input-reserve-fund-percent').value = reserveFundPercent;
+  document.getElementById('reserve-fund-percent-note').textContent = `נוכחי: ${reserveFundPercent}%`;
   document.getElementById('input-opening-balance').value = buildingData?.openingBalance || '';
   document.getElementById('input-opening-balance-date').value = buildingData?.openingBalanceDate || '';
   document.getElementById('input-cash-opening-balance').value = buildingData?.cashOpeningBalance || '';
@@ -3604,6 +3618,28 @@ window.saveForecastHistoryMonths = async () => {
     buildingData.forecastHistoryMonths = val;
     document.getElementById('forecast-history-months-note').textContent = `נשמר: ${val} חודשים`;
     showToast('✅ טווח התחזית נשמר');
+    renderForecast();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.saveReserveFundPercent = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+
+  const val = parseFloat(document.getElementById('input-reserve-fund-percent').value);
+  if (!val || val <= 0) { showToast('הכנס אחוז תקין'); return; }
+  try {
+    const previousVal = reserveFundPercentSetting();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'buildings', buildingId), { reserveFundPercent: val });
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      type: 'reserveFundPercent', action: 'reserve_fund_percent_adjusted', amount: val, previousAmount: previousVal,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    buildingData.reserveFundPercent = val;
+    document.getElementById('reserve-fund-percent-note').textContent = `נשמר: ${val}%`;
+    showToast('✅ אחוז קרן הרזרבה נשמר');
     renderForecast();
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
@@ -3851,15 +3887,19 @@ let allExpenses = [];
 let unsubExpenses = null;
 let expensesListenerBuildingId = null; // which building the expenses listener is attached to
 
-// yyyy-mm-dd for today, and for Jan 1st of the current year — used as the
-// default date-range filter below so both expense screens open already
-// scoped to "this year to date" instead of an unfiltered/all-time view.
-function todayDateStr() {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
+// yyyy-mm-dd for Jan 1st of the current year, and for the last day of the
+// current month — used as the default date-range filter below. The "to"
+// date deliberately reaches the end of the current month (not just today)
+// so already-recorded expenses dated later this month — e.g. a post-dated
+// check ("שיק דחוי") entered today but dated for later in August — are
+// visible by default without the admin having to widen the date filter.
 function jan1CurrentYearStr() {
   return new Date().getFullYear() + '-01-01';
+}
+function endOfCurrentMonthStr() {
+  const d = new Date();
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0); // day 0 of next month = last day of this one
+  return lastDay.getFullYear() + '-' + String(lastDay.getMonth()+1).padStart(2,'0') + '-' + String(lastDay.getDate()).padStart(2,'0');
 }
 
 // ===== EXPENSE FILTERS (shared logic between the "הוצאות" list tab and the
@@ -3870,11 +3910,11 @@ function jan1CurrentYearStr() {
 // detail table — those must always reflect the true, unfiltered figures;
 // only the detail table rows (and the expenses-tab list + its "סה"כ" line,
 // since that tab is list-only) are affected. Date range defaults to
-// Jan 1st of the current year through today ("שנה עד היום") rather than
-// starting blank — "נקה סינון" clears everything, including the dates, to
-// show the full all-time history as an explicit opt-out of the default.
-let expListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: todayDateStr() };
-let balListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: todayDateStr() };
+// Jan 1st of the current year through the end of the current month —
+// "נקה סינון" clears everything, including the dates, to show the full
+// all-time history as an explicit opt-out of the default.
+let expListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
+let balListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
 
 function expenseMatchesFilters(e, filters) {
   if (filters.category && e.category !== filters.category) return false;
@@ -4555,6 +4595,14 @@ function forecastHistoryMonthsSetting() {
   return buildingData?.forecastHistoryMonths ?? FORECAST_HISTORY_MONTHS_DEFAULT;
 }
 
+// Effective recommended reserve-fund percentage for this building, set via
+// saveReserveFundPercent() (ניהול כספים). Sized against expected ANNUAL
+// collection (monthlyIncome * 12), assuming full collection — not against
+// annual expenses — per the vaad's own preference for this calculation.
+function reserveFundPercentSetting() {
+  return buildingData?.reserveFundPercent ?? RESERVE_FUND_PERCENT_DEFAULT;
+}
+
 function computeRecurringMonthlyAverage() {
   const historyMonths = forecastHistoryMonthsSetting();
   const now = new Date();
@@ -4571,19 +4619,45 @@ function computeRecurringMonthlyAverage() {
   };
 }
 
-// בונה סדרה של FORECAST_MONTHS_AHEAD חודשים קדימה. הוצאות ידועות מראש
-// (forecastExpenses) מוחלות בדיוק בחודש שהמנהל שיבץ אותן אליו.
+// בונה סדרה של "שאר החודש הנוכחי" (בר חלקי ראשון) + FORECAST_MONTHS_AHEAD
+// חודשים מלאים קדימה. הוצאות ידועות מראש (forecastExpenses) מוחלות בדיוק
+// בחודש שהמנהל שיבץ אותן אליו.
+//
+// בר "שאר החודש" מחושב אחרת מהחודשים העתידיים: startingBalance כבר כולל
+// בתוכו כל תשלום/הוצאה שנרשמו החודש עד עכשיו (כולל שיקים דחויים שכבר
+// הוזנו לתאריך עתידי באותו חודש) — לכן במקום להוסיף/להחסיר הכנסה
+// והוצאה שוטפת מלאה של חודש (מה שהיה מכפיל אותן), מחשבים רק את מה
+// שעדיין *צפוי* עד סוף החודש: יתרת הגבייה שטרם נכנסה, ויתרת ההוצאה
+// השוטפת הממוצעת שטרם נרשמה החודש.
 function buildForecastSeries(startingBalance, monthlyIncome, recurringMonthlyAvg) {
   const now = new Date();
   const series = [];
   let balance = startingBalance;
+
+  const curYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const collectedThisMonth = balPaymentsAll.filter(p => p.month === curYm).reduce((s,p) => s + (p.amount||0), 0);
+  const recurringSpentThisMonth = allExpenses
+    .filter(e => (e.date||'').startsWith(curYm))
+    .filter(e => e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category))
+    .reduce((s,e) => s + (e.amount||0), 0);
+  const remainingIncome = Math.max(0, monthlyIncome - collectedThisMonth);
+  const remainingRecurring = Math.max(0, recurringMonthlyAvg - recurringSpentThisMonth);
+  const knownForCurMonth = allForecastExpenses.filter(f => f.month === curYm).reduce((s,f) => s + (f.amount||0), 0);
+  balance += remainingIncome - remainingRecurring - knownForCurMonth;
+  series.push({
+    ym: curYm, label: 'שאר ' + monthLabel(curYm), shortLabel: 'החודש',
+    income: remainingIncome, recurring: remainingRecurring, known: knownForCurMonth,
+    balance, isCurrentMonth: true
+  });
+
   for (let i = 1; i <= FORECAST_MONTHS_AHEAD; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
     const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
     const knownForMonth = allForecastExpenses.filter(f => f.month === ym).reduce((s,f) => s + (f.amount||0), 0);
     const netChange = monthlyIncome - recurringMonthlyAvg - knownForMonth;
     balance += netChange;
-    series.push({ ym, label: monthLabel(ym), income: monthlyIncome, recurring: recurringMonthlyAvg, known: knownForMonth, balance });
+    const label = monthLabel(ym);
+    series.push({ ym, label, shortLabel: label.split(' ')[0], income: monthlyIncome, recurring: recurringMonthlyAvg, known: knownForMonth, balance });
   }
   return series;
 }
@@ -4610,8 +4684,8 @@ function renderForecast() {
   let html = '<div style="padding:16px;">';
 
   html += '<div class="card" style="margin-bottom:14px;">'
-    + '<div style="font-weight:700;margin-bottom:4px;">תחזית יתרה — ' + FORECAST_MONTHS_AHEAD + ' חודשים קדימה</div>'
-    + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:12px;">🟢 עלייה מהחודש הקודם &nbsp; 🔴 ירידה מהחודש הקודם</div>'
+    + '<div style="font-weight:700;margin-bottom:4px;">תחזית יתרה — שאר החודש ו-' + FORECAST_MONTHS_AHEAD + ' חודשים קדימה</div>'
+    + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:12px;">🟢 עלייה מהתקופה הקודמת &nbsp; 🔴 ירידה מהתקופה הקודמת</div>'
     + '<div style="display:flex;align-items:flex-end;gap:6px;height:140px;padding:0 4px;">'
     + series.map((s, i) => {
         const heightPct = Math.max(4, Math.round(((s.balance - minBalance) / range) * 100));
@@ -4619,11 +4693,11 @@ function renderForecast() {
         const barColor = s.balance >= prevBalance ? 'var(--green)' : 'var(--red)';
         return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;">'
           + '<div style="font-size:10px;color:var(--gray-400);margin-bottom:2px;white-space:nowrap;">' + Math.round(s.balance).toLocaleString('he-IL') + '</div>'
-          + '<div style="width:100%;background:' + barColor + ';border-radius:4px 4px 0 0;height:' + heightPct + '%;"></div></div>';
+          + '<div style="width:100%;background:' + barColor + ';border-radius:4px 4px 0 0;height:' + heightPct + '%;' + (s.isCurrentMonth ? 'border:2px dashed var(--blue);' : '') + '"></div></div>';
       }).join('')
     + '</div>'
     + '<div style="display:flex;gap:6px;padding:0 4px;margin-top:6px;">'
-    + series.map(s => '<div style="flex:1;text-align:center;font-size:10px;color:var(--gray-400);">' + s.label.split(' ')[0] + '</div>').join('')
+    + series.map(s => '<div style="flex:1;text-align:center;font-size:10px;color:' + (s.isCurrentMonth ? 'var(--blue)' : 'var(--gray-400)') + ';font-weight:' + (s.isCurrentMonth ? '700' : '400') + ';">' + s.shortLabel + '</div>').join('')
     + '</div></div>';
 
   html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;"><div style="overflow-x:auto;">'
@@ -4636,6 +4710,7 @@ function renderForecast() {
         + '<td style="font-weight:700;color:' + (s.balance >= 0 ? 'var(--green)' : 'var(--red)') + ';">' + fmtCurrency(s.balance) + '</td>'
         + '</tr>').join('')
     + '</tbody></table></div></div>';
+  html += '<div style="font-size:11px;color:var(--gray-400);margin:-8px 4px 14px;line-height:1.6;">* בשורת "שאר ' + series[0].label.replace('שאר ', '') + '" ה"הכנסה" וה"הוצאות שוטפות" משקפות רק את מה שעדיין צפוי עד סוף החודש — מה שכבר נגבה/הוצא החודש כבר נכלל ביתרה הנוכחית.</div>';
 
   html += '<div class="card" style="margin-bottom:14px;font-size:13px;color:var(--gray-600);line-height:1.8;">'
     + '<div style="font-weight:700;margin-bottom:6px;color:var(--gray-800);">📊 הנחות התחזית</div>'
@@ -4643,6 +4718,33 @@ function renderForecast() {
     + '<div>📉 הוצאות שוטפות ממוצעות: <strong>' + fmtCurrency(recurringMonthlyAvg) + '</strong> לחודש (ממוצע ' + forecastHistoryMonthsSetting() + ' חודשים אחרונים)</div>'
     + (oneOffMonthlyAvg > 0 ? '<div style="color:var(--orange);">⚠️ בממוצע ' + fmtCurrency(oneOffMonthlyAvg) + ' לחודש בהוצאות לא-קבועות (תיקונים/גינון/אחר) — <u>לא</u> נכלל בתחזית</div>' : '')
     + '</div>';
+
+  {
+    const reservePct = reserveFundPercentSetting();
+    const annualIncome = monthlyIncome * 12;
+    const reserveTarget = annualIncome * (reservePct / 100);
+    const reserveGap = reserveTarget - currentBalance;
+    const reserveMet = reserveGap <= 0;
+    const reservePctOfTarget = reserveTarget > 0 ? Math.min(100, Math.round((currentBalance / reserveTarget) * 100)) : 0;
+    html += '<div class="card" style="margin-bottom:14px;">'
+      + '<div style="font-weight:700;margin-bottom:4px;">🏦 קרן רזרבה מומלצת</div>'
+      + '<div style="font-size:12px;color:var(--gray-500);margin-bottom:12px;line-height:1.6;">כרית ביטחון מומלצת לבניין למקרה של הוצאה בלתי צפויה, בגובה ' + reservePct + '% מההכנסה השנתית הצפויה (' + fmtCurrency(annualIncome) + ' בהנחת גבייה מלאה).</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+      + '<span style="font-size:13px;color:var(--gray-600);">יעד קרן הרזרבה</span>'
+      + '<span style="font-weight:700;">' + fmtCurrency(reserveTarget) + '</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+      + '<span style="font-size:13px;color:var(--gray-600);">יתרה נוכחית (בנק + מזומן)</span>'
+      + '<span style="font-weight:700;">' + fmtCurrency(currentBalance) + '</span>'
+      + '</div>'
+      + '<div class="progress-bar-wrap" style="margin-bottom:8px;">'
+      + '<div class="progress-bar-fill" style="width:' + reservePctOfTarget + '%;background:' + (reserveMet ? 'var(--green)' : 'var(--orange)') + ';"></div>'
+      + '</div>'
+      + (reserveMet
+          ? '<div style="color:var(--green);font-weight:600;font-size:13px;">✅ קרן הרזרבה מלאה — יש כרית ביטחון של ' + fmtCurrency(currentBalance - reserveTarget) + ' מעבר ליעד</div>'
+          : '<div style="color:var(--orange);font-weight:600;font-size:13px;">⚠️ חסר ' + fmtCurrency(reserveGap) + ' להשלמת קרן הרזרבה המומלצת (' + reservePctOfTarget + '% מהיעד)</div>')
+      + '</div>';
+  }
 
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">🗓️ הוצאות ידועות מראש</div>'
     + '<div style="font-size:12px;color:var(--gray-500);margin-bottom:12px;">הוצאות גדולות שכבר ידועות מראש (למשל שיפוץ מעלית) — יופיעו בתחזית בחודש שתבחר.</div>';
@@ -5014,6 +5116,18 @@ window.openLog = async () => {
         + '<div>'
         + '<div style="font-weight:700;">📊 שינוי טווח חודשים לחישוב תחזית</div>'
         + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.previousAmount||0)+' ← '+(p.amount||0)+' חודשים</div>'
+        + byLine
+        + '</div>'
+        + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
+        + '</div></div>';
+    }
+
+    if (type === 'reserveFundPercent') {
+      return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<div style="font-weight:700;">🏦 שינוי אחוז קרן רזרבה מומלצת</div>'
+        + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.previousAmount||0)+'% ← '+(p.amount||0)+'%</div>'
         + byLine
         + '</div>'
         + '<div style="text-align:left;color:var(--blue);font-weight:600;white-space:nowrap;">✏️ עודכן</div>'
