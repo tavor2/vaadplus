@@ -1922,7 +1922,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.9.8'; // (1) ברירת המחדל של "עד תאריך" בסינון הוצאות (הוצאות/מאזן) עברה מ"היום" ל"סוף החודש הנוכחי" — כדי שהוצאות/שיקים דחויים שכבר הוזנו לחודש הנוכחי יופיעו מיד. (2) גרף התחזית מציג עכשיו גם בר ראשון של "שאר החודש הנוכחי" (מחושב לפי מה שעדיין צפוי, לא כפול על מה שכבר נגבה/הוצא החודש) בנוסף ל-6 החודשים הבאים.
+const APP_VERSION = '2.9.9'; // בר "שאר החודש" בתחזית מחשב עכשיו את יתרת ההוצאה השוטפת קטגוריה-קטגוריה (לפי הממוצע ההיסטורי של כל קטגוריה בנפרד), במקום השוואה כוללת אחת — כדי שקטגוריה שכבר שולמה במלואה החודש (למשל ניקיון ששולם בבת אחת) לא תבטל את הציפייה לקטגוריות אחרות (חשמל/מים/ביטוח/מעלית/עמלות בנק) שעדיין לא נרשמו.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4619,6 +4619,33 @@ function computeRecurringMonthlyAverage() {
   };
 }
 
+// Per-category monthly averages for recurring expenses only, over the same
+// forecastHistoryMonthsSetting() window as computeRecurringMonthlyAverage().
+// Used (instead of the single combined recurringMonthlyAvg) for the "שאר
+// החודש" bar in buildForecastSeries() — a lump combined average would let
+// one category that's already been fully paid this month (e.g. ניקיון,
+// often paid in a single batch early in the month) wrongly zero out the
+// expected remainder for every OTHER recurring category (חשמל/מים/ביטוח/
+// מעלית/עמלות בנק) that hasn't been recorded yet, even though those are
+// still just as likely to show up before the month ends. Comparing
+// category-by-category means an already-paid category nets to zero on its
+// own, without suppressing the still-expected categories.
+function computeRecurringCategoryAverages() {
+  const historyMonths = forecastHistoryMonthsSetting();
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - historyMonths, 1);
+  const cutoffStr = cutoff.getFullYear() + '-' + String(cutoff.getMonth()+1).padStart(2,'0') + '-01';
+
+  const isRecurring = e => e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category);
+  const byCat = {};
+  allExpenses.filter(e => isRecurring(e) && (e.date||'') >= cutoffStr).forEach(e => {
+    byCat[e.category] = (byCat[e.category] || 0) + (e.amount||0);
+  });
+  const avgByCat = {};
+  Object.keys(byCat).forEach(cat => { avgByCat[cat] = byCat[cat] / historyMonths; });
+  return avgByCat;
+}
+
 // בונה סדרה של "שאר החודש הנוכחי" (בר חלקי ראשון) + FORECAST_MONTHS_AHEAD
 // חודשים מלאים קדימה. הוצאות ידועות מראש (forecastExpenses) מוחלות בדיוק
 // בחודש שהמנהל שיבץ אותן אליו.
@@ -4628,7 +4655,10 @@ function computeRecurringMonthlyAverage() {
 // הוזנו לתאריך עתידי באותו חודש) — לכן במקום להוסיף/להחסיר הכנסה
 // והוצאה שוטפת מלאה של חודש (מה שהיה מכפיל אותן), מחשבים רק את מה
 // שעדיין *צפוי* עד סוף החודש: יתרת הגבייה שטרם נכנסה, ויתרת ההוצאה
-// השוטפת הממוצעת שטרם נרשמה החודש.
+// השוטפת שטרם נרשמה החודש — מחושבת קטגוריה-קטגוריה (ולא כסכום כולל אחד)
+// כדי שקטגוריה שכבר שולמה במלואה החודש (למשל ניקיון, שלרוב משולם בבת
+// אחת מוקדם בחודש) לא "תבלע" את הציפייה לשאר הקטגוריות (חשמל/מים/ביטוח/
+// מעלית/עמלות בנק) שעדיין לא נרשמו החודש אבל סביר שיגיעו.
 function buildForecastSeries(startingBalance, monthlyIncome, recurringMonthlyAvg) {
   const now = new Date();
   const series = [];
@@ -4636,12 +4666,19 @@ function buildForecastSeries(startingBalance, monthlyIncome, recurringMonthlyAvg
 
   const curYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const collectedThisMonth = balPaymentsAll.filter(p => p.month === curYm).reduce((s,p) => s + (p.amount||0), 0);
-  const recurringSpentThisMonth = allExpenses
-    .filter(e => (e.date||'').startsWith(curYm))
-    .filter(e => e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category))
-    .reduce((s,e) => s + (e.amount||0), 0);
   const remainingIncome = Math.max(0, monthlyIncome - collectedThisMonth);
-  const remainingRecurring = Math.max(0, recurringMonthlyAvg - recurringSpentThisMonth);
+
+  const catAverages = computeRecurringCategoryAverages();
+  const isRecurring = e => e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category);
+  const spentByCatThisMonth = {};
+  allExpenses.filter(e => isRecurring(e) && (e.date||'').startsWith(curYm)).forEach(e => {
+    spentByCatThisMonth[e.category] = (spentByCatThisMonth[e.category] || 0) + (e.amount||0);
+  });
+  const remainingRecurring = Object.keys(catAverages).reduce((sum, cat) => {
+    const already = spentByCatThisMonth[cat] || 0;
+    return sum + Math.max(0, catAverages[cat] - already);
+  }, 0);
+
   const knownForCurMonth = allForecastExpenses.filter(f => f.month === curYm).reduce((s,f) => s + (f.amount||0), 0);
   balance += remainingIncome - remainingRecurring - knownForCurMonth;
   series.push({
@@ -4710,7 +4747,7 @@ function renderForecast() {
         + '<td style="font-weight:700;color:' + (s.balance >= 0 ? 'var(--green)' : 'var(--red)') + ';">' + fmtCurrency(s.balance) + '</td>'
         + '</tr>').join('')
     + '</tbody></table></div></div>';
-  html += '<div style="font-size:11px;color:var(--gray-400);margin:-8px 4px 14px;line-height:1.6;">* בשורת "שאר ' + series[0].label.replace('שאר ', '') + '" ה"הכנסה" וה"הוצאות שוטפות" משקפות רק את מה שעדיין צפוי עד סוף החודש — מה שכבר נגבה/הוצא החודש כבר נכלל ביתרה הנוכחית.</div>';
+  html += '<div style="font-size:11px;color:var(--gray-400);margin:-8px 4px 14px;line-height:1.6;">* בשורת "שאר ' + series[0].label.replace('שאר ', '') + '" ה"הכנסה" וה"הוצאות שוטפות" משקפות רק את מה שעדיין צפוי עד סוף החודש — מה שכבר נגבה/הוצא החודש כבר נכלל ביתרה הנוכחית. הוצאות שוטפות מחושבות קטגוריה-קטגוריה (לפי הממוצע ההיסטורי של כל קטגוריה), כך שקטגוריה שכבר שולמה החודש (למשל ניקיון) לא "מבטלת" את הציפייה לקטגוריות אחרות שטרם נרשמו.</div>';
 
   html += '<div class="card" style="margin-bottom:14px;font-size:13px;color:var(--gray-600);line-height:1.8;">'
     + '<div style="font-weight:700;margin-bottom:6px;color:var(--gray-800);">📊 הנחות התחזית</div>'
