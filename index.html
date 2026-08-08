@@ -1988,7 +1988,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.0'; // נוספה תכונה חדשה: "גביות מיוחדות לתיקונים" (כפתור בתפריט ניהול). מאפשרת פתיחת גבייה חד-פעמית עבור תיקון ספציפי (תיאור התיקון, שם וטלפון העסק המתקן, סכום לגבייה מכל דייר), עם סימון תשלום לכל דייר וסה"כ נגבה/נותר — לגמרי בנפרד מהמאזן/תחזית/דוחות השוטפים (specialCollections + specialPayments, subcollections חדשים שלא נכללים בשום חישוב מאזן קיים).
+const APP_VERSION = '2.11.1'; // נוסף כפתור "הפק דוח PDF לדיירים" במסך גבייה מיוחדת לתיקון — דוח מצב גבייה (מי שילם/לא שילם, סכום, תאריך) + סיכום יעד/נגבה/נותר, נשען אך ורק על specialCollections/specialPayments (לא נוגע בנתוני payments/expenses הרגילים).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4187,6 +4187,7 @@ function renderSpecialDetail() {
     + '<div style="font-size:12px;color:var(--gray-500);margin-top:8px;text-align:center;">'+paidCount+' מתוך '+allResidents.length+' דירות שילמו • '+fmtCurrency(sc.amountPerApt)+' לדירה</div>'
     + '<div style="font-size:11px;color:var(--gray-400);margin-top:6px;text-align:center;">💡 גבייה זו נפרדת מהמאזן השוטף ואינה נכללת בחישוביו</div>'
     + '<button class="btn-icon" style="width:100%;margin-top:10px;" onclick="editSpecialCollection(\''+sc.id+'\')">✏️ ערוך פרטי הגבייה</button>'
+    + '<button class="btn-icon" style="width:100%;margin-top:8px;" onclick="generateSpecialCollectionPDF(\''+sc.id+'\')">📄 הפק דוח PDF לדיירים</button>'
     + '</div>';
 
   const sortedResidents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
@@ -4237,6 +4238,123 @@ window.cancelSpecialPayment = async (id) => {
     showToast('תשלום בוטל');
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
+
+// דוח PDF למצב גבייה מיוחדת — מי שילם/לא שילם, כמה נגבה וכמה נותר. מקביל
+// לתבנית generatePDF()/generateMonthlyPDF() (אותה טעינת html2pdf, אותו
+// pdf-container חולק), אבל נשען אך ורק על allSpecialCollections/
+// allSpecialPayments — אין כאן שום קריאה לנתוני payments/expenses הרגילים,
+// כדי לשמור על ההפרדה המלאה מהמאזן השוטף גם ברמת הדוח.
+window.generateSpecialCollectionPDF = async (id) => {
+  if (receiptGenerationInProgress) {
+    showToast('פעולת PDF אחרת עדיין בתהליך, רגע בבקשה...');
+    return;
+  }
+  receiptGenerationInProgress = true;
+  try {
+    showToast('📄 מכין דוח...');
+    if (!window.html2pdf) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      await new Promise((resolve, reject) => {
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+    await createSpecialCollectionPDFReport(id);
+  } catch(e) {
+    showToast('שגיאה: ' + e.message);
+  } finally {
+    receiptGenerationInProgress = false;
+  }
+};
+
+async function createSpecialCollectionPDFReport(id) {
+  const sc = allSpecialCollections.find(x => x.id === id);
+  if (!sc) { showToast('שגיאה: הגבייה לא נמצאה'); return; }
+
+  const payMap = {};
+  allSpecialPayments.filter(p => p.collectionId === id).forEach(p => { payMap[p.apt] = p; });
+  const residents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  const totalTarget = (sc.amountPerApt || 0) * residents.length;
+
+  let totalCollected = 0, paidCount = 0;
+  const rows = residents.map(r => {
+    const p = payMap[r.apt];
+    const amount = p ? (p.amount || sc.amountPerApt) : sc.amountPerApt;
+    if (p) { totalCollected += amount; paidCount++; }
+    const statusHtml = p
+      ? '<span style="color:#0E9F6E;font-weight:bold;">✓ שולם</span>'
+      : '<span style="color:#E02424;font-weight:bold;">✗ לא שולם</span>';
+    const paidDate = p?.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '-';
+    return `<tr>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${r.apt}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${r.name||''}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${r.floor !== undefined ? r.floor : '-'}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${statusHtml}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${amount.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${paidDate}</td>
+    </tr>`;
+  }).join('');
+  const remaining = Math.max(0, totalTarget - totalCollected);
+  const contractorLine = sc.contractorName
+    ? `<div style="text-align:center;font-size:13px;color:#555;margin-bottom:10px;">🔧&nbsp;${sc.contractorName.replace(/ /g,'\u00A0')}${sc.contractorPhone ? '&nbsp;•&nbsp;'+sc.contractorPhone : ''}</div>`
+    : '';
+
+  const html = `
+    <html><head><meta charset="utf-8"/><style>
+      body { font-family: Arial, Helvetica, sans-serif; direction: rtl; text-align: right; padding: 20px; word-spacing: normal; }
+      td, th { word-spacing: normal; letter-spacing: normal; word-break: normal; white-space: normal; }
+      h1 { text-align: center; color: #1A56DB; margin-bottom: 5px; }
+      h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; }
+      table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+      th { background: #1A56DB; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
+      td { padding: 8px; border: 1px solid #ddd; }
+      .summary { margin-top: 20px; font-size: 15px; }
+      .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; }
+      .total { font-weight: bold; color: #1A56DB; }
+    </style></head><body>
+      <h1>דוח&nbsp;גבייה&nbsp;מיוחדת&nbsp;לתיקון</h1>
+      <h2>${(buildingData?.address||'').replace(/ /g,'\u00A0')}</h2>
+      <h2>${(sc.title||'').replace(/ /g,'\u00A0')}</h2>
+      ${contractorLine}
+      <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:16px;">${(() => { const now=new Date(); return '<span>הופק</span><span dir="ltr">'+now.toLocaleDateString('he-IL')+'</span><span>בשעה</span><span dir="ltr">'+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})+'</span>'; })()}</div>
+
+      <table><thead><tr><th>דירה</th><th>שם</th><th>קומה</th><th>סטטוס</th><th>סכום</th><th>תאריך תשלום</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+
+      <div class="summary">
+        <div class="summary-line"><span class="total">יעד גבייה כולל:</span><span dir="ltr">₪${totalTarget.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total" style="color:#0E9F6E;">סה"כ נגבה:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total" style="color:#FF8C00;">נותר לגבייה:</span><span dir="ltr">₪${remaining.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div style="font-size:12px;color:#999;margin-top:4px;">${paidCount}&nbsp;מתוך&nbsp;${residents.length}&nbsp;דירות&nbsp;שילמו</div>
+      </div>
+      <div style="font-size:11px;color:#999;margin-top:16px;text-align:center;">גבייה זו נפרדת מהמאזן השוטף של הבניין ואינה נכללת בו</div>
+    </body></html>
+  `;
+
+  const element = document.createElement('div');
+  element.innerHTML = html;
+
+  const pdfContainer = document.getElementById('pdf-container');
+  pdfContainer.innerHTML = '';
+  pdfContainer.appendChild(element);
+
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  const opt = {
+    margin: 10,
+    filename: `גביה_מיוחדת_${(sc.title||'תיקון').replace(/\s+/g,'_')}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+  };
+
+  await html2pdf().set(opt).from(element).save();
+  pdfContainer.innerHTML = '';
+  showToast('📄 דוח גבייה מיוחדת הורד בהצלחה');
+  logAnalyticsEvent('special_collection_pdf_generated');
+}
 
 // ===== EXPENSES =====
 let allExpenses = [];
