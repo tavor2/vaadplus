@@ -931,6 +931,19 @@
       <input class="form-input" id="r-email" type="email" placeholder="israel@gmail.com"/>
     </div>
     <div class="form-group">
+      <label class="form-label">סטטוס מגורים</label>
+      <select class="form-select" id="r-ownership" onchange="onOwnershipChange()">
+        <option value="owner">בעלים</option>
+        <option value="renter">שכירות</option>
+      </select>
+    </div>
+    <div class="form-group" id="r-owner-fields" style="display:none;">
+      <label class="form-label">שם הבעלים</label>
+      <input class="form-input" id="r-owner-name" placeholder="שם הבעלים"/>
+      <label class="form-label" style="margin-top:10px;">טלפון הבעלים</label>
+      <input class="form-input" id="r-owner-phone" type="tel" placeholder="050-0000000"/>
+    </div>
+    <div class="form-group">
       <label class="form-label">תפקיד</label>
       <select class="form-select" id="r-role">
         <option value="tenant">דייר</option>
@@ -1922,7 +1935,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.9.9'; // בר "שאר החודש" בתחזית מחשב עכשיו את יתרת ההוצאה השוטפת קטגוריה-קטגוריה (לפי הממוצע ההיסטורי של כל קטגוריה בנפרד), במקום השוואה כוללת אחת — כדי שקטגוריה שכבר שולמה במלואה החודש (למשל ניקיון ששולם בבת אחת) לא תבטל את הציפייה לקטגוריות אחרות (חשמל/מים/ביטוח/מעלית/עמלות בנק) שעדיין לא נרשמו.
+const APP_VERSION = '2.10.0'; // הוספת שדה "סטטוס מגורים" (בעלים/שכירות) לטופס הוספת/עריכת דייר — ברירת מחדל בעלים; בבחירת שכירות מוצגים שדות שם וטלפון הבעלים (שם חובה, טלפון אופציונלי). נשמר ב-Firestore כ-ownershipType/ownerName/ownerPhone, ומוצג ככרטיס תג בתצוגת "כרטיסים" של הדיירים.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2787,9 +2800,11 @@ function renderResidents(list) {
           </div>
           ${r.phone ? `<div style="font-size:13px;margin-top:4px;"><a href="tel:${r.phone}" style="color:var(--blue)">${r.phone}</a></div>` : ''}
           ${r.email ? `<div style="font-size:12px;color:var(--gray-400);margin-top:2px;">${r.email}</div>` : ''}
+          ${r.ownershipType === 'renter' ? `<div style="font-size:12px;color:var(--gray-500);margin-top:4px;">🔑 שוכר${r.ownerName ? ' • בעלים: ' + r.ownerName : ''}${r.ownerPhone ? ` • <a href="tel:${r.ownerPhone}" style="color:var(--blue)">${r.ownerPhone}</a>` : ''}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
           ${r.role === 'admin' ? '<span class="badge badge-orange">ועד</span>' : '<span class="badge badge-gray">דייר</span>'}
+          ${r.ownershipType === 'renter' ? '<span class="badge badge-blue">🔑 שכירות</span>' : '<span class="badge badge-gray">🏠 בעלים</span>'}
           <span class="badge badge-blue">${fmtCurrency(aptFee(r.apt, r))}</span>
           ${isAdmin ? `<button class="btn-icon" style="padding:5px 10px;font-size:12px;" onclick="editResident('${r.id}')">✏️ ערוך</button>` : ''}
         </div>
@@ -2815,6 +2830,14 @@ window.setResView = (view, btn) => {
   btn.classList.add('active');
   document.getElementById('residents-table-view').style.display = view === 'table' ? '' : 'none';
   document.getElementById('residents-cards-view').style.display = view === 'cards' ? '' : 'none';
+};
+
+// מציג/מסתיר את שדות "שם הבעלים" ו"טלפון הבעלים" לפי הבחירה בשדה סטטוס
+// המגורים — רלוונטי רק כשנבחר "שכירות" (השדות מנוקים ומוסתרים כברירת מחדל,
+// שהיא "בעלים").
+window.onOwnershipChange = () => {
+  const isRenter = document.getElementById('r-ownership').value === 'renter';
+  document.getElementById('r-owner-fields').style.display = isRenter ? '' : 'none';
 };
 
 function updateRoleNote(excludeId) {
@@ -2846,6 +2869,10 @@ window.openAddResident = () => {
   document.getElementById('r-name').value = '';
   document.getElementById('r-phone').value = '';
   document.getElementById('r-email').value = '';
+  document.getElementById('r-ownership').value = 'owner';
+  document.getElementById('r-owner-name').value = '';
+  document.getElementById('r-owner-phone').value = '';
+  onOwnershipChange();
   document.getElementById('r-role').value = 'tenant';
   document.getElementById('r-payment-method').value = 'transfer';
   document.getElementById('r-fee').value = aptFee(newApt);
@@ -2866,6 +2893,10 @@ window.editResident = (id) => {
   document.getElementById('r-name').value = r.name || '';
   document.getElementById('r-phone').value = r.phone || '';
   document.getElementById('r-email').value = r.email || '';
+  document.getElementById('r-ownership').value = r.ownershipType || 'owner';
+  document.getElementById('r-owner-name').value = r.ownerName || '';
+  document.getElementById('r-owner-phone').value = r.ownerPhone || '';
+  onOwnershipChange();
   document.getElementById('r-role').value = r.role || 'tenant';
   document.getElementById('r-payment-method').value = r.paymentMethod || 'transfer';
   document.getElementById('r-fee').value = r.customFee || aptFee(r.apt, r);
@@ -3107,6 +3138,25 @@ window.saveResident = async () => {
     }
   }
 
+  // סטטוס מגורים — בעלים (ברירת מחדל) או שכירות. בשכירות שם הבעלים חובה
+  // (כדי שיהיה אפשר ליצור איתו קשר במקרה הצורך), הטלפון אופציונלי אך
+  // מאומת בפורמט אם הוזן.
+  const ownershipType = document.getElementById('r-ownership').value;
+  let ownerName = null, ownerPhone = null;
+  if (ownershipType === 'renter') {
+    ownerName = document.getElementById('r-owner-name').value.trim();
+    ownerPhone = document.getElementById('r-owner-phone').value.trim();
+    if (!ownerName) { showToast('⚠️ חובה למלא שם בעלים כאשר נבחר "שכירות"'); return; }
+    if (ownerPhone) {
+      const ownerPhoneDigits = ownerPhone.replace(/\D/g, '');
+      if (ownerPhoneDigits.length !== 10) {
+        showToast('⚠️ טלפון הבעלים חייב להכיל בדיוק 10 ספרות (לדוגמה: 050-1234567)');
+        return;
+      }
+    }
+    ownerPhone = ownerPhone || null;
+  }
+
   const feeInput = parseFloat(document.getElementById('r-fee').value);
   const defaultFee = buildingData?.monthlyFee || 200;
   const email = emailRaw;
@@ -3125,6 +3175,7 @@ window.saveResident = async () => {
     floor: parseInt(document.getElementById('r-floor').value) || 0,
     name, email, role,
     phone,
+    ownershipType, ownerName, ownerPhone,
     paymentMethod: document.getElementById('r-payment-method').value,
     updatedAt: serverTimestamp()
   };
