@@ -1187,6 +1187,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גביות מיוחדות לתיקונים</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateSemiAnnualPDF();">📆 הפק PDF חצי שנתי</button>
@@ -1293,6 +1294,58 @@
     <div class="modal-title">🔔 תזכורות תשלום</div>
     <div id="reminders-content"></div>
     <button class="btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-payment-reminders')">סגור</button>
+  </div>
+</div>
+
+<!-- Special Collections (repair-specific levies) — List Modal -->
+<div class="modal-overlay" id="modal-special-list">
+  <div class="modal">
+    <div class="modal-title">🔧 גביות מיוחדות לתיקונים</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
+      גבייה חד-פעמית מהדיירים עבור תיקון ספציפי (למשל שיפוץ מעלית, תיקון גג) — נפרדת לגמרי מהגבייה השוטפת. הכספים כאן <b>אינם</b> נכללים במאזן, בתחזית או בדוחות הרגילים.
+    </div>
+    <button class="btn-primary" onclick="openAddSpecialCollection()">➕ גבייה מיוחדת חדשה</button>
+    <div id="special-collections-list" style="margin-top:14px;"></div>
+    <button class="btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-special-list')">סגור</button>
+  </div>
+</div>
+
+<!-- Special Collection — Create/Edit Modal -->
+<div class="modal-overlay" id="modal-special-new">
+  <div class="modal">
+    <div class="modal-title" id="modal-special-new-title">גבייה מיוחדת חדשה</div>
+    <input type="hidden" id="edit-special-id"/>
+    <div class="form-group">
+      <label class="form-label">מה התיקון *</label>
+      <input class="form-input" id="sp-title" placeholder="לדוגמה: תיקון גג / שיפוץ מעלית"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">שם העסק המתקן</label>
+      <input class="form-input" id="sp-contractor-name" placeholder="שם בעל המקצוע / העסק"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">טלפון העסק המתקן</label>
+      <input class="form-input" id="sp-contractor-phone" type="tel" placeholder="050-0000000"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">סכום לגבייה מכל דייר (₪) *</label>
+      <input class="form-input" id="sp-amount-per-apt" type="number" step="0.01" min="0" placeholder="500" oninput="updateSpecialTotalNote()"/>
+      <div id="sp-total-target-note" style="font-size:12px;color:var(--gray-500);margin-top:4px;"></div>
+    </div>
+    <button class="btn-primary" onclick="saveSpecialCollection()">שמור</button>
+    <button class="btn-icon" id="btn-delete-special" style="display:none;width:100%;margin-top:8px;color:#d33;border-color:#d33;" onclick="deleteSpecialCollection()">🗑️ מחק גבייה</button>
+    <button class="btn-secondary" onclick="closeModal('modal-special-new')">ביטול</button>
+  </div>
+</div>
+
+<!-- Special Collection — Detail / Per-Resident Collection Modal -->
+<div class="modal-overlay" id="modal-special-detail">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <div class="modal-title" id="modal-special-detail-title" style="margin-bottom:0;">גבייה מיוחדת</div>
+      <button onclick="closeModal('modal-special-detail')" style="background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div id="special-detail-content"></div>
   </div>
 </div>
 
@@ -1904,7 +1957,7 @@ window.confirmDeleteBuilding = async () => {
     showToast('מוחק...');
 
     // מחק תת-אוספים של הבניין הנוכחי בלבד
-    const subs = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
+    const subs = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
     for (const sub of subs) {
       const subSnap = await getDocs(collection(db, 'buildings', buildingId, sub));
       for (const d of subSnap.docs) await deleteDoc(d.ref);
@@ -1935,7 +1988,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.10.0'; // הוספת שדה "סטטוס מגורים" (בעלים/שכירות) לטופס הוספת/עריכת דייר — ברירת מחדל בעלים; בבחירת שכירות מוצגים שדות שם וטלפון הבעלים (שם חובה, טלפון אופציונלי). נשמר ב-Firestore כ-ownershipType/ownerName/ownerPhone, ומוצג ככרטיס תג בתצוגת "כרטיסים" של הדיירים.
+const APP_VERSION = '2.11.0'; // נוספה תכונה חדשה: "גביות מיוחדות לתיקונים" (כפתור בתפריט ניהול). מאפשרת פתיחת גבייה חד-פעמית עבור תיקון ספציפי (תיאור התיקון, שם וטלפון העסק המתקן, סכום לגבייה מכל דייר), עם סימון תשלום לכל דייר וסה"כ נגבה/נותר — לגמרי בנפרד מהמאזן/תחזית/דוחות השוטפים (specialCollections + specialPayments, subcollections חדשים שלא נכללים בשום חישוב מאזן קיים).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2370,7 +2423,7 @@ window.backupSelectedBuildings = async () => {
   if (!selected.length) return;
 
   showToast(`מגבה ${selected.length} בניינים...`);
-  const cols = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
+  const cols = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
   const dateStr = new Date().toISOString().slice(0,10);
   let done = 0;
 
@@ -2487,7 +2540,7 @@ window.executeRestoreBuilding = async (event) => {
     const newBuildingId = newBuildingRef.id;
 
     // 3. ייבא את כל הנתונים לבניין החדש
-    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
     let imported = 0;
     for (const colName of collections) {
       const items = data[colName];
@@ -2978,7 +3031,7 @@ window.executeResetData = async () => {
   closeModal('modal-reset-data');
   showToast('מוחק נתונים...');
   try {
-    const collections = ['residents','payments','expenses','issues','announcements'];
+    const collections = ['residents','payments','expenses','issues','announcements','specialCollections','specialPayments'];
     for (const colName of collections) {
       const snap = await getDocs(collection(db, 'buildings', buildingId, colName));
       for (const d of snap.docs) await deleteDoc(d.ref);
@@ -2993,7 +3046,7 @@ window.executeResetData = async () => {
 window.exportData = async () => {
   try {
     showToast('מייצא נתונים...');
-    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
     const data = {};
     for (const colName of collections) {
       const snap = await getDocs(collection(db, 'buildings', buildingId, colName));
@@ -3045,7 +3098,7 @@ window.importData = async (event) => {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
-    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
     let totalDocs = 0;
     for (const colName of collections) {
       if (Array.isArray(data[colName])) totalDocs += data[colName].length;
@@ -3930,6 +3983,258 @@ window.savePayment = async () => {
     closeModal('modal-payment');
     loadPayments();
     logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', exceptional: true });
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// ===== SPECIAL COLLECTIONS (repair-specific one-off levies) =====
+// Fully separate from the regular monthly-fee collection: stored in their
+// own subcollections (specialCollections = the campaign metadata,
+// specialPayments = who paid how much toward which campaign) so that
+// computeBalanceFigures()/renderBalance()/renderForecast()/exportExcel()/
+// createPDFReport() — none of which reference these collections — never
+// pick this money up. This is intentional per the vaad's request: a special
+// levy for a specific repair (e.g. roof/elevator) should be tracked
+// separately from the building's ongoing balance, not folded into it.
+let allSpecialCollections = [];
+let unsubSpecialCollections = null;
+let specialCollectionsListenerBuildingId = null;
+let allSpecialPayments = []; // all specialPayments docs for the building, across every campaign — grouped by collectionId when rendering
+let unsubSpecialPayments = null;
+let specialPaymentsListenerBuildingId = null;
+let currentSpecialId = null; // which campaign is open in modal-special-detail
+
+function ensureSpecialCollectionsListener() {
+  if (specialCollectionsListenerBuildingId === buildingId && unsubSpecialCollections) return;
+  if (unsubSpecialCollections) unsubSpecialCollections();
+  specialCollectionsListenerBuildingId = buildingId;
+  unsubSpecialCollections = onSnapshot(
+    query(collection(db, 'buildings', buildingId, 'specialCollections'), orderBy('createdAt','desc')),
+    (snap) => { allSpecialCollections = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderSpecialCollectionsList(); }
+  );
+}
+
+function ensureSpecialPaymentsListener() {
+  if (specialPaymentsListenerBuildingId === buildingId && unsubSpecialPayments) return;
+  if (unsubSpecialPayments) unsubSpecialPayments();
+  specialPaymentsListenerBuildingId = buildingId;
+  unsubSpecialPayments = onSnapshot(
+    collection(db, 'buildings', buildingId, 'specialPayments'),
+    (snap) => {
+      allSpecialPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderSpecialCollectionsList();
+      if (currentSpecialId) renderSpecialDetail();
+    }
+  );
+}
+
+window.openSpecialCollectionsList = () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const container = document.getElementById('special-collections-list');
+  if (!(specialCollectionsListenerBuildingId === buildingId && unsubSpecialCollections)) {
+    container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  }
+  openModal('modal-special-list');
+  ensureSpecialCollectionsListener();
+  ensureSpecialPaymentsListener();
+};
+
+function renderSpecialCollectionsList() {
+  const container = document.getElementById('special-collections-list');
+  if (!container) return;
+  if (!allSpecialCollections.length) {
+    container.innerHTML = '<div class="card-empty">אין גביות מיוחדות פתוחות</div>';
+    return;
+  }
+  container.innerHTML = allSpecialCollections.map(sc => {
+    const scPayments = allSpecialPayments.filter(p => p.collectionId === sc.id);
+    const totalTarget = (sc.amountPerApt || 0) * allResidents.length;
+    const collected = scPayments.reduce((s,p) => s + (p.amount||0), 0);
+    const remaining = Math.max(0, totalTarget - collected);
+    const contractorLine = sc.contractorName
+      ? `<div style="font-size:12px;color:var(--gray-500);margin-top:2px;">🔧 ${sc.contractorName}${sc.contractorPhone ? ' • <a href="tel:'+sc.contractorPhone+'" style="color:var(--blue);text-decoration:none;" onclick="event.stopPropagation();">'+sc.contractorPhone+'</a>' : ''}</div>`
+      : '';
+    return `<div class="card" style="margin-bottom:10px;cursor:pointer;" onclick="openSpecialDetail('${sc.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:15px;">${sc.title}</div>
+          ${contractorLine}
+          <div style="font-size:12px;color:var(--gray-400);margin-top:4px;">${scPayments.length} מתוך ${allResidents.length} דירות שילמו</div>
+        </div>
+        <div style="text-align:left;white-space:nowrap;">
+          <div style="font-size:11px;color:var(--gray-400);">נגבה</div>
+          <div style="font-weight:700;color:var(--green);">${fmtCurrency(collected)}</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">נותר</div>
+          <div style="font-weight:700;color:${remaining>0?'var(--orange)':'var(--green)'};">${fmtCurrency(remaining)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Live preview of the total target (סכום לדירה × מספר דירות) while filling
+// in the creation/edit form — helps the admin sanity-check the amount
+// before saving.
+window.updateSpecialTotalNote = () => {
+  const amt = parseFloat(document.getElementById('sp-amount-per-apt').value) || 0;
+  const note = document.getElementById('sp-total-target-note');
+  note.textContent = amt ? `סה"כ יעד גבייה: ${fmtCurrency(amt * allResidents.length)} (${allResidents.length} דירות)` : '';
+};
+
+window.openAddSpecialCollection = () => {
+  document.getElementById('modal-special-new-title').textContent = 'גבייה מיוחדת חדשה';
+  document.getElementById('edit-special-id').value = '';
+  document.getElementById('sp-title').value = '';
+  document.getElementById('sp-contractor-name').value = '';
+  document.getElementById('sp-contractor-phone').value = '';
+  document.getElementById('sp-amount-per-apt').value = '';
+  document.getElementById('btn-delete-special').style.display = 'none';
+  updateSpecialTotalNote();
+  openModal('modal-special-new');
+};
+
+window.editSpecialCollection = (id) => {
+  const sc = allSpecialCollections.find(x => x.id === id);
+  if (!sc) return;
+  document.getElementById('modal-special-new-title').textContent = 'ערוך גבייה מיוחדת';
+  document.getElementById('edit-special-id').value = id;
+  document.getElementById('sp-title').value = sc.title || '';
+  document.getElementById('sp-contractor-name').value = sc.contractorName || '';
+  document.getElementById('sp-contractor-phone').value = sc.contractorPhone || '';
+  document.getElementById('sp-amount-per-apt').value = sc.amountPerApt || '';
+  document.getElementById('btn-delete-special').style.display = '';
+  updateSpecialTotalNote();
+  openModal('modal-special-new');
+};
+
+window.saveSpecialCollection = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const id = document.getElementById('edit-special-id').value;
+  const title = document.getElementById('sp-title').value.trim();
+  const contractorName = document.getElementById('sp-contractor-name').value.trim();
+  const contractorPhone = document.getElementById('sp-contractor-phone').value.trim();
+  const amountPerApt = parseFloat(document.getElementById('sp-amount-per-apt').value);
+  if (!title || !amountPerApt || amountPerApt <= 0) { showToast('חובה למלא תיאור התיקון וסכום תקין לגבייה מכל דייר'); return; }
+  if (contractorPhone) {
+    const digits = contractorPhone.replace(/\D/g, '');
+    if (digits.length !== 10) { showToast('⚠️ טלפון העסק המתקן חייב להכיל בדיוק 10 ספרות (לדוגמה: 050-1234567)'); return; }
+  }
+  const data = {
+    title, amountPerApt,
+    contractorName: contractorName || null,
+    contractorPhone: contractorPhone || null,
+    updatedAt: serverTimestamp()
+  };
+  try {
+    if (id) {
+      await updateDoc(doc(db, 'buildings', buildingId, 'specialCollections', id), data);
+      showToast('✅ הגבייה המיוחדת עודכנה');
+    } else {
+      data.createdAt = serverTimestamp();
+      data.createdBy = currentUser.uid;
+      await addDoc(collection(db, 'buildings', buildingId, 'specialCollections'), data);
+      showToast('✅ הגבייה המיוחדת נוצרה');
+    }
+    closeModal('modal-special-new');
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.deleteSpecialCollection = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const id = document.getElementById('edit-special-id').value;
+  if (!id) return;
+  const paidCount = allSpecialPayments.filter(p => p.collectionId === id).length;
+  const msg = paidCount > 0
+    ? `לגבייה זו רשומים ${paidCount} תשלומים. מחיקתה תמחק גם את כל התשלומים שנרשמו עבורה. לא ניתן לבטל פעולה זו. להמשיך?`
+    : 'למחוק את הגבייה המיוחדת? לא ניתן לבטל פעולה זו.';
+  if (!(await customConfirm(msg))) return;
+  try {
+    const paySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'specialPayments'), where('collectionId','==', id)));
+    const batch = writeBatch(db);
+    paySnap.docs.forEach(d => batch.delete(d.ref));
+    batch.delete(doc(db, 'buildings', buildingId, 'specialCollections', id));
+    await batch.commit();
+    showToast('🗑 הגבייה המיוחדת נמחקה');
+    closeModal('modal-special-new');
+    if (currentSpecialId === id) { currentSpecialId = null; closeModal('modal-special-detail'); }
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.openSpecialDetail = (id) => {
+  currentSpecialId = id;
+  renderSpecialDetail();
+  openModal('modal-special-detail');
+};
+
+function renderSpecialDetail() {
+  const sc = allSpecialCollections.find(x => x.id === currentSpecialId);
+  const container = document.getElementById('special-detail-content');
+  if (!sc || !container) return;
+  document.getElementById('modal-special-detail-title').textContent = '🔧 ' + sc.title;
+
+  const payMap = {};
+  allSpecialPayments.filter(p => p.collectionId === currentSpecialId).forEach(p => { payMap[p.apt] = p; });
+  const totalTarget = (sc.amountPerApt || 0) * allResidents.length;
+  const collected = Object.values(payMap).reduce((s,p) => s + (p.amount||0), 0);
+  const remaining = Math.max(0, totalTarget - collected);
+  const paidCount = Object.keys(payMap).length;
+
+  let html = '<div class="card" style="margin-bottom:14px;">'
+    + (sc.contractorName ? '<div style="font-size:13px;color:var(--gray-600);">🔧 '+sc.contractorName+(sc.contractorPhone ? ' • <a href="tel:'+sc.contractorPhone+'" style="color:var(--blue);text-decoration:none;">'+sc.contractorPhone+'</a>' : '')+'</div>' : '')
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">'
+    + '<div class="stat-card"><div class="stat-value green">'+fmtCurrency(collected)+'</div><div class="stat-label">נגבה</div></div>'
+    + '<div class="stat-card"><div class="stat-value orange">'+fmtCurrency(remaining)+'</div><div class="stat-label">נותר לגבייה</div></div>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--gray-500);margin-top:8px;text-align:center;">'+paidCount+' מתוך '+allResidents.length+' דירות שילמו • '+fmtCurrency(sc.amountPerApt)+' לדירה</div>'
+    + '<div style="font-size:11px;color:var(--gray-400);margin-top:6px;text-align:center;">💡 גבייה זו נפרדת מהמאזן השוטף ואינה נכללת בחישוביו</div>'
+    + '<button class="btn-icon" style="width:100%;margin-top:10px;" onclick="editSpecialCollection(\''+sc.id+'\')">✏️ ערוך פרטי הגבייה</button>'
+    + '</div>';
+
+  const sortedResidents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  html += sortedResidents.map(r => {
+    const p = payMap[r.apt];
+    if (p) {
+      return '<div class="payment-item">'
+        + '<div class="payment-item-info">'
+        + '<div class="payment-item-name">'+r.name+'</div>'
+        + '<div class="payment-item-sub">דירה '+r.apt+' • '+(p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '')+'</div>'
+        + '</div>'
+        + '<div class="payment-item-amount" style="color:var(--green)">'+fmtCurrency(p.amount)+' '+(PAYMENT_METHOD_ICONS[p.method]||'')+'</div>'
+        + '<button class="btn-danger" style="margin-right:8px;" onclick="cancelSpecialPayment(\''+p.id+'\')">חזור</button>'
+        + '</div>';
+    }
+    return '<div class="payment-item">'
+      + '<div class="payment-item-info">'
+      + '<div class="payment-item-name">'+r.name+'</div>'
+      + '<div class="payment-item-sub">דירה '+r.apt+'</div>'
+      + '</div>'
+      + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
+      + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaid(\''+sc.id+'\',\''+r.apt+'\',\''+r.name+'\','+sc.amountPerApt+')">✓ סמן כשולם</button>'
+      + '</div>';
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+window.markSpecialPaid = async (collectionId, apt, name, amount) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const resident = allResidents.find(r => r.apt === parseInt(apt));
+  const method = resident?.paymentMethod || 'transfer';
+  try {
+    await addDoc(collection(db, 'buildings', buildingId, 'specialPayments'), {
+      collectionId, apt: parseInt(apt), name, amount, method,
+      paidAt: serverTimestamp(), recordedBy: currentUser.uid
+    });
+    showToast(`✅ ${name} - תשלום נרשם עבור הגבייה המיוחדת`);
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+window.cancelSpecialPayment = async (id) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const ok = await customConfirm('לבטל את התשלום?');
+  if (!ok) return;
+  try {
+    await deleteDoc(doc(db, 'buildings', buildingId, 'specialPayments', id));
+    showToast('תשלום בוטל');
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
