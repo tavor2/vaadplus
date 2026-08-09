@@ -1198,8 +1198,7 @@
       <div class="modal-title" style="margin-bottom:0;">ניהול כספים</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <button class="btn-primary" onclick="closeAdminFinance();openAddPayment('vaad');">➕ הוסף תשלום ועד</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openAddPayment('charging');">🔌 הוסף תשלום טעינה חשמלית</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openAddPayment('vaad');">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
@@ -1271,9 +1270,8 @@
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
-        <label class="form-label">👑 גבייה חריגה (תשלום עבור כמה חודשים בבת אחת)</label>
-        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">לדוגמה: דייר שהעביר בפברואר תשלום המכסה יולי-דצמבר של השנה הקודמת. זמין רק לדירות בבעלות (לא בשכירות).</div>
-        <button class="btn-primary" style="width:100%;" onclick="closeAdminFinance();openAddPayment('exceptional');">➕ הוסף גבייה חריגה</button>
+        <label class="form-label">👑 גבייה חריגה</label>
+        <div style="font-size:12px;color:var(--gray-500);">תשלום עבור כמה חודשים בבת אחת (לדוגמה: דייר שהעביר בפברואר תשלום המכסה יולי-דצמבר של השנה הקודמת) — זמין דרך "➕ הוסף תשלום" למעלה, בבחירת "גבייה חריגה" בסוג התשלום. מוצג רק לדירות בבעלות (לא בשכירות).</div>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div style="display:flex;gap:8px;">
@@ -2018,7 +2016,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.4'; // נוסף בורר "סוג תשלום" בטופס הוספת תשלום: ועד (חסימת כפילות לאותה דירה/חודש + הודעה עם תאריך התשלום הקיים), טעינה חשמלית (רק לדירות עם chargingStation='building'), גבייה חריגה (רק לדירות בבעלות, לא בשכירות) — מחליף את הדגל isExceptional הבינארי הישן.
+const APP_VERSION = '2.11.5'; // תוקן כפילות UI: הוסרו כפתורי הקיצור הנפרדים ל"תשלום טעינה חשמלית" ול"גבייה חריגה" בתפריט ניהול כספים — נשאר כפתור "➕ הוסף תשלום" יחיד, שבתוכו בורר "סוג תשלום" כבר מאפשר לבחור בין ועד/טעינה חשמלית/גבייה חריגה. הכפתורים הנפרדים היו מיותרים וכפלו את אותה פונקציונליות.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
