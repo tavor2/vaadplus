@@ -1186,6 +1186,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
+      <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גביות מיוחדות לתיקונים</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
@@ -1285,6 +1286,18 @@
   <div class="modal">
     <div class="modal-title">יומן פעולות</div>
     <div id="log-content"></div>
+  </div>
+</div>
+
+<!-- Duplicate Payments Finder Modal -->
+<div class="modal-overlay" id="modal-duplicate-payments">
+  <div class="modal">
+    <div class="modal-title">🔍 איתור תשלומים כפולים</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
+      סריקת כל התשלומים בבניין וזיהוי מקרים שבהם נרשם יותר מתשלום אחד לאותה דירה באותו חודש. במסכי התשלומים הרגילים מוצג רק אחד מהם — כאן אפשר לראות את כולם ולמחוק את המיותרים.
+    </div>
+    <div id="duplicate-payments-content"></div>
+    <button class="btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-duplicate-payments')">סגור</button>
   </div>
 </div>
 
@@ -1988,7 +2001,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.1'; // נוסף כפתור "הפק דוח PDF לדיירים" במסך גבייה מיוחדת לתיקון — דוח מצב גבייה (מי שילם/לא שילם, סכום, תאריך) + סיכום יעד/נגבה/נותר, נשען אך ורק על specialCollections/specialPayments (לא נוגע בנתוני payments/expenses הרגילים).
+const APP_VERSION = '2.11.2'; // נוסף כלי "איתור תשלומים כפולים" בניהול כספים — סורק את כל תשלומי הבניין, מקבץ לפי דירה+חודש, ומאפשר למחוק רשומות עודפות שנוצרו כי לא הייתה בדיקת ייחודיות בהוספת תשלום.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3745,6 +3758,92 @@ window.saveReserveFundPercent = async () => {
     document.getElementById('reserve-fund-percent-note').textContent = `נשמר: ${val}%`;
     showToast('✅ אחוז קרן הרזרבה נשמר');
     renderForecast();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// ===== DUPLICATE PAYMENTS FINDER =====
+// Scans every payment doc in the building and groups by apt+month. Because
+// savePayment()/markPaid() historically had no uniqueness check, more than
+// one payment could exist for the same apt+month — the various display
+// screens (renderPayments/renderHistoryGrid) only ever showed one of them
+// (paidMap[apt]=p simply overwrites), while balance/forecast/PDF/Excel all
+// sum every payment doc, silently inflating totals with no visible trace in
+// the UI. This tool surfaces every such group so the admin can delete the
+// extras. Read-only scan (no listener) — opened on demand from ניהול כספים.
+window.openDuplicatePayments = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  document.getElementById('duplicate-payments-content').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  openModal('modal-duplicate-payments');
+  await renderDuplicatePayments();
+};
+
+async function renderDuplicatePayments() {
+  const container = document.getElementById('duplicate-payments-content');
+  try {
+    const snap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const groups = {};
+    all.forEach(p => {
+      const key = p.apt + '_' + p.month;
+      (groups[key] = groups[key] || []).push(p);
+    });
+    const dupGroups = Object.entries(groups).filter(([, arr]) => arr.length > 1);
+
+    if (!dupGroups.length) {
+      container.innerHTML = '<div class="card-empty">✅ לא נמצאו תשלומים כפולים</div>';
+      return;
+    }
+
+    // הצג קודם את הקבוצות עם הכי הרבה כפילויות
+    dupGroups.sort((a,b) => b[1].length - a[1].length);
+    const totalExtra = dupGroups.reduce((s,[,arr]) => s + (arr.length - 1), 0);
+
+    let html = '<div style="font-size:13px;color:var(--red);margin-bottom:12px;font-weight:600;">'
+      + '⚠️ נמצאו ' + dupGroups.length + ' דירה/חודש עם תשלומים כפולים (סה"כ ' + totalExtra + ' רשומות עודפות)</div>';
+
+    html += dupGroups.map(([key, arr]) => {
+      const [aptStr, ym] = key.split('_');
+      const resident = allResidents.find(r => r.apt === parseInt(aptStr));
+      const sorted = [...arr].sort((a,b) => (a.paidAt?.toMillis?.() || 0) - (b.paidAt?.toMillis?.() || 0));
+      return '<div class="card" style="margin-bottom:10px;">'
+        + '<div style="font-weight:700;margin-bottom:8px;">🏠 דירה ' + aptStr + (resident?.name ? ' — ' + resident.name : '') + ' • ' + monthLabel(ym) + '</div>'
+        + sorted.map(p => {
+            const dateStr = p.paidAt?.toDate ? p.paidAt.toDate().toLocaleString('he-IL') : '-';
+            return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-100);">'
+              + '<div style="font-size:11px;color:var(--gray-500);flex:1;">נרשם: ' + dateStr + (p.note ? '<br/>📝 ' + p.note : '') + '</div>'
+              + '<div style="font-weight:700;white-space:nowrap;">₪' + (p.amount||0) + ' ' + (PAYMENT_METHOD_ICONS[p.method]||'') + '</div>'
+              + '<button class="btn-danger" style="padding:6px 10px;font-size:11px;white-space:nowrap;" onclick="deleteDuplicatePayment(\'' + p.id + '\')">🗑 מחק</button>'
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }).join('');
+
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div class="card-empty">שגיאה בסריקה: ' + e.message + '</div>';
+  }
+}
+
+window.deleteDuplicatePayment = async (id) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const ok = await customConfirm('למחוק את התשלום הזה? פעולה זו אינה הפיכה.');
+  if (!ok) return;
+  try {
+    const paymentRef = doc(db, 'buildings', buildingId, 'payments', id);
+    const snap = await getDoc(paymentRef);
+    const p = snap.exists() ? snap.data() : {};
+    const batch = writeBatch(db);
+    batch.delete(paymentRef);
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: p.apt, name: p.name, amount: p.amount, month: p.month, action: 'cancelled',
+      at: serverTimestamp(), by: currentUser.uid, byName: (currentUser.name || currentUser.email) + ' (ניקוי כפילות)'
+    });
+    await batch.commit();
+    showToast('🗑 נמחק');
+    await renderDuplicatePayments();
+    loadPayments();
+    loadBalance();
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
