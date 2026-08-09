@@ -944,6 +944,14 @@
       <input class="form-input" id="r-owner-phone" type="tel" placeholder="050-0000000"/>
     </div>
     <div class="form-group">
+      <label class="form-label">🔌 עמדת טעינה חשמלית</label>
+      <select class="form-select" id="r-charging">
+        <option value="none">ללא עמדת טעינה</option>
+        <option value="building">עמדת טעינה של הבניין</option>
+        <option value="private">עמדת טעינה פרטית</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label class="form-label">תפקיד</label>
       <select class="form-select" id="r-role">
         <option value="tenant">דייר</option>
@@ -974,10 +982,18 @@
 <div class="modal-overlay" id="modal-payment">
   <div class="modal">
     <div class="modal-title" id="modal-payment-title">רשום תשלום</div>
-    <input type="hidden" id="p-is-exceptional" value="false"/>
+    <div class="form-group">
+      <label class="form-label">סוג תשלום *</label>
+      <select class="form-select" id="p-category" onchange="onPaymentCategoryChange()">
+        <option value="vaad">🏠 ועד בית</option>
+        <option value="charging">🔌 טעינה חשמלית</option>
+        <option value="exceptional">👑 גבייה חריגה</option>
+      </select>
+      <div id="p-category-note" style="font-size:11px;color:var(--gray-500);margin-top:4px;display:none;"></div>
+    </div>
     <div class="form-group">
       <label class="form-label">דירה *</label>
-      <select class="form-select" id="p-apt"></select>
+      <select class="form-select" id="p-apt" onchange="onPaymentAptChange()"></select>
     </div>
     <div class="form-group">
       <label class="form-label" id="p-month-label">חודש *</label>
@@ -1182,7 +1198,8 @@
       <div class="modal-title" style="margin-bottom:0;">ניהול כספים</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <button class="btn-primary" onclick="closeAdminFinance();openAddPayment();">➕ הוסף תשלום</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openAddPayment('vaad');">➕ הוסף תשלום ועד</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openAddPayment('charging');">🔌 הוסף תשלום טעינה חשמלית</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
@@ -1254,9 +1271,9 @@
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
-        <label class="form-label">🔁 העברה חריגה (תשלום עבור כמה חודשים בבת אחת)</label>
-        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">לדוגמה: דייר שהעביר בפברואר תשלום המכסה יולי-דצמבר של השנה הקודמת.</div>
-        <button class="btn-primary" style="width:100%;" onclick="closeAdminFinance();openAddPayment(true);">➕ הוסף העברה חריגה</button>
+        <label class="form-label">👑 גבייה חריגה (תשלום עבור כמה חודשים בבת אחת)</label>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px;">לדוגמה: דייר שהעביר בפברואר תשלום המכסה יולי-דצמבר של השנה הקודמת. זמין רק לדירות בבעלות (לא בשכירות).</div>
+        <button class="btn-primary" style="width:100%;" onclick="closeAdminFinance();openAddPayment('exceptional');">➕ הוסף גבייה חריגה</button>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div style="display:flex;gap:8px;">
@@ -2001,7 +2018,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.2'; // נוסף כלי "איתור תשלומים כפולים" בניהול כספים — סורק את כל תשלומי הבניין, מקבץ לפי דירה+חודש, ומאפשר למחוק רשומות עודפות שנוצרו כי לא הייתה בדיקת ייחודיות בהוספת תשלום.
+const APP_VERSION = '2.11.4'; // נוסף בורר "סוג תשלום" בטופס הוספת תשלום: ועד (חסימת כפילות לאותה דירה/חודש + הודעה עם תאריך התשלום הקיים), טעינה חשמלית (רק לדירות עם chargingStation='building'), גבייה חריגה (רק לדירות בבעלות, לא בשכירות) — מחליף את הדגל isExceptional הבינארי הישן.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2867,6 +2884,7 @@ function renderResidents(list) {
           ${r.phone ? `<div style="font-size:13px;margin-top:4px;"><a href="tel:${r.phone}" style="color:var(--blue)">${r.phone}</a></div>` : ''}
           ${r.email ? `<div style="font-size:12px;color:var(--gray-400);margin-top:2px;">${r.email}</div>` : ''}
           ${r.ownershipType === 'renter' ? `<div style="font-size:12px;color:var(--gray-500);margin-top:4px;">🔑 שוכר${r.ownerName ? ' • בעלים: ' + r.ownerName : ''}${r.ownerPhone ? ` • <a href="tel:${r.ownerPhone}" style="color:var(--blue)">${r.ownerPhone}</a>` : ''}</div>` : ''}
+          ${r.chargingStation === 'building' ? `<div style="font-size:12px;color:var(--gray-500);margin-top:4px;">🔌 עמדת טעינה של הבניין</div>` : r.chargingStation === 'private' ? `<div style="font-size:12px;color:var(--gray-500);margin-top:4px;">🔌 עמדת טעינה פרטית</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
           ${r.role === 'admin' ? '<span class="badge badge-orange">ועד</span>' : '<span class="badge badge-gray">דייר</span>'}
@@ -2939,6 +2957,7 @@ window.openAddResident = () => {
   document.getElementById('r-owner-name').value = '';
   document.getElementById('r-owner-phone').value = '';
   onOwnershipChange();
+  document.getElementById('r-charging').value = 'none';
   document.getElementById('r-role').value = 'tenant';
   document.getElementById('r-payment-method').value = 'transfer';
   document.getElementById('r-fee').value = aptFee(newApt);
@@ -2963,6 +2982,7 @@ window.editResident = (id) => {
   document.getElementById('r-owner-name').value = r.ownerName || '';
   document.getElementById('r-owner-phone').value = r.ownerPhone || '';
   onOwnershipChange();
+  document.getElementById('r-charging').value = r.chargingStation || 'none';
   document.getElementById('r-role').value = r.role || 'tenant';
   document.getElementById('r-payment-method').value = r.paymentMethod || 'transfer';
   document.getElementById('r-fee').value = r.customFee || aptFee(r.apt, r);
@@ -3242,6 +3262,7 @@ window.saveResident = async () => {
     name, email, role,
     phone,
     ownershipType, ownerName, ownerPhone,
+    chargingStation: document.getElementById('r-charging').value || 'none',
     paymentMethod: document.getElementById('r-payment-method').value,
     updatedAt: serverTimestamp()
   };
@@ -3515,12 +3536,12 @@ window.markPaid = async (apt, name, amount) => {
     const batch = writeBatch(db);
     const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
     batch.set(paymentRef, {
-      apt: parseInt(apt), name, amount, month: ym, method,
+      apt: parseInt(apt), name, amount, month: ym, method, category: 'vaad',
       paidAt: serverTimestamp(), recordedBy: currentUser.uid
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
-      apt: parseInt(apt), name, amount, month: ym, method, action: 'paid',
+      apt: parseInt(apt), name, amount, month: ym, method, action: 'paid', category: 'vaad',
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
     });
     await batch.commit();
@@ -3957,12 +3978,99 @@ window.sendBulkPaymentReminder = async (apt) => {
   await renderPaymentReminders();
 };
 
-window.openAddPayment = (isExceptional) => {
-  document.getElementById('p-is-exceptional').value = isExceptional ? 'true' : 'false';
+// זכאות דירה לכל סוג תשלום: "ועד" פתוח לכולם, "טעינה חשמלית" רק לדירות עם
+// עמדת טעינה של הבניין (chargingStation==='building'), "גבייה חריגה" רק
+// לדירות בבעלות (לא בשכירות — ownershipType!=='renter'; דיירים ישנים בלי
+// השדה נחשבים "בעלים" כי זו ברירת המחדל ההיסטורית של הטופס).
+function eligibleResidentsForPaymentCategory(category) {
+  if (category === 'charging') return allResidents.filter(r => r.chargingStation === 'building');
+  if (category === 'exceptional') return allResidents.filter(r => (r.ownershipType || 'owner') !== 'renter');
+  return allResidents;
+}
+function residentEligibleForPaymentCategory(resident, category) {
+  if (!resident) return false;
+  if (category === 'charging') return resident.chargingStation === 'building';
+  if (category === 'exceptional') return (resident.ownershipType || 'owner') !== 'renter';
+  return true;
+}
 
-  // Fill resident dropdown
+// בונה מחדש את רשימת הדירות בטופס לפי סוג התשלום שנבחר, ומעדכן כותרות/הערות
+// בהתאם. נקרא גם בפתיחת הטופס וגם בכל שינוי של "סוג תשלום".
+function buildPaymentModalForCategory(category) {
   const sel = document.getElementById('p-apt');
-  sel.innerHTML = allResidents.map(r => `<option value="${r.apt}">${r.apt} - ${r.name}</option>`).join('');
+  const eligible = eligibleResidentsForPaymentCategory(category);
+  const prevAptStr = sel.value;
+
+  if (!eligible.length) {
+    sel.innerHTML = '<option value="">— אין דירות מתאימות —</option>';
+  } else {
+    sel.innerHTML = eligible.map(r => `<option value="${r.apt}">${r.apt} - ${r.name}</option>`).join('');
+    if (eligible.some(r => String(r.apt) === prevAptStr)) sel.value = prevAptStr;
+  }
+
+  const isExceptional = category === 'exceptional';
+  const titleEl = document.getElementById('modal-payment-title');
+  const monthLabelEl = document.getElementById('p-month-label');
+  const amountLabelEl = document.getElementById('p-amount-label');
+  const monthToGroup = document.getElementById('p-month-to-group');
+  const actualDateGroup = document.getElementById('p-actual-date-group');
+  const noteEl = document.getElementById('p-category-note');
+
+  if (category === 'charging') titleEl.textContent = 'רשום תשלום טעינה חשמלית';
+  else if (category === 'exceptional') titleEl.textContent = 'הוסף גבייה חריגה';
+  else titleEl.textContent = 'רשום תשלום ועד';
+
+  if (!eligible.length) {
+    noteEl.style.display = 'block';
+    noteEl.style.color = 'var(--red)';
+    noteEl.textContent = category === 'charging'
+      ? '⚠️ אין בבניין דירה שמוגדרת עם עמדת טעינה של הבניין (ניתן להגדיר בכרטיס הדייר)'
+      : category === 'exceptional' ? '⚠️ אין בבניין דירה בבעלות (לא בשכירות)' : '';
+  } else if (category === 'charging') {
+    noteEl.style.display = 'block';
+    noteEl.style.color = 'var(--gray-500)';
+    noteEl.textContent = '🔌 מוצגות רק דירות עם עמדת טעינה של הבניין';
+  } else if (category === 'exceptional') {
+    noteEl.style.display = 'block';
+    noteEl.style.color = 'var(--gray-500)';
+    noteEl.textContent = '👑 מוצגות רק דירות בבעלות (לא בשכירות)';
+  } else {
+    noteEl.style.display = 'none';
+  }
+
+  monthLabelEl.textContent = isExceptional ? 'מחודש *' : 'חודש *';
+  amountLabelEl.textContent = isExceptional ? 'סכום כולל להעברה (₪) *' : 'סכום (₪) *';
+  document.getElementById('p-amount-note').textContent = isExceptional ? 'הסכום יחולק שווה בשווה בין החודשים שנבחרו.' : '';
+  monthToGroup.style.display = isExceptional ? '' : 'none';
+  actualDateGroup.style.display = isExceptional ? '' : 'none';
+  if (isExceptional && !document.getElementById('p-actual-date').value) {
+    document.getElementById('p-actual-date').value = new Date().toISOString().split('T')[0];
+  }
+
+  onPaymentAptChange();
+}
+
+window.onPaymentCategoryChange = () => {
+  buildPaymentModalForCategory(document.getElementById('p-category').value);
+};
+
+// מעדכן אופן תשלום וסכום ברירת מחדל כשמשנים דירה נבחרת בטופס
+window.onPaymentAptChange = () => {
+  const category = document.getElementById('p-category').value;
+  const sel = document.getElementById('p-apt');
+  const r = allResidents.find(x => x.apt === parseInt(sel.value));
+  document.getElementById('p-method').value = r?.paymentMethod || 'transfer';
+  if (category === 'vaad') {
+    document.getElementById('p-amount').value = r ? aptFee(r.apt, r) : '';
+  } else if (category === 'charging') {
+    document.getElementById('p-amount').value = '';
+  }
+  // "exceptional" משאיר את הסכום ריק/כמו שהוזן — זה סכום כולל שהמנהל מזין ידנית
+};
+
+window.openAddPayment = (category) => {
+  category = category || 'vaad';
+  document.getElementById('p-category').value = category;
 
   // Fill month dropdown(s) — offer a wider range (24 months back) since
   // exceptional transfers often cover months from a previous year.
@@ -3975,49 +4083,16 @@ window.openAddPayment = (isExceptional) => {
   }
   document.getElementById('p-month').innerHTML = monthOptionsHtml.join('');
   document.getElementById('p-month-to').innerHTML = monthOptionsHtml.join('');
-
-  document.getElementById('p-amount').value = isExceptional ? '' : aptFee(parseInt(sel.value), allResidents.find(r => r.apt === parseInt(sel.value)));
   document.getElementById('p-note').value = '';
-  document.getElementById('p-amount-note').textContent = '';
+  document.getElementById('p-actual-date').value = '';
 
-  const titleEl = document.getElementById('modal-payment-title');
-  const monthLabelEl = document.getElementById('p-month-label');
-  const amountLabelEl = document.getElementById('p-amount-label');
-  const monthToGroup = document.getElementById('p-month-to-group');
-  const actualDateGroup = document.getElementById('p-actual-date-group');
-
-  if (isExceptional) {
-    titleEl.textContent = 'הוסף העברה חריגה';
-    monthLabelEl.textContent = 'מחודש *';
-    amountLabelEl.textContent = 'סכום כולל להעברה (₪) *';
-    document.getElementById('p-amount-note').textContent = 'הסכום יחולק שווה בשווה בין החודשים שנבחרו.';
-    monthToGroup.style.display = '';
-    actualDateGroup.style.display = '';
-    document.getElementById('p-actual-date').value = new Date().toISOString().split('T')[0];
-  } else {
-    titleEl.textContent = 'רשום תשלום';
-    monthLabelEl.textContent = 'חודש *';
-    amountLabelEl.textContent = 'סכום (₪) *';
-    monthToGroup.style.display = 'none';
-    actualDateGroup.style.display = 'none';
-  }
-
-  // מלא אופן תשלום לפי הגדרת הדייר הראשון
-  const firstResident = allResidents.find(r => r.apt === parseInt(sel.value));
-  document.getElementById('p-method').value = firstResident?.paymentMethod || 'transfer';
-  // עדכן אופן תשלום וסכום ברירת מחדל כשמשנים דייר
-  sel.onchange = () => {
-    const r = allResidents.find(x => x.apt === parseInt(sel.value));
-    document.getElementById('p-method').value = r?.paymentMethod || 'transfer';
-    if (!isExceptional) {
-      document.getElementById('p-amount').value = aptFee(r?.apt, r);
-    }
-  };
+  buildPaymentModalForCategory(category);
   openModal('modal-payment');
 };
 
 window.savePayment = async () => {
-  const isExceptional = document.getElementById('p-is-exceptional').value === 'true';
+  const category = document.getElementById('p-category').value; // 'vaad' | 'charging' | 'exceptional'
+  const isExceptional = category === 'exceptional';
   const apt = parseInt(document.getElementById('p-apt').value);
   const fromMonth = document.getElementById('p-month').value;
   const amount = parseFloat(document.getElementById('p-amount').value);
@@ -4026,29 +4101,56 @@ window.savePayment = async () => {
   if (!apt || !fromMonth || !amount) { showToast('חובה למלא כל השדות'); return; }
   const resident = allResidents.find(r => r.apt === apt);
 
+  // ולידציית זכאות — הגנה כפולה מעבר לסינון שכבר בוצע ברשימת הבחירה, למקרה
+  // שרשימת הדיירים השתנתה מאז פתיחת הטופס.
+  if (!residentEligibleForPaymentCategory(resident, category)) {
+    showToast(category === 'charging'
+      ? '⚠️ ניתן לרשום תשלום טעינה חשמלית רק לדירה עם עמדת טעינה של הבניין'
+      : '⚠️ ניתן לרשום גבייה חריגה רק לדירה בבעלות (לא בשכירות)');
+    return;
+  }
+
   if (!isExceptional) {
+    // "ועד" — לא ניתן לרשום פעמיים לאותה דירה/חודש. הבדיקה מול Firestore
+    // (ולא מול allPayments המקומי) כי המודל נפתח גם ממסכים שלא בהכרח טענו
+    // את החודש הרלוונטי, ורק תשלום מסוג "ועד" חוסם — תשלומי טעינה/גבייה
+    // חריגה לאותה דירה/חודש לא נחשבים כפילות של דמי הועד.
+    if (category === 'vaad') {
+      try {
+        const dupSnap = await getDocs(query(
+          collection(db, 'buildings', buildingId, 'payments'),
+          where('apt','==', apt), where('month','==', fromMonth)
+        ));
+        const existingVaad = dupSnap.docs.map(d => d.data()).find(p => (p.category || 'vaad') === 'vaad');
+        if (existingVaad) {
+          const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
+          showToast('⚠️ כבר קיים תשלום ועד לדירה ' + apt + ' עבור ' + monthLabel(fromMonth) + ' (נרשם ב-' + dateStr + '). לתיקון סכום יש לבטל קודם את התשלום הקיים דרך היסטוריית הדייר.', 6500);
+          return;
+        }
+      } catch(e) { showToast('שגיאה בבדיקת כפילות: ' + e.message); return; }
+    }
     try {
       const batch = writeBatch(db);
       const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
       batch.set(paymentRef, {
         apt, name: resident?.name || '', amount, month: fromMonth, note,
-        method, paidAt: serverTimestamp(), recordedBy: currentUser.uid
+        method, category, paidAt: serverTimestamp(), recordedBy: currentUser.uid
       });
       const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
       batch.set(logRef, {
-        apt: parseInt(apt), name: resident?.name || '', amount, month: fromMonth, action: 'paid',
+        apt: parseInt(apt), name: resident?.name || '', amount, month: fromMonth, action: 'paid', category,
         at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
       });
       await batch.commit();
       showToast('✅ תשלום נרשם');
       closeModal('modal-payment');
       loadPayments();
-      logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS' });
+      logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', category });
     } catch(e) { showToast('שגיאה: ' + e.message); }
     return;
   }
 
-  // Exceptional multi-month transfer
+  // Exceptional multi-month transfer (גבייה חריגה — רק לדירות בבעלות)
   const toMonth = document.getElementById('p-month-to').value;
   const actualDateStr = document.getElementById('p-actual-date').value;
   if (!toMonth || !actualDateStr) { showToast('חובה למלא עד חודש ותאריך העברה בפועל'); return; }
@@ -4067,21 +4169,21 @@ window.savePayment = async () => {
       const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
       batch.set(paymentRef, {
         apt, name: resident?.name || '', amount: monthAmount, month: ym,
-        note: note || `העברה חריגה עבור ${months.length} חודשים`,
-        method, paidAt: actualDate, recordedBy: currentUser.uid, exceptionalTransfer: true
+        note: note || `גבייה חריגה עבור ${months.length} חודשים`,
+        method, category, paidAt: actualDate, recordedBy: currentUser.uid, exceptionalTransfer: true
       });
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
-      type: 'payment', apt, name: resident?.name || '', amount, action: 'paid',
+      type: 'payment', apt, name: resident?.name || '', amount, action: 'paid', category,
       month: `${fromMonth} עד ${toMonth}`, exceptionalTransfer: true, actualDate: actualDateStr,
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
     });
     await batch.commit();
-    showToast(`✅ העברה חריגה נרשמה עבור ${months.length} חודשים`);
+    showToast(`✅ גבייה חריגה נרשמה עבור ${months.length} חודשים`);
     closeModal('modal-payment');
     loadPayments();
-    logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', exceptional: true });
+    logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', exceptional: true, category });
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
