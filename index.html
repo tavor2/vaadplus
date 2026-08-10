@@ -1207,6 +1207,7 @@
       <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גביות מיוחדות לתיקונים</button>
+      <button class="btn-primary" style="background:var(--blue-light);color:var(--blue);" onclick="closeAdminFinance();openCategoryPayments();">🔌 חריגים וטעינה חשמלית</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateSemiAnnualPDF();">📆 הפק PDF חצי שנתי</button>
@@ -1376,6 +1377,25 @@
       <button onclick="closeModal('modal-special-detail')" style="background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <div id="special-detail-content"></div>
+  </div>
+</div>
+
+<!-- Category Payments (charging / exceptional collection) — List Modal -->
+<div class="modal-overlay" id="modal-category-payments">
+  <div class="modal">
+    <div class="modal-title">🔌 חריגים וטעינה חשמלית</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:12px;line-height:1.6;">
+      כל תשלומי הטעינה החשמלית והגבייה החריגה (בעלים/שוכרים) — נפרדים לגמרי מהגבייה החודשית השוטפת. ניתן להפיק כאן קבלה לכל תשלום.
+    </div>
+    <div id="category-payments-summary" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;"></div>
+    <div class="filter-tabs" style="padding:0 0 4px;">
+      <button class="filter-tab active" onclick="filterCategoryPayments('all',this)">הכל</button>
+      <button class="filter-tab" onclick="filterCategoryPayments('charging',this)">🔌 טעינה</button>
+      <button class="filter-tab" onclick="filterCategoryPayments('exceptional_owner',this)">👑 בעלים</button>
+      <button class="filter-tab" onclick="filterCategoryPayments('exceptional_renter',this)">🔑 שוכרים</button>
+    </div>
+    <div id="category-payments-list" style="margin-top:6px;"></div>
+    <button class="btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-category-payments')">סגור</button>
   </div>
 </div>
 
@@ -1799,9 +1819,23 @@ function descWithNote(e) {
 // change to the math (e.g. a new payment method) had to be made in sync in
 // all 3 places or the reports would silently disagree with each other.
 function computeBalanceFigures(payments, expenses, deposits, openingBalance, cashOpeningBalance) {
+  // totalCollected/cashCollected/transferCollected למטה מכסים את כל הכסף
+  // שנכנס בפועל (ללא קשר לקטגוריה) — כי יתרת הבנק/מזומן האמיתית לא מבחינה
+  // בין דמי ועד שוטפים לטעינה חשמלית/גבייה חריגה: כסף הוא כסף, לפי אמצעי
+  // התשלום בלבד. הפילוח התצוגתי לפי קטגוריה (vaadTransferCollected וכו')
+  // למטה משמש רק להצגה (לדוגמה בטאב "מאזן"), ואינו נכנס לחישוב bankBalance/
+  // cashBalance בעצמו.
   const totalCollected = payments.reduce((s,p) => s + (p.amount||0), 0);
   const cashCollected = payments.filter(p => p.method === 'cash').reduce((s,p) => s + (p.amount||0), 0);
   const transferCollected = totalCollected - cashCollected;
+
+  const vaadPayments = payments.filter(isVaadPayment);
+  const vaadCollected = vaadPayments.reduce((s,p) => s + (p.amount||0), 0);
+  const vaadCashCollected = vaadPayments.filter(p => p.method === 'cash').reduce((s,p) => s + (p.amount||0), 0);
+  const vaadTransferCollected = vaadCollected - vaadCashCollected;
+  const chargingCollected = payments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerCollected = payments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalRenterCollected = payments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
   const totalExpenses = expenses.reduce((s,e) => s + (e.amount||0), 0);
   const cashExpenses = expenses.filter(e => e.method === 'cash').reduce((s,e) => s + (e.amount||0), 0);
@@ -1814,6 +1848,8 @@ function computeBalanceFigures(payments, expenses, deposits, openingBalance, cas
 
   return {
     totalCollected, cashCollected, transferCollected,
+    vaadCollected, vaadCashCollected, vaadTransferCollected,
+    chargingCollected, exceptionalOwnerCollected, exceptionalRenterCollected,
     totalExpenses, cashExpenses, bankExpenses,
     totalDeposits, bankBalance, cashBalance,
     balance: bankBalance + cashBalance
@@ -2018,7 +2054,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.10'; // בטאב מאזן: כרטיס "פירוט גבייה חריגה וטעינה" מציג עכשיו 3 שורות נפרדות — גבייה טעינה, גבייה חריגה בעלים, גבייה חריגה שוכרים (מבוסס על payerType) — במקום שני כרטיסים ("גבייה טעינה"/"גבייה חריגה" מאוחדת) כמו קודם.
+const APP_VERSION = '2.12.0'; // הפרדה מלאה בין גבייה שוטפת (דמי ועד) לבין טעינה חשמלית/גבייה חריגה: מסכי מעקב תשלומים (סקירה/רשימה/היסטוריית דייר/איתור כפילויות/תחזית) לא סופרים יותר תשלומי טעינה/חריגה כתשלום דמי ועד. נוסף כפתור+מסך חדש "🔌 חריגים וטעינה חשמלית" תחת ניהול כספים, עם הפקת קבלה נפרדת לכל תשלום. טאב מאזן ודוחות ה-PDF/אקסל עודכנו להציג "סה"כ גבייה" כסכום 5 הרכיבים: הועבר לבנק+מזומן (ועד שוטף), גבייה חריגה בעלים/שוכרים, וטעינה חשמלית.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3362,8 +3398,11 @@ window.loadPayments = () => {
 };
 
 function renderPayments(ym) {
+  // מציג רק תשלומי "ועד" שוטפים — תשלומי טעינה חשמלית/גבייה חריגה לאותו
+  // חודש לא אמורים להופיע כאן בכלל (ראה isVaadPayment ו-openCategoryPayments
+  // עבורם), אחרת דייר ששילם רק גבייה חריגה נראה כאילו שילם את דמי הועד.
   const paidMap = {};
-  allPayments.forEach(p => { paidMap[p.apt] = p; });
+  allPayments.filter(isVaadPayment).forEach(p => { paidMap[p.apt] = p; });
 
   // דייר — מציג רק את הדירה שלו
   if (!isAdmin) {
@@ -3805,7 +3844,9 @@ async function renderDuplicatePayments() {
     const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     const groups = {};
     all.forEach(p => {
-      const key = p.apt + '_' + p.month;
+      // המפתח כולל גם קטגוריה — דירה ששילמה גם דמי ועד וגם למשל טעינה
+      // חשמלית באותו חודש היא שני תשלומים לגיטימיים, לא כפילות.
+      const key = p.apt + '_' + p.month + '_' + (p.category || 'vaad');
       (groups[key] = groups[key] || []).push(p);
     });
     const dupGroups = Object.entries(groups).filter(([, arr]) => arr.length > 1);
@@ -3823,11 +3864,12 @@ async function renderDuplicatePayments() {
       + '⚠️ נמצאו ' + dupGroups.length + ' דירה/חודש עם תשלומים כפולים (סה"כ ' + totalExtra + ' רשומות עודפות)</div>';
 
     html += dupGroups.map(([key, arr]) => {
-      const [aptStr, ym] = key.split('_');
+      const [aptStr, ym, cat] = key.split('_');
       const resident = allResidents.find(r => r.apt === parseInt(aptStr));
+      const catLabel = cat === 'charging' ? ' • 🔌 טעינה חשמלית' : cat === 'exceptional' ? ' • 👑 גבייה חריגה' : '';
       const sorted = [...arr].sort((a,b) => (a.paidAt?.toMillis?.() || 0) - (b.paidAt?.toMillis?.() || 0));
       return '<div class="card" style="margin-bottom:10px;">'
-        + '<div style="font-weight:700;margin-bottom:8px;">🏠 דירה ' + aptStr + (resident?.name ? ' — ' + resident.name : '') + ' • ' + monthLabel(ym) + '</div>'
+        + '<div style="font-weight:700;margin-bottom:8px;">🏠 דירה ' + aptStr + (resident?.name ? ' — ' + resident.name : '') + ' • ' + monthLabel(ym) + catLabel + '</div>'
         + sorted.map(p => {
             const dateStr = p.paidAt?.toDate ? p.paidAt.toDate().toLocaleString('he-IL') : '-';
             return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-100);">'
@@ -3984,6 +4026,17 @@ window.sendBulkPaymentReminder = async (apt) => {
 // (דירת בעלות) ובין אם זה מישהו אחר שרשום בשדה "שם הבעלים" (דירת שכירות).
 // "גבייה חריגה - שוכרים" מוצגת רק לדירות שיש בהן שוכר בפועל
 // (ownershipType==='renter') — אין למי לגבות בתור "שוכר" בדירה שאין בה שוכר.
+// אמת אם תשלום שייך לגבייה השוטפת הרגילה (דמי ועד) ולא לטעינה חשמלית/גבייה
+// חריגה. תשלומים ישנים שנשמרו לפני שהשדה category נוסף למסמך (לפני v2.11)
+// אינם כוללים את השדה כלל — הם מטופלים כאן כ"ועד" (ההתנהגות ההיסטורית),
+// ולכן !p.category נחשב שקול ל-category==='vaad'. חובה להשתמש בפונקציה הזו
+// (ולא ב-allPayments/paidMap גולמי) בכל מקום שבודק "האם דירה X שילמה החודש"
+// עבור דמי הועד השוטפים — אחרת תשלום טעינה/גבייה חריגה לאותו חודש "מחפה"
+// בטעות על כך שדמי הועד עצמם לא שולמו (ולהפך).
+function isVaadPayment(p) {
+  return !p.category || p.category === 'vaad';
+}
+
 function eligibleResidentsForPaymentCategory(category) {
   if (category === 'charging') return allResidents.filter(r => r.chargingStation === 'building');
   if (category === 'exceptional_renter') return allResidents.filter(r => r.ownershipType === 'renter');
@@ -4626,6 +4679,267 @@ async function createSpecialCollectionPDFReport(id) {
   logAnalyticsEvent('special_collection_pdf_generated');
 }
 
+// ===== CATEGORY PAYMENTS (charging / exceptional collection) =====
+// כל תשלומי הטעינה החשמלית והגבייה החריגה (בעלים/שוכרים) — מוצגים כאן
+// במסך נפרד לגמרי מהגבייה החודשית השוטפת של דמי הועד (ראה isVaadPayment
+// ו-openAdminFinance). המסך הזה הוא הדרך היחידה להפיק קבלה לתשלומים האלה.
+let allCategoryPayments = [];
+let unsubCategoryPayments = null;
+let categoryPaymentsListenerBuildingId = null;
+let currentCategoryFilter = 'all';
+let _categoryGroupsCache = {}; // groupKey -> { apt, name, category, payerType, items:[...], totalAmount, method, months, paidAtMs }
+
+function ensureCategoryPaymentsListener() {
+  if (categoryPaymentsListenerBuildingId === buildingId && unsubCategoryPayments) return;
+  if (unsubCategoryPayments) unsubCategoryPayments();
+  categoryPaymentsListenerBuildingId = buildingId;
+  unsubCategoryPayments = onSnapshot(
+    query(collection(db, 'buildings', buildingId, 'payments'), where('category','in',['charging','exceptional'])),
+    (snap) => { allCategoryPayments = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderCategoryPaymentsList(); }
+  );
+}
+
+window.openCategoryPayments = () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const container = document.getElementById('category-payments-list');
+  if (!(categoryPaymentsListenerBuildingId === buildingId && unsubCategoryPayments)) {
+    container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  }
+  currentCategoryFilter = 'all';
+  document.querySelectorAll('#modal-category-payments .filter-tab').forEach((b,i) => b.classList.toggle('active', i===0));
+  openModal('modal-category-payments');
+  ensureCategoryPaymentsListener();
+};
+
+window.filterCategoryPayments = (filter, btn) => {
+  currentCategoryFilter = filter;
+  document.querySelectorAll('#modal-category-payments .filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCategoryPaymentsList();
+};
+
+// מקבצת תשלומי גבייה חריגה מרובי-חודשים (שנרשמו יחד כפעולה אחת דרך
+// savePayment, ומשתפים אותו paidAt) לקבוצה אחת — כך שקבלה אחת מכסה את כל
+// החודשים שהועברו יחד, ולא קבלה נפרדת לכל חודש. תשלומי טעינה (חד-חודשיים
+// תמיד) יוצרים כל אחד קבוצה משלו, כי לכל הגשה יש paidAt ייחודי משלה.
+function groupKeyFor(p) {
+  const paidAtMs = p.paidAt?.toMillis ? p.paidAt.toMillis() : 0;
+  return p.apt + '|' + p.category + '|' + (p.payerType||'') + '|' + paidAtMs;
+}
+
+function renderCategoryPaymentsList() {
+  const container = document.getElementById('category-payments-list');
+  const summaryEl = document.getElementById('category-payments-summary');
+  if (!container) return;
+
+  const chargingTotal = allCategoryPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const ownerTotal = allCategoryPayments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const renterTotal = allCategoryPayments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  if (summaryEl) {
+    summaryEl.innerHTML = '<div class="stat-card"><div class="stat-value" style="color:var(--blue);">'+fmtCurrency(chargingTotal)+'</div><div class="stat-label">🔌 טעינה</div></div>'
+      + '<div class="stat-card"><div class="stat-value orange">'+fmtCurrency(ownerTotal)+'</div><div class="stat-label">👑 בעלים</div></div>'
+      + '<div class="stat-card"><div class="stat-value orange">'+fmtCurrency(renterTotal)+'</div><div class="stat-label">🔑 שוכרים</div></div>';
+  }
+
+  if (!allCategoryPayments.length) {
+    container.innerHTML = '<div class="card-empty">אין עדיין תשלומי טעינה/גבייה חריגה</div>';
+    return;
+  }
+
+  const groups = {};
+  allCategoryPayments.forEach(p => {
+    const key = groupKeyFor(p);
+    (groups[key] = groups[key] || []).push(p);
+  });
+
+  _categoryGroupsCache = {};
+  let groupList = Object.entries(groups).map(([key, items]) => {
+    const first = items[0];
+    const totalAmount = items.reduce((s,p) => s + (p.amount||0), 0);
+    const months = [...new Set(items.map(p => p.month))].sort();
+    const paidAtMs = first.paidAt?.toMillis ? first.paidAt.toMillis() : 0;
+    const g = {
+      key, apt: first.apt, name: first.name, category: first.category, payerType: first.payerType,
+      method: first.method, note: first.note, items, totalAmount, months, paidAtMs,
+      filterTag: first.category === 'charging' ? 'charging' : (first.payerType === 'renter' ? 'exceptional_renter' : 'exceptional_owner')
+    };
+    _categoryGroupsCache[key] = g;
+    return g;
+  });
+
+  if (currentCategoryFilter !== 'all') {
+    groupList = groupList.filter(g => g.filterTag === currentCategoryFilter);
+  }
+  groupList.sort((a,b) => b.paidAtMs - a.paidAtMs);
+
+  if (!groupList.length) {
+    container.innerHTML = '<div class="card-empty">אין תשלומים בסינון שנבחר</div>';
+    return;
+  }
+
+  container.innerHTML = groupList.map(g => {
+    const catLabel = g.category === 'charging' ? '🔌 טעינה חשמלית' : (g.payerType === 'renter' ? '🔑 גבייה חריגה - שוכרים' : '👑 גבייה חריגה - בעלים');
+    const catColor = g.category === 'charging' ? 'var(--blue)' : 'var(--orange)';
+    const dateStr = g.paidAtMs ? new Date(g.paidAtMs).toLocaleDateString('he-IL') : '-';
+    const monthsLabel = g.months.length > 1 ? formatMonthRanges(g.months) : (g.months[0] ? monthLabel(g.months[0]) : '');
+    return '<div class="card" style="margin-bottom:10px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+      + '<div style="flex:1;">'
+      + '<div style="font-weight:700;font-size:15px;">'+ (g.name||'') +' <span style="font-weight:400;color:var(--gray-400);font-size:12px;">דירה '+g.apt+'</span></div>'
+      + '<div style="font-size:12px;color:'+catColor+';font-weight:600;margin-top:2px;">'+catLabel+'</div>'
+      + '<div style="font-size:12px;color:var(--gray-400);margin-top:2px;">'+monthsLabel+' • '+dateStr+(g.note ? ' • 📝 '+g.note : '')+'</div>'
+      + '</div>'
+      + '<div style="text-align:left;white-space:nowrap;">'
+      + '<div style="font-weight:700;font-size:16px;">'+fmtCurrency(g.totalAmount)+' '+(PAYMENT_METHOD_ICONS[g.method]||'')+'</div>'
+      + '</div></div>'
+      + '<div style="display:flex;gap:8px;border-top:1px solid var(--gray-100);padding-top:10px;margin-top:10px;">'
+      + '<button class="btn-icon" style="flex:1;" onclick="generateCategoryGroupReceipt(\''+g.key+'\')">🧾 קבלה</button>'
+      + '<button class="btn-icon" style="flex:1;background:#25D366;color:white;" onclick="generateCategoryGroupReceipt(\''+g.key+'\',true)">💬 שתף</button>'
+      + '<button class="btn-danger" style="flex:1;" onclick="cancelCategoryGroup(\''+g.key+'\')">חזור</button>'
+      + '</div></div>';
+  }).join('');
+}
+
+window.cancelCategoryGroup = async (key) => {
+  const g = _categoryGroupsCache[key];
+  if (!g) return;
+  const ok = await customConfirm('לבטל תשלום זה (' + fmtCurrency(g.totalAmount) + ')? פעולה זו אינה הפיכה.');
+  if (!ok) return;
+  try {
+    const batch = writeBatch(db);
+    g.items.forEach(p => batch.delete(doc(db, 'buildings', buildingId, 'payments', p.id)));
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: g.apt, name: g.name, amount: g.totalAmount, month: g.months.join(', '), action: 'cancelled', category: g.category, payerType: g.payerType || null,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    showToast('תשלום בוטל');
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// מפיקה קבלת PDF לקבוצת תשלום (טעינה חשמלית — חודש בודד תמיד; גבייה חריגה
+// — לעיתים כמה חודשים יחד). משתמשת באותה תשתית html2canvas/jsPDF/שיתוף כמו
+// generateReceipt()/generateMultiReceipt(), רק עם כותרת/עיצוב המתאימים
+// לקטגוריה (לא "דמי ועד בית") — כדי שלא יתבלבל עם קבלת ועד רגילה.
+window.generateCategoryGroupReceipt = async (key, share = false) => {
+  const g = _categoryGroupsCache[key];
+  if (!g) { showToast('שגיאה: לא נמצא תשלום'); return; }
+  if (receiptGenerationInProgress) { showToast('קבלה קודמת עדיין בהכנה, רגע בבקשה...'); return; }
+  receiptGenerationInProgress = true;
+  try {
+    showToast('מכין קבלה...');
+    await ensureCanvasPdfLibs();
+
+    const buildingAddress = buildingData?.address || '';
+    const adminName = buildingData?.adminName || '';
+    const today = new Date().toLocaleDateString('he-IL');
+    const methodMap = { transfer: 'העברה בנקאית', standingOrder: 'הוראת קבע', cash: 'מזומן', check: 'שיק' };
+    const methodLabel = methodMap[g.method] || g.method || '-';
+    const paidDate = g.paidAtMs ? new Date(g.paidAtMs).toLocaleDateString('he-IL') : today;
+    const catTitle = g.category === 'charging' ? 'טעינה חשמלית' : (g.payerType === 'renter' ? 'גבייה חריגה - שוכרים' : 'גבייה חריגה - בעלים');
+    const isMulti = g.months.length > 1;
+    const receiptNum = (g.months[0]||'').replace('-','') + String(g.apt).padStart(2,'0') + (g.category === 'charging' ? 'C' : 'E');
+
+    const monthsRowsHtml = isMulti ? g.months.map(ym => {
+      const item = g.items.find(p => p.month === ym);
+      return '<tr>'
+        + '<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">'+monthLabel(ym)+'</td>'
+        + '<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:left;font-weight:700;">₪'+Number(item?.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})+'</td>'
+        + '</tr>';
+    }).join('') : '';
+    const periodLabel = g.months.length ? (isMulti ? formatMonthRanges(g.months) : monthLabel(g.months[0])) : '-';
+
+    const html = `
+    <style>
+      .receipt-page * { box-sizing: border-box; margin: 0; padding: 0; }
+      .receipt-page { font-family: Arial, Helvetica, sans-serif; direction: rtl; color: #1a1a2e; background: white; }
+      .receipt-page.cat-page { width: 148mm; min-height: 105mm; padding: 10mm 12mm; position: relative; box-sizing: border-box; }
+      .receipt-page .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1A56DB; padding-bottom: 8px; margin-bottom: 10px; }
+      .receipt-page .logo-area { display: flex; align-items: center; gap: 10px; }
+      .receipt-page .logo-icon { width: 44px; height: 44px; background: #1A56DB; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+      .receipt-page .logo-text { font-size: 20px; font-weight: 900; color: #1A56DB; letter-spacing: -0.5px; }
+      .receipt-page .logo-sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
+      .receipt-page .receipt-label { text-align: left; }
+      .receipt-page .receipt-word { font-size: 20px; font-weight: 900; color: #1A56DB; letter-spacing: 1px; }
+      .receipt-page .receipt-num { font-size: 11px; color: #6b7280; margin-top: 2px; }
+      .receipt-page .body-grid { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 12px; }
+      .receipt-page .field { flex: 1 1 45%; display: flex; flex-direction: column; gap: 1px; }
+      .receipt-page .field-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; font-weight: 600; }
+      .receipt-page .field-value { font-size: 13px; font-weight: 700; color: #111827; }
+      .receipt-page .months-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 12px; }
+      .receipt-page .months-table th { background: #EBF2FF; color: #1A56DB; padding: 6px 8px; text-align: right; font-size: 10px; }
+      .receipt-page .amount-box { background: #EBF2FF; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+      .receipt-page .amount-label { font-size: 11px; color: #1A56DB; font-weight: 700; }
+      .receipt-page .amount-value { font-size: 26px; font-weight: 900; color: #1A56DB; }
+      .receipt-page .footer { border-top: 1px solid #e5e7eb; padding-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+      .receipt-page .footer-text { font-size: 9px; color: #9ca3af; }
+      .receipt-page .stamp { border: 2px solid #0E9F6E; border-radius: 8px; padding: 4px 10px; color: #0E9F6E; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+    </style>
+    <div class="receipt-page cat-page">
+      <div class="header">
+        <div class="logo-area">
+          <div class="logo-icon">🏢</div>
+          <div><div class="logo-text">ועד בית פלוס</div><div class="logo-sub">${buildingAddress}</div></div>
+        </div>
+        <div class="receipt-label">
+          <div class="receipt-word">קבלה</div>
+          <div class="receipt-num">${catTitle}</div>
+          <div class="receipt-num">מס׳ ${receiptNum}</div>
+          <div class="receipt-num">תאריך הפקה: ${today}</div>
+        </div>
+      </div>
+      <div class="body-grid">
+        <div class="field"><div class="field-label">שם</div><div class="field-value">${g.name||''}</div></div>
+        <div class="field"><div class="field-label">דירה</div><div class="field-value">${g.apt}</div></div>
+        <div class="field"><div class="field-label">עבור</div><div class="field-value">${periodLabel}</div></div>
+        <div class="field"><div class="field-label">תאריך תשלום</div><div class="field-value">${paidDate}</div></div>
+        <div class="field"><div class="field-label">אמצעי תשלום</div><div class="field-value">${methodLabel}</div></div>
+        <div class="field"><div class="field-label">ראש הועד</div><div class="field-value">${adminName}</div></div>
+      </div>
+      ${isMulti ? `<table class="months-table"><thead><tr><th>חודש</th><th style="text-align:left;">סכום</th></tr></thead><tbody>${monthsRowsHtml}</tbody></table>` : ''}
+      <div class="amount-box">
+        <div class="amount-label">סכום ששולם — ${catTitle}</div>
+        <div class="amount-value">₪${g.totalAmount.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</div>
+      </div>
+      <div class="footer">
+        <div class="footer-text">מסמך זה מהווה אסמכתא לתשלום עבור ${catTitle} — נפרד מדמי הועד השוטפים</div>
+        <div class="stamp">✓ שולם</div>
+      </div>
+    </div>`;
+
+    const el = document.createElement('div');
+    el.style.width = '148mm';
+    el.innerHTML = html;
+    const pdfContainer = document.getElementById('pdf-container');
+    pdfContainer.innerHTML = '';
+    pdfContainer.appendChild(el);
+
+    const canvas = await captureReceiptCanvas(el);
+    pdfContainer.innerHTML = '';
+    if (!canvas) throw new Error('לא הצלחנו להפיק את הקבלה כרגע — נסה/י שוב בעוד רגע');
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a6' });
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgData = canvas.toDataURL('image/jpeg', 0.98);
+    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+    const filename = `קבלה_${catTitle.replace(/\s+/g,'_')}_דירה${g.apt}.pdf`;
+
+    if (share) {
+      const shared = await sharePdfOrSave(pdf, filename, 'קבלת תשלום', `קבלה עבור ${g.name||''}, דירה ${g.apt} — ${catTitle}`);
+      if (shared) showToast('💬 הקבלה נשלחה לשיתוף');
+    } else {
+      pdf.save(filename);
+      showToast('🧾 קבלה הורדה בהצלחה');
+    }
+    logAnalyticsEvent('receipt_generated', { category: g.category, shared: share });
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+  finally { receiptGenerationInProgress = false; }
+};
+
 // ===== EXPENSES =====
 let allExpenses = [];
 let unsubExpenses = null;
@@ -5186,19 +5500,13 @@ function renderBalance() {
   const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
   const {
     totalCollected, cashCollected, transferCollected,
+    vaadCollected, vaadCashCollected, vaadTransferCollected,
+    chargingCollected, exceptionalOwnerCollected, exceptionalRenterCollected,
     totalExpenses, cashExpenses, bankExpenses,
     totalDeposits, bankBalance, cashBalance, balance
   } = computeBalanceFigures(balPaymentsAll, allExpenses, balDepositsAll, openingBalance, cashOpeningBalance);
   const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
   const balIcon = balance >= 0 ? '📈' : '📉';
-
-  // פירוט גבייה לפי קטגוריה (טעינה חשמלית / גבייה חריגה בעלים / גבייה
-  // חריגה שוכרים) — מבוסס על שדות category ו-payerType שכבר נשמרים על כל
-  // תשלום (ראה savePayment). תשלומי "ועד" רגילים (כולל תשלומים ישנים בלי
-  // category כלל) לא נכללים כאן — הם כבר חלק מ-totalCollected הכללי למעלה.
-  const chargingCollected = balPaymentsAll.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalOwnerCollected = balPaymentsAll.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalRenterCollected = balPaymentsAll.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
   // Group expenses by category
   const byCat = {};
@@ -5208,22 +5516,43 @@ function renderBalance() {
   const catIcons = EXPENSE_CATEGORY_ICONS;
 
   let html = '<div style="padding:16px;">';
-  // כותרת ראשית — סה"כ גבייה (כולל את יתרת הבנק ויתרת המזומן שמפורטות מתחתיה)
+  // כותרת ראשית — סה"כ גבייה (כולל את יתרת הבנק ויתרת המזומן שמפורטות מתחתיה).
+  // מורכב מ-5 רכיבים המפורטים בכרטיס "פירוט גבייה" למטה: הועבר לבנק/מזומן
+  // שנגבה (ועד בית שוטף בלבד) + גבייה חריגה בעלים/שוכרים + גבייה טעינה.
   html += '<div class="card" style="margin-bottom:16px;text-align:center;">'
     + '<div style="font-size:14px;color:var(--gray-600);margin-bottom:8px;">💰 סה"כ גבייה</div>'
     + '<div style="font-size:36px;font-weight:800;color:var(--green);">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div>'
     + '</div>';
 
-  // יתרת בנק | יתרת מזומן
+  // יתרת בנק | יתרת מזומן (יתרות אמיתיות — כוללות את כל הכסף בפועל, מכל הקטגוריות)
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
     + '<div class="stat-card"><div class="stat-value" style="color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';">₪'+bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">🏦 יתרת בנק</div></div>'
     + '<div class="stat-card"><div class="stat-value" style="color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">💵 יתרת מזומן</div></div>'
     + '</div>';
 
-  // הועבר לבנק | מזומן שנגבה — ישירות מתחת ליתרות המתאימות
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
-    + '<div class="stat-card"><div class="stat-value green">₪'+transferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">💳 הועבר לבנק</div></div>'
-    + '<div class="stat-card"><div class="stat-value green">₪'+cashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">💵 מזומן שנגבה</div></div>'
+  // פירוט גבייה — 5 השורות שמרכיבות יחד את "סה"כ גבייה" למעלה. "הועבר
+  // לבנק"/"מזומן שנגבה" כאן הם דמי ועד שוטפים בלבד (לא כוללים טעינה/גבייה
+  // חריגה) — כדי לא לערבב בין הגבייה החודשית השוטפת לגבייה החריגה/טעינה.
+  html += '<div class="card" style="margin-bottom:16px;">'
+    + '<div style="font-weight:700;margin-bottom:10px;">פירוט גבייה</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(ועד שוטף)</span></span><span style="font-weight:700;color:var(--green);">₪'+vaadTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(ועד שוטף)</span></span><span style="font-weight:700;color:var(--green);">₪'+vaadCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">👑 גבייה חריגה - בעלים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalOwnerCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">🔑 גבייה חריגה - שוכרים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalRenterCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
+    + '<span style="font-size:13px;">🔌 גבייה טעינה חשמלית</span><span style="font-weight:700;color:var(--blue);">₪'+chargingCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:4px;border-top:2px solid var(--gray-200);">'
+    + '<span style="font-size:13px;font-weight:700;">סה"כ</span><span style="font-weight:800;">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
     + '</div>';
 
   if (openingBalance || cashOpeningBalance) {
@@ -5234,24 +5563,6 @@ function renderBalance() {
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
       + '<span>💵 מזומן: ₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+fmtDateDMY(buildingData.cashOpeningBalanceDate)+')' : '')+'</span>'
-      + '</div>'
-      + '</div>';
-  }
-
-  // פירוט גבייה טעינה חשמלית / גבייה חריגה (בעלים ושוכרים בנפרד) — כבר
-  // כלולות בסה"כ הגבייה למעלה (ולכן גם ביתרות הבנק/מזומן); הכרטיס הזה רק
-  // מבהיר כמה מתוך הסכום הכולל מקורו בכל אחת משלוש הקטגוריות המיוחדות.
-  if (chargingCollected || exceptionalOwnerCollected || exceptionalRenterCollected) {
-    html += '<div class="card" style="margin-bottom:16px;">'
-      + '<div style="font-weight:700;margin-bottom:10px;">פירוט גבייה חריגה וטעינה</div>'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
-      + '<span style="font-size:13px;">🔌 גבייה טעינה</span><span style="font-weight:700;color:var(--blue);">₪'+chargingCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
-      + '</div>'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
-      + '<span style="font-size:13px;">👑 גבייה חריגה - בעלים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalOwnerCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
-      + '</div>'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
-      + '<span style="font-size:13px;">🔑 גבייה חריגה - שוכרים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalRenterCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
       + '</div>'
       + '</div>';
   }
@@ -5441,7 +5752,10 @@ function buildForecastSeries(startingBalance, monthlyIncome, recurringMonthlyAvg
   let balance = startingBalance;
 
   const curYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-  const collectedThisMonth = balPaymentsAll.filter(p => p.month === curYm).reduce((s,p) => s + (p.amount||0), 0);
+  // רק דמי ועד שוטפים נספרים מול יעד ההכנסה החודשית — תשלומי טעינה/גבייה
+  // חריגה לא אמורים "לכסות" את יעד הגבייה השוטפת (הם כבר נספרים בנפרד
+  // ביתרה הנוכחית עצמה, דרך computeBalanceFigures).
+  const collectedThisMonth = balPaymentsAll.filter(p => p.month === curYm && isVaadPayment(p)).reduce((s,p) => s + (p.amount||0), 0);
   const remainingIncome = Math.max(0, monthlyIncome - collectedThisMonth);
 
   const catAverages = computeRecurringCategoryAverages();
@@ -5638,11 +5952,16 @@ window.exportExcel = async () => {
       where('month', '>=', `${year}-01`),
       where('month', '<=', `${year}-12`)
     ));
+    // גיליון "תשלומים" מציג רק דמי ועד שוטפים — טעינה/גבייה חריגה מסוכמות
+    // בנפרד בגיליון "מאזן" (chargingCollectedYear וכו').
+    const yearPayments = paySnap.docs.map(d => d.data());
     const paymentMap = {};
-    paySnap.docs.forEach(d => {
-      const p = d.data();
+    yearPayments.filter(isVaadPayment).forEach(p => {
       paymentMap[`${p.apt}_${p.month}`] = p;
     });
+    const chargingCollectedYear = yearPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+    const exceptionalOwnerCollectedYear = yearPayments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
+    const exceptionalRenterCollectedYear = yearPayments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
     const expSnap = await getDocs(query(
       collection(db, 'buildings', buildingId, 'expenses'),
@@ -5675,9 +5994,9 @@ window.exportExcel = async () => {
     let grandTotal = 0;
     for (let m = 0; m < 12; m++) {
       const ym = `${year}-${String(m+1).padStart(2,'0')}`;
-      const monthTotal = paySnap.docs
-        .filter(d => d.data().month === ym)
-        .reduce((s,d) => s + (d.data().amount||0), 0);
+      const monthTotal = yearPayments
+        .filter(p => p.month === ym && isVaadPayment(p))
+        .reduce((s,p) => s + (p.amount||0), 0);
       totalRow.push(monthTotal);
       grandTotal += monthTotal;
     }
@@ -5765,9 +6084,11 @@ window.exportExcel = async () => {
     const monthlyRows = [];
     for (let m = 0; m < 12; m++) {
       const ym = `${year}-${String(m+1).padStart(2,'0')}`;
-      const monthCollected = paySnap.docs
-        .filter(d => d.data().month === ym)
-        .reduce((s,d) => s + (d.data().amount||0), 0);
+      // גבייה חודשית כאן = הכל (ועד שוטף + טעינה + גבייה חריגה), כדי שההפרש
+      // מול ההוצאות ישקף את התזרים האמיתי של החודש, לא רק את דמי הועד.
+      const monthCollected = yearPayments
+        .filter(p => p.month === ym)
+        .reduce((s,p) => s + (p.amount||0), 0);
       const monthExpenses = expByMonth[ym] || 0;
       monthlyRows.push([months[m], monthCollected, monthExpenses, monthCollected - monthExpenses]);
     }
@@ -5782,13 +6103,18 @@ window.exportExcel = async () => {
       ['יתרת קופת מזומן (נוכחית)', cashBalanceAll],
       ['יתרה כוללת', balance],
       [], [],
-      [`סה"כ גבייה (${year})`, totalCollected],
+      [`סה"כ גבייה — ועד בית שוטף (${year})`, totalCollected],
+      [`🔌 גבייה טעינה חשמלית (${year})`, chargingCollectedYear],
+      [`👑 גבייה חריגה - בעלים (${year})`, exceptionalOwnerCollectedYear],
+      [`🔑 גבייה חריגה - שוכרים (${year})`, exceptionalRenterCollectedYear],
+      [`סה"כ גבייה — הכל (${year})`, totalCollected + chargingCollectedYear + exceptionalOwnerCollectedYear + exceptionalRenterCollectedYear],
+      [], [],
       [`סה"כ הוצאות (${year})`, totalExpenses],
       [`מתוכן הוצאות מהבנק (${year})`, bankExpensesYear],
       [`מתוכן הוצאות במזומן (${year})`, cashExpensesYear],
       [], [],
       ['פירוט חודשי', `${year}`],
-      ['חודש', 'גבייה', 'הוצאות', 'הפרש'],
+      ['חודש', 'גבייה (הכל)', 'הוצאות', 'הפרש'],
       ...monthlyRows
     ];
     const balSheet = XLSX.utils.aoa_to_sheet(balSheetData);
@@ -6020,12 +6346,17 @@ async function createPDFReport() {
     where('month', '>=', `${year}-01`),
     where('month', '<=', `${year}-12`)
   ));
+  // טבלת ה-✓/-  מציגה רק תשלומי ועד שוטפים — תשלומי טעינה/גבייה חריגה
+  // מוצגים בנפרד בסיכום למטה (chargingCollectedYear וכו'), לא כ"✓" בטבלה.
+  const yearPayments = paySnap.docs.map(d => d.data());
   const paymentMap = {};
-  paySnap.docs.forEach(d => {
-    const p = d.data();
+  yearPayments.filter(isVaadPayment).forEach(p => {
     const key = p.apt + '_' + p.month;
     paymentMap[key] = p;
   });
+  const chargingCollectedYear = yearPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerCollectedYear = yearPayments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalRenterCollectedYear = yearPayments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
   const months = HEBREW_MONTHS;
   
@@ -6178,7 +6509,13 @@ async function createPDFReport() {
       <div class="summary">
         ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.openingBalanceDate)}</span>` : ''}</div>` : ''}
         ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.cashOpeningBalanceDate)}</span>` : ''}</div>` : ''}
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הכנסות:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה — ועד בית שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        ${(chargingCollectedYear || exceptionalOwnerCollectedYear || exceptionalRenterCollectedYear) ? `
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה — הכל:</span><span dir="ltr">₪${(totalCollected+chargingCollectedYear+exceptionalOwnerCollectedYear+exceptionalRenterCollectedYear).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        ` : ''}
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות במזומן:</span><span dir="ltr">₪${cashExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -6252,10 +6589,16 @@ async function createMonthlyPDFReport() {
   // every multi-word label in this report.
   const monthLblNbsp = monthLbl.replace(/ /g, '\u00A0');
 
-  // תשלומי החודש
+  // תשלומי החודש — טבלת "מי שילם" מציגה רק דמי ועד שוטפים (isVaadPayment);
+  // טעינה/גבייה חריגה מסוכמות בנפרד למטה, לא מוצגות כ"✓ שולם" כאן.
   const paySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','==', ym)));
+  const monthPayments = paySnap.docs.map(d => d.data());
+  const vaadMonthPayments = monthPayments.filter(isVaadPayment);
   const paymentMap = {};
-  paySnap.docs.forEach(d => { const p = d.data(); paymentMap[p.apt] = p; });
+  vaadMonthPayments.forEach(p => { paymentMap[p.apt] = p; });
+  const chargingCollectedMonth = monthPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerCollectedMonth = monthPayments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalRenterCollectedMonth = monthPayments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
   const residents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
   let totalCollected = 0, paidCount = 0;
@@ -6276,7 +6619,7 @@ async function createMonthlyPDFReport() {
     </tr>`;
   }).join('');
 
-  const { cash: cashCollectedMonth, bank: bankCollectedMonth } = splitCashBank(paySnap.docs.map(d => d.data()));
+  const { cash: cashCollectedMonth, bank: bankCollectedMonth } = splitCashBank(vaadMonthPayments);
 
   // הוצאות החודש
   const expSnap = await getDocs(query(
@@ -6318,7 +6661,10 @@ async function createMonthlyPDFReport() {
     cumDepSnap.docs.map(d => d.data()),
     openingBalance, cashOpeningBalance
   );
-  const monthNet = totalCollected - totalExpenses;
+  // מאזן החודש חייב לשקף את כל הכסף שנכנס בפועל (ועד שוטף + טעינה + גבייה
+  // חריגה), לא רק את דמי הועד השוטפים — אחרת "מאזן החודש" לא יתאים ליתרה
+  // המצטברת בפועל (בנק+מזומן) שמוצגת מתחת.
+  const monthNet = (totalCollected + chargingCollectedMonth + exceptionalOwnerCollectedMonth + exceptionalRenterCollectedMonth) - totalExpenses;
 
   const html = `
     <html><head><meta charset="utf-8"/><style>
@@ -6353,9 +6699,15 @@ async function createMonthlyPDFReport() {
       <tbody>${catRowsHtml}</tbody></table>
 
       <div class="summary">
-        <div class="summary-line"><span class="total">סה"כ נגבה החודש:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total">סה"כ נגבה החודש — ועד שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן העברות/בנק:</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מזומן:</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        ${(chargingCollectedMonth || exceptionalOwnerCollectedMonth || exceptionalRenterCollectedMonth) ? `
+        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total">סה"כ נגבה החודש — הכל:</span><span dir="ltr">₪${(totalCollected+chargingCollectedMonth+exceptionalOwnerCollectedMonth+exceptionalRenterCollectedMonth).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        ` : ''}
         <div class="summary-line"><span class="total">סה"כ הוצאות החודש:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מהבנק:</span><span dir="ltr">₪${bankExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מזומן:</span><span dir="ltr">₪${cashExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
@@ -6444,11 +6796,15 @@ async function createSemiAnnualPDFReport() {
     where('month', '>=', fromYm),
     where('month', '<=', toYm)
   ));
+  // רק דמי ועד שוטפים בטבלת "מי שילם" — טעינה/גבייה חריגה מסוכמות בנפרד למטה.
+  const halfPayments = paySnap.docs.map(d => d.data());
   const paymentMap = {};
-  paySnap.docs.forEach(d => {
-    const p = d.data();
+  halfPayments.filter(isVaadPayment).forEach(p => {
     paymentMap[p.apt + '_' + p.month] = p;
   });
+  const chargingCollectedHalf = halfPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerCollectedHalf = halfPayments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalRenterCollectedHalf = halfPayments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
   let tableRows = '';
   let totalCollected = 0;
@@ -6519,7 +6875,7 @@ async function createSemiAnnualPDFReport() {
     openingBalance, cashOpeningBalance
   );
 
-  const periodNet = totalCollected - totalExpenses;
+  const periodNet = (totalCollected + chargingCollectedHalf + exceptionalOwnerCollectedHalf + exceptionalRenterCollectedHalf) - totalExpenses;
 
   const html = `
     <html>
@@ -6602,7 +6958,13 @@ async function createSemiAnnualPDFReport() {
       </table>
 
       <div class="summary">
-        <div class="summary-line"><span class="total">סה"כ הכנסות בתקופה:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total">סה"כ גבייה בתקופה — ועד שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        ${(chargingCollectedHalf || exceptionalOwnerCollectedHalf || exceptionalRenterCollectedHalf) ? `
+        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total">סה"כ גבייה בתקופה — הכל:</span><span dir="ltr">₪${(totalCollected+chargingCollectedHalf+exceptionalOwnerCollectedHalf+exceptionalRenterCollectedHalf).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        ` : ''}
         <div class="summary-line"><span class="total">סה"כ הוצאות בתקופה:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות במזומן:</span><span dir="ltr">₪${cashExpensesHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -6670,7 +7032,9 @@ async function renderHistoryGrid(apt, name, fee) {
   const paidMonths = {};
   snap.docs.forEach(d => {
     const p = d.data();
-    if (p.month && p.month.startsWith(String(year))) paidMonths[p.month] = { id: d.id, ...p };
+    // רק תשלומי ועד שוטפים — תשלומי טעינה/גבייה חריגה לא אמורים לסמן חודש
+    // כ"שולם" ברשת דמי הועד (יש להם מסך נפרד: חריגים וטעינה חשמלית).
+    if (p.month && p.month.startsWith(String(year)) && isVaadPayment(p)) paidMonths[p.month] = { id: d.id, ...p };
   });
   _histPaidMonthsCache = paidMonths;
   const unpaidMonthsList = []; // ym-ים של חודשים שעברו/נוכחיים ולא שולמו — לכפתור תזכורת וואטסאפ
