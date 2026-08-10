@@ -2018,7 +2018,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.9'; // תוקן: "גבייה חריגה - בעלים" הציגה רק דירות עם ownershipType='owner', ולכן דירות מושכרות (עם בעלים שרשום בשדה נפרד) לא הופיעו כלל. עכשיו מוצגות כל הדירות — לדירה מושכרת מוצג ומשמש שם הבעלים הרשום (ownerName), לא שם השוכר הגר בפועל. נוספה חסימה אם לא הוזן שם בעלים לדירה מושכרת.
+const APP_VERSION = '2.11.10'; // בטאב מאזן: כרטיס "פירוט גבייה חריגה וטעינה" מציג עכשיו 3 שורות נפרדות — גבייה טעינה, גבייה חריגה בעלים, גבייה חריגה שוכרים (מבוסס על payerType) — במקום שני כרטיסים ("גבייה טעינה"/"גבייה חריגה" מאוחדת) כמו קודם.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5192,12 +5192,13 @@ function renderBalance() {
   const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
   const balIcon = balance >= 0 ? '📈' : '📉';
 
-  // פירוט גבייה לפי קטגוריה (טעינה חשמלית / גבייה חריגה) — מבוסס על שדה
-  // category שכבר נשמר על כל תשלום (ראה savePayment). תשלומי "ועד" רגילים
-  // (כולל תשלומים ישנים בלי category כלל) לא נכללים כאן — הם כבר חלק
-  // מ-totalCollected הכללי למעלה.
+  // פירוט גבייה לפי קטגוריה (טעינה חשמלית / גבייה חריגה בעלים / גבייה
+  // חריגה שוכרים) — מבוסס על שדות category ו-payerType שכבר נשמרים על כל
+  // תשלום (ראה savePayment). תשלומי "ועד" רגילים (כולל תשלומים ישנים בלי
+  // category כלל) לא נכללים כאן — הם כבר חלק מ-totalCollected הכללי למעלה.
   const chargingCollected = balPaymentsAll.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalCollected = balPaymentsAll.filter(p => p.category === 'exceptional').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerCollected = balPaymentsAll.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalRenterCollected = balPaymentsAll.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
   // Group expenses by category
   const byCat = {};
@@ -5237,13 +5238,21 @@ function renderBalance() {
       + '</div>';
   }
 
-  // גבייה טעינה חשמלית | גבייה חריגה — פירוט הגבייה לפי הקטגוריות המיוחדות,
-  // כבר כלולות בסה"כ הגבייה למעלה (ולכן גם ביתרות הבנק/מזומן) — הכרטיסים
-  // האלה רק מבהירים כמה מתוך הסכום הכולל מקורו בכל קטגוריה.
-  if (chargingCollected || exceptionalCollected) {
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
-      + '<div class="stat-card"><div class="stat-value" style="color:var(--blue);">₪'+chargingCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">🔌 גבייה טעינה</div></div>'
-      + '<div class="stat-card"><div class="stat-value" style="color:var(--orange);">₪'+exceptionalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">👑 גבייה חריגה</div></div>'
+  // פירוט גבייה טעינה חשמלית / גבייה חריגה (בעלים ושוכרים בנפרד) — כבר
+  // כלולות בסה"כ הגבייה למעלה (ולכן גם ביתרות הבנק/מזומן); הכרטיס הזה רק
+  // מבהיר כמה מתוך הסכום הכולל מקורו בכל אחת משלוש הקטגוריות המיוחדות.
+  if (chargingCollected || exceptionalOwnerCollected || exceptionalRenterCollected) {
+    html += '<div class="card" style="margin-bottom:16px;">'
+      + '<div style="font-weight:700;margin-bottom:10px;">פירוט גבייה חריגה וטעינה</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+      + '<span style="font-size:13px;">🔌 גבייה טעינה</span><span style="font-weight:700;color:var(--blue);">₪'+chargingCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+      + '<span style="font-size:13px;">👑 גבייה חריגה - בעלים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalOwnerCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
+      + '<span style="font-size:13px;">🔑 גבייה חריגה - שוכרים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalRenterCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
       + '</div>';
   }
 
