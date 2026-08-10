@@ -987,7 +987,8 @@
       <select class="form-select" id="p-category" onchange="onPaymentCategoryChange()">
         <option value="vaad">🏠 ועד בית</option>
         <option value="charging">🔌 טעינה חשמלית</option>
-        <option value="exceptional">👑 גבייה חריגה</option>
+        <option value="exceptional_owner">👑 גבייה חריגה - בעלים</option>
+        <option value="exceptional_renter">🔑 גבייה חריגה - שוכרים</option>
       </select>
       <div id="p-category-note" style="font-size:11px;color:var(--gray-500);margin-top:4px;display:none;"></div>
     </div>
@@ -1272,7 +1273,7 @@
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
         <label class="form-label">👑 גבייה חריגה</label>
-        <div style="font-size:12px;color:var(--gray-500);">תשלום עבור כמה חודשים בבת אחת (לדוגמה: דייר שהעביר בפברואר תשלום המכסה יולי-דצמבר של השנה הקודמת) — זמין דרך "➕ הוסף תשלום" למעלה, בבחירת "גבייה חריגה" בסוג התשלום. זמין לכל דירה — מתויג אוטומטית כגבייה משוכר 🔑 או מבעלים 🏠 לפי סטטוס המגורים של הדירה.</div>
+        <div style="font-size:12px;color:var(--gray-500);">תשלום עבור כמה חודשים בבת אחת (לדוגמה: דייר שהעביר בפברואר תשלום המכסה יולי-דצמבר של השנה הקודמת) — זמין דרך "➕ הוסף תשלום" למעלה, בבחירת "גבייה חריגה - בעלים" או "גבייה חריגה - שוכרים" בסוג התשלום (כל אחת מציגה רק דירות מהסוג המתאים).</div>
       </div>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div style="display:flex;gap:8px;">
@@ -2017,7 +2018,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.7'; // "גבייה חריגה" הוסרה ההגבלה ל"בעלים בלבד" — פתוחה עכשיו לכל דירה, עם תיוג אוטומטי ממי בפועל נגבה הסכום: שוכר 🔑 (שם השוכר עצמו, עם פרטי הבעלים הרשום כמידע נלווה) או בעלים 🏠 (שם הבעלים הגר בדירה). שדה payerType נשמר על כל תשלום/רשומת יומן.
+const APP_VERSION = '2.11.8'; // תוקן: "גבייה חריגה" חוזרת להיות שתי אפשרויות נפרדות בתפריט "סוג תשלום" — "גבייה חריגה - בעלים" ו"גבייה חריגה - שוכרים" — כל אחת מסננת מראש רק את הדירות מהסוג המתאים ומציגה את שם המשלם הרלוונטי (שוכר/בעלים) מתחת לבחירת הדירה. ב-Firestore עדיין נשמר category:'exceptional' אחיד (לצורך תאימות לחישוב בטאב מאזן) + שדה payerType נפרד.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3978,54 +3979,42 @@ window.sendBulkPaymentReminder = async (apt) => {
 };
 
 // זכאות דירה לכל סוג תשלום: "ועד" פתוח לכולם, "טעינה חשמלית" רק לדירות עם
-// עמדת טעינה של הבניין (chargingStation==='building'). "גבייה חריגה" פתוחה
-// לכל דירה (גם בעלים וגם שוכרים) — ראה paymentPayerInfo() למטה לתיוג ממי
-// בפועל נגבה הסכום בכל מקרה.
+// עמדת טעינה של הבניין (chargingStation==='building'). "גבייה חריגה"
+// מתפצלת לשני סוגים נפרדים בתפריט — בעלים ושוכרים — כל אחד מסנן רק את
+// הדירות מהסוג המתאים (דיירים ישנים בלי ownershipType נחשבים "בעלים",
+// שזו ברירת המחדל ההיסטורית של הטופס).
 function eligibleResidentsForPaymentCategory(category) {
   if (category === 'charging') return allResidents.filter(r => r.chargingStation === 'building');
+  if (category === 'exceptional_owner') return allResidents.filter(r => (r.ownershipType || 'owner') !== 'renter');
+  if (category === 'exceptional_renter') return allResidents.filter(r => r.ownershipType === 'renter');
   return allResidents;
 }
 function residentEligibleForPaymentCategory(resident, category) {
   if (!resident) return false;
   if (category === 'charging') return resident.chargingStation === 'building';
+  if (category === 'exceptional_owner') return (resident.ownershipType || 'owner') !== 'renter';
+  if (category === 'exceptional_renter') return resident.ownershipType === 'renter';
   return true;
 }
 
-// עבור "גבייה חריגה" — קובע ממי בפועל נגבה הסכום ואיזה שם מתויג: לדירת
-// שכירות (ownershipType==='renter') הגבייה היא מהשוכר עצמו — ר' name הוא
-// שם השוכר הגר בדירה, ו-ownerName/ownerPhone הם פרטי הבעלים לצורך יידוע
-// בלבד. לדירת בעלות — ר' name הוא כבר שם הבעלים הגר בדירה. דיירים ישנים
-// בלי ownershipType נחשבים "בעלים" (ברירת המחדל ההיסטורית של הטופס).
-function paymentPayerInfo(resident) {
-  if (!resident) return null;
-  const isRenter = (resident.ownershipType || 'owner') === 'renter';
-  return {
-    isRenter,
-    tag: isRenter ? 'שוכר' : 'בעלים',
-    payerName: resident.name || '',
-    ownerName: resident.ownerName || null,
-    ownerPhone: resident.ownerPhone || null
-  };
-}
-
-// מציג מתחת לבחירת הדירה מי בפועל ייגבה (שוכר/בעלים) — רלוונטי רק ל"גבייה
-// חריגה". לדירת שכירות מוסיף גם את פרטי הבעלים הרשום, כדי שהמנהל יידע איתו
-// ליצור קשר במקרה הצורך.
+// מציג מתחת לבחירת הדירה את שם מי שבאמת נגבה ממנו — שם השוכר (בסוג
+// "שוכרים") או שם הבעלים (בסוג "בעלים"). ברשימת "שוכרים" מוסיף גם את פרטי
+// הבעלים הרשום (ownerName/ownerPhone), כדי שהמנהל יידע איתו ליצור קשר
+// במקרה הצורך.
 function updatePaymentPayerNote() {
   const noteEl = document.getElementById('p-payer-note');
   if (!noteEl) return;
   const category = document.getElementById('p-category').value;
-  if (category !== 'exceptional') { noteEl.style.display = 'none'; return; }
+  if (!category.startsWith('exceptional')) { noteEl.style.display = 'none'; return; }
   const sel = document.getElementById('p-apt');
   const resident = allResidents.find(x => x.apt === parseInt(sel.value));
-  const info = paymentPayerInfo(resident);
-  if (!info) { noteEl.style.display = 'none'; return; }
+  if (!resident) { noteEl.style.display = 'none'; return; }
   noteEl.style.display = 'block';
-  if (info.isRenter) {
-    noteEl.innerHTML = '🔑 גבייה משוכר: <strong>' + info.payerName + '</strong>'
-      + (info.ownerName ? '<br/>🏠 בעלים רשום: ' + info.ownerName + (info.ownerPhone ? ' • ' + info.ownerPhone : '') : '');
+  if (category === 'exceptional_renter') {
+    noteEl.innerHTML = '🔑 גבייה משוכר: <strong>' + (resident.name || '') + '</strong>'
+      + (resident.ownerName ? '<br/>🏠 בעלים רשום: ' + resident.ownerName + (resident.ownerPhone ? ' • ' + resident.ownerPhone : '') : '');
   } else {
-    noteEl.innerHTML = '🏠 גבייה מבעלים: <strong>' + info.payerName + '</strong>';
+    noteEl.innerHTML = '🏠 גבייה מבעלים: <strong>' + (resident.name || '') + '</strong>';
   }
 }
 
@@ -4039,14 +4028,11 @@ function buildPaymentModalForCategory(category) {
   if (!eligible.length) {
     sel.innerHTML = '<option value="">— אין דירות מתאימות —</option>';
   } else {
-    sel.innerHTML = eligible.map(r => {
-      const tag = category === 'exceptional' ? ((r.ownershipType || 'owner') === 'renter' ? ' 🔑' : ' 🏠') : '';
-      return `<option value="${r.apt}">${r.apt} - ${r.name}${tag}</option>`;
-    }).join('');
+    sel.innerHTML = eligible.map(r => `<option value="${r.apt}">${r.apt} - ${r.name}</option>`).join('');
     if (eligible.some(r => String(r.apt) === prevAptStr)) sel.value = prevAptStr;
   }
 
-  const isExceptional = category === 'exceptional';
+  const isExceptional = category.startsWith('exceptional');
   const titleEl = document.getElementById('modal-payment-title');
   const monthLabelEl = document.getElementById('p-month-label');
   const amountLabelEl = document.getElementById('p-amount-label');
@@ -4055,7 +4041,8 @@ function buildPaymentModalForCategory(category) {
   const noteEl = document.getElementById('p-category-note');
 
   if (category === 'charging') titleEl.textContent = 'רשום תשלום טעינה חשמלית';
-  else if (category === 'exceptional') titleEl.textContent = 'הוסף גבייה חריגה';
+  else if (category === 'exceptional_owner') titleEl.textContent = 'הוסף גבייה חריגה - בעלים';
+  else if (category === 'exceptional_renter') titleEl.textContent = 'הוסף גבייה חריגה - שוכרים';
   else titleEl.textContent = 'רשום תשלום ועד';
 
   if (!eligible.length) {
@@ -4063,15 +4050,21 @@ function buildPaymentModalForCategory(category) {
     noteEl.style.color = 'var(--red)';
     noteEl.textContent = category === 'charging'
       ? '⚠️ אין בבניין דירה שמוגדרת עם עמדת טעינה של הבניין (ניתן להגדיר בכרטיס הדייר)'
+      : category === 'exceptional_owner' ? '⚠️ אין בבניין דירה בבעלות (לא בשכירות)'
+      : category === 'exceptional_renter' ? '⚠️ אין בבניין דירה בשכירות'
       : '';
   } else if (category === 'charging') {
     noteEl.style.display = 'block';
     noteEl.style.color = 'var(--gray-500)';
     noteEl.textContent = '🔌 מוצגות רק דירות עם עמדת טעינה של הבניין';
-  } else if (category === 'exceptional') {
+  } else if (category === 'exceptional_owner') {
     noteEl.style.display = 'block';
     noteEl.style.color = 'var(--gray-500)';
-    noteEl.textContent = '👑 זמין לכל דירה — 🔑 = גבייה מהשוכר, 🏠 = גבייה מהבעלים (מתויג אוטומטית לפי הדירה שנבחרה)';
+    noteEl.textContent = '🏠 מוצגות רק דירות בבעלות (לא בשכירות)';
+  } else if (category === 'exceptional_renter') {
+    noteEl.style.display = 'block';
+    noteEl.style.color = 'var(--gray-500)';
+    noteEl.textContent = '🔑 מוצגות רק דירות בשכירות';
   } else {
     noteEl.style.display = 'none';
   }
@@ -4130,8 +4123,8 @@ window.openAddPayment = (category) => {
 };
 
 window.savePayment = async () => {
-  const category = document.getElementById('p-category').value; // 'vaad' | 'charging' | 'exceptional'
-  const isExceptional = category === 'exceptional';
+  const category = document.getElementById('p-category').value; // 'vaad' | 'charging' | 'exceptional_owner' | 'exceptional_renter'
+  const isExceptional = category.startsWith('exceptional');
   const apt = parseInt(document.getElementById('p-apt').value);
   const fromMonth = document.getElementById('p-month').value;
   const amount = parseFloat(document.getElementById('p-amount').value);
@@ -4145,7 +4138,8 @@ window.savePayment = async () => {
   if (!residentEligibleForPaymentCategory(resident, category)) {
     showToast(category === 'charging'
       ? '⚠️ ניתן לרשום תשלום טעינה חשמלית רק לדירה עם עמדת טעינה של הבניין'
-      : '⚠️ ניתן לרשום גבייה חריגה רק לדירה בבעלות (לא בשכירות)');
+      : category === 'exceptional_owner' ? '⚠️ ניתן לרשום גבייה חריגה - בעלים רק לדירה בבעלות (לא בשכירות)'
+      : '⚠️ ניתן לרשום גבייה חריגה - שוכרים רק לדירה בשכירות');
     return;
   }
 
@@ -4189,7 +4183,7 @@ window.savePayment = async () => {
     return;
   }
 
-  // Exceptional multi-month transfer (גבייה חריגה — רק לדירות בבעלות)
+  // Exceptional multi-month transfer (גבייה חריגה — בעלים/שוכרים)
   const toMonth = document.getElementById('p-month-to').value;
   const actualDateStr = document.getElementById('p-actual-date').value;
   if (!toMonth || !actualDateStr) { showToast('חובה למלא עד חודש ותאריך העברה בפועל'); return; }
@@ -4200,11 +4194,14 @@ window.savePayment = async () => {
   const roundedTotal = Math.round(perMonth * (months.length - 1) * 100) / 100;
   const lastMonthAmount = Math.round((amount - roundedTotal) * 100) / 100; // absorb rounding remainder
 
-  // תיוג ממי בפועל נגבתה הגבייה החריגה — שוכר או בעלים (ראה paymentPayerInfo).
-  // נשמר על כל מסמך תשלום כדי שיישאר גלוי בהיסטוריית הדייר וביומן הפעולות
-  // גם בלי צורך לחזור ולבדוק את סטטוס המגורים הנוכחי של הדירה.
-  const payerInfo = paymentPayerInfo(resident);
-  const payerTag = payerInfo?.isRenter ? 'שוכר' : 'בעלים';
+  // התיוג נגזר מהבחירה עצמה בסוג התשלום (בעלים/שוכרים) — לא מנחשים לפי
+  // סטטוס המגורים הנוכחי של הדירה, כי הרשימה כבר סוננה מראש לפי הבחירה.
+  // category הכללי שנשמר ב-Firestore הוא תמיד 'exceptional' (לצורך התאמה
+  // לחישוב "גבייה חריגה" בטאב המאזן) — payerType הוא מה שמבחין בפועל בין
+  // בעלים לשוכרים.
+  const payerType = category === 'exceptional_renter' ? 'renter' : 'owner';
+  const payerTag = payerType === 'renter' ? 'שוכר' : 'בעלים';
+  const storedCategory = 'exceptional';
 
   try {
     const actualDate = Timestamp.fromDate(new Date(actualDateStr));
@@ -4215,22 +4212,22 @@ window.savePayment = async () => {
       batch.set(paymentRef, {
         apt, name: resident?.name || '', amount: monthAmount, month: ym,
         note: note || `גבייה חריגה (${payerTag}) עבור ${months.length} חודשים`,
-        payerType: payerInfo?.isRenter ? 'renter' : 'owner',
-        method, category, paidAt: actualDate, recordedBy: currentUser.uid, exceptionalTransfer: true
+        payerType,
+        method, category: storedCategory, paidAt: actualDate, recordedBy: currentUser.uid, exceptionalTransfer: true
       });
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
-      type: 'payment', apt, name: resident?.name || '', amount, action: 'paid', category,
-      payerType: payerInfo?.isRenter ? 'renter' : 'owner',
+      type: 'payment', apt, name: resident?.name || '', amount, action: 'paid', category: storedCategory,
+      payerType,
       month: `${fromMonth} עד ${toMonth}`, exceptionalTransfer: true, actualDate: actualDateStr,
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
     });
     await batch.commit();
-    showToast(`✅ גבייה חריגה נרשמה עבור ${months.length} חודשים (${payerTag}: ${payerInfo?.payerName || ''})`);
+    showToast(`✅ גבייה חריגה (${payerTag}) נרשמה עבור ${months.length} חודשים`);
     closeModal('modal-payment');
     loadPayments();
-    logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', exceptional: true, category });
+    logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', exceptional: true, category: storedCategory, payerType });
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
