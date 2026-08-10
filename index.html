@@ -1204,10 +1204,10 @@
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
-      <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
+      <button class="btn-primary" style="display:none;background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גביות מיוחדות לתיקונים</button>
-      <button class="btn-primary" style="background:var(--blue-light);color:var(--blue);" onclick="closeAdminFinance();openCategoryPayments();">🔌 חריגים וטעינה חשמלית</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 חריגים וטעינה חשמלית</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateSemiAnnualPDF();">📆 הפק PDF חצי שנתי</button>
@@ -2054,7 +2054,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.12.0'; // הפרדה מלאה בין גבייה שוטפת (דמי ועד) לבין טעינה חשמלית/גבייה חריגה: מסכי מעקב תשלומים (סקירה/רשימה/היסטוריית דייר/איתור כפילויות/תחזית) לא סופרים יותר תשלומי טעינה/חריגה כתשלום דמי ועד. נוסף כפתור+מסך חדש "🔌 חריגים וטעינה חשמלית" תחת ניהול כספים, עם הפקת קבלה נפרדת לכל תשלום. טאב מאזן ודוחות ה-PDF/אקסל עודכנו להציג "סה"כ גבייה" כסכום 5 הרכיבים: הועבר לבנק+מזומן (ועד שוטף), גבייה חריגה בעלים/שוכרים, וטעינה חשמלית.
+const APP_VERSION = '2.12.1'; // כפתור "איתור תשלומים כפולים" הוסתר (display:none) בתפריט ניהול כספים — הקוד/הפונקציונליות נשארו במקום לשימוש עתידי, רק לא מוצג לדייר/מנהל. כפתור "חריגים וטעינה חשמלית" אוחד לצבע הכחול הרגיל של שאר כפתורי התפריט (הוסרה ה-inline style הבהירה שבלטה מהשאר).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
