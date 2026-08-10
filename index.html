@@ -2018,7 +2018,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.11.8'; // תוקן: "גבייה חריגה" חוזרת להיות שתי אפשרויות נפרדות בתפריט "סוג תשלום" — "גבייה חריגה - בעלים" ו"גבייה חריגה - שוכרים" — כל אחת מסננת מראש רק את הדירות מהסוג המתאים ומציגה את שם המשלם הרלוונטי (שוכר/בעלים) מתחת לבחירת הדירה. ב-Firestore עדיין נשמר category:'exceptional' אחיד (לצורך תאימות לחישוב בטאב מאזן) + שדה payerType נפרד.
+const APP_VERSION = '2.11.9'; // תוקן: "גבייה חריגה - בעלים" הציגה רק דירות עם ownershipType='owner', ולכן דירות מושכרות (עם בעלים שרשום בשדה נפרד) לא הופיעו כלל. עכשיו מוצגות כל הדירות — לדירה מושכרת מוצג ומשמש שם הבעלים הרשום (ownerName), לא שם השוכר הגר בפועל. נוספה חסימה אם לא הוזן שם בעלים לדירה מושכרת.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3979,28 +3979,36 @@ window.sendBulkPaymentReminder = async (apt) => {
 };
 
 // זכאות דירה לכל סוג תשלום: "ועד" פתוח לכולם, "טעינה חשמלית" רק לדירות עם
-// עמדת טעינה של הבניין (chargingStation==='building'). "גבייה חריגה"
-// מתפצלת לשני סוגים נפרדים בתפריט — בעלים ושוכרים — כל אחד מסנן רק את
-// הדירות מהסוג המתאים (דיירים ישנים בלי ownershipType נחשבים "בעלים",
-// שזו ברירת המחדל ההיסטורית של הטופס).
+// עמדת טעינה של הבניין (chargingStation==='building'). "גבייה חריגה -
+// בעלים" פתוחה לכל דירה — לכל דירה יש בעלים, בין אם זה הדייר הרשום עצמו
+// (דירת בעלות) ובין אם זה מישהו אחר שרשום בשדה "שם הבעלים" (דירת שכירות).
+// "גבייה חריגה - שוכרים" מוצגת רק לדירות שיש בהן שוכר בפועל
+// (ownershipType==='renter') — אין למי לגבות בתור "שוכר" בדירה שאין בה שוכר.
 function eligibleResidentsForPaymentCategory(category) {
   if (category === 'charging') return allResidents.filter(r => r.chargingStation === 'building');
-  if (category === 'exceptional_owner') return allResidents.filter(r => (r.ownershipType || 'owner') !== 'renter');
   if (category === 'exceptional_renter') return allResidents.filter(r => r.ownershipType === 'renter');
-  return allResidents;
+  return allResidents; // 'vaad' וגם 'exceptional_owner' — כל הדירות
 }
 function residentEligibleForPaymentCategory(resident, category) {
   if (!resident) return false;
   if (category === 'charging') return resident.chargingStation === 'building';
-  if (category === 'exceptional_owner') return (resident.ownershipType || 'owner') !== 'renter';
   if (category === 'exceptional_renter') return resident.ownershipType === 'renter';
   return true;
 }
 
+// שם הבעלים בפועל של דירה: אם היא בשכירות — השם הרשום ב-ownerName (הדייר
+// עצמו הוא השוכר, לא הבעלים); אחרת — שם הדייר הרשום עצמו (הוא הבעלים הגר
+// בדירה). משמש רק עבור category==='exceptional_owner'.
+function paymentOwnerName(resident) {
+  if (!resident) return '';
+  if (resident.ownershipType === 'renter') return resident.ownerName || '';
+  return resident.name || '';
+}
+
 // מציג מתחת לבחירת הדירה את שם מי שבאמת נגבה ממנו — שם השוכר (בסוג
-// "שוכרים") או שם הבעלים (בסוג "בעלים"). ברשימת "שוכרים" מוסיף גם את פרטי
-// הבעלים הרשום (ownerName/ownerPhone), כדי שהמנהל יידע איתו ליצור קשר
-// במקרה הצורך.
+// "שוכרים") או שם הבעלים (בסוג "בעלים", כולל דירות מושכרות שבהן הבעלים
+// אינו הדייר הרשום). ברשימת "שוכרים" מוסיף גם את פרטי הבעלים הרשום, כדי
+// שהמנהל יידע איתו ליצור קשר במקרה הצורך.
 function updatePaymentPayerNote() {
   const noteEl = document.getElementById('p-payer-note');
   if (!noteEl) return;
@@ -4014,7 +4022,15 @@ function updatePaymentPayerNote() {
     noteEl.innerHTML = '🔑 גבייה משוכר: <strong>' + (resident.name || '') + '</strong>'
       + (resident.ownerName ? '<br/>🏠 בעלים רשום: ' + resident.ownerName + (resident.ownerPhone ? ' • ' + resident.ownerPhone : '') : '');
   } else {
-    noteEl.innerHTML = '🏠 גבייה מבעלים: <strong>' + (resident.name || '') + '</strong>';
+    const isRented = resident.ownershipType === 'renter';
+    if (isRented && !resident.ownerName) {
+      noteEl.style.color = 'var(--red)';
+      noteEl.innerHTML = '⚠️ לדירה זו לא הוזן שם בעלים (מוגדרת כדירה בשכירות) — יש להשלים בכרטיס הדייר לפני רישום הגבייה.';
+    } else {
+      noteEl.style.color = '';
+      noteEl.innerHTML = '🏠 גבייה מבעלים: <strong>' + paymentOwnerName(resident) + '</strong>'
+        + (isRented ? '<br/>🔑 מושכרת כרגע ל: ' + (resident.name || '') : '');
+    }
   }
 }
 
@@ -4028,7 +4044,10 @@ function buildPaymentModalForCategory(category) {
   if (!eligible.length) {
     sel.innerHTML = '<option value="">— אין דירות מתאימות —</option>';
   } else {
-    sel.innerHTML = eligible.map(r => `<option value="${r.apt}">${r.apt} - ${r.name}</option>`).join('');
+    sel.innerHTML = eligible.map(r => {
+      const displayName = category === 'exceptional_owner' ? (paymentOwnerName(r) || `${r.name} (⚠️ בעלים לא הוזן)`) : r.name;
+      return `<option value="${r.apt}">${r.apt} - ${displayName}</option>`;
+    }).join('');
     if (eligible.some(r => String(r.apt) === prevAptStr)) sel.value = prevAptStr;
   }
 
@@ -4050,7 +4069,6 @@ function buildPaymentModalForCategory(category) {
     noteEl.style.color = 'var(--red)';
     noteEl.textContent = category === 'charging'
       ? '⚠️ אין בבניין דירה שמוגדרת עם עמדת טעינה של הבניין (ניתן להגדיר בכרטיס הדייר)'
-      : category === 'exceptional_owner' ? '⚠️ אין בבניין דירה בבעלות (לא בשכירות)'
       : category === 'exceptional_renter' ? '⚠️ אין בבניין דירה בשכירות'
       : '';
   } else if (category === 'charging') {
@@ -4060,7 +4078,7 @@ function buildPaymentModalForCategory(category) {
   } else if (category === 'exceptional_owner') {
     noteEl.style.display = 'block';
     noteEl.style.color = 'var(--gray-500)';
-    noteEl.textContent = '🏠 מוצגות רק דירות בבעלות (לא בשכירות)';
+    noteEl.textContent = '🏠 מוצגות כל הדירות — לדירה מושכרת יוצג שם הבעלים הרשום, לא שם השוכר';
   } else if (category === 'exceptional_renter') {
     noteEl.style.display = 'block';
     noteEl.style.color = 'var(--gray-500)';
@@ -4134,11 +4152,11 @@ window.savePayment = async () => {
   const resident = allResidents.find(r => r.apt === apt);
 
   // ולידציית זכאות — הגנה כפולה מעבר לסינון שכבר בוצע ברשימת הבחירה, למקרה
-  // שרשימת הדיירים השתנתה מאז פתיחת הטופס.
+  // שרשימת הדיירים השתנתה מאז פתיחת הטופס. "בעלים" תמיד זכאי (לכל דירה יש
+  // בעלים), לכן הודעה רלוונטית רק ל"טעינה חשמלית" ו"שוכרים".
   if (!residentEligibleForPaymentCategory(resident, category)) {
     showToast(category === 'charging'
       ? '⚠️ ניתן לרשום תשלום טעינה חשמלית רק לדירה עם עמדת טעינה של הבניין'
-      : category === 'exceptional_owner' ? '⚠️ ניתן לרשום גבייה חריגה - בעלים רק לדירה בבעלות (לא בשכירות)'
       : '⚠️ ניתן לרשום גבייה חריגה - שוכרים רק לדירה בשכירות');
     return;
   }
@@ -4198,10 +4216,17 @@ window.savePayment = async () => {
   // סטטוס המגורים הנוכחי של הדירה, כי הרשימה כבר סוננה מראש לפי הבחירה.
   // category הכללי שנשמר ב-Firestore הוא תמיד 'exceptional' (לצורך התאמה
   // לחישוב "גבייה חריגה" בטאב המאזן) — payerType הוא מה שמבחין בפועל בין
-  // בעלים לשוכרים.
+  // בעלים לשוכרים. עבור "בעלים" בדירה מושכרת, השם הנשמר הוא שם הבעלים
+  // הרשום (ownerName) — לא שם הדייר/שוכר הגר בפועל בדירה.
   const payerType = category === 'exceptional_renter' ? 'renter' : 'owner';
   const payerTag = payerType === 'renter' ? 'שוכר' : 'בעלים';
+  const payerName = payerType === 'owner' ? paymentOwnerName(resident) : (resident?.name || '');
   const storedCategory = 'exceptional';
+
+  if (payerType === 'owner' && resident?.ownershipType === 'renter' && !payerName) {
+    showToast('⚠️ לדירה זו לא הוזן שם בעלים — יש להשלים בכרטיס הדייר לפני רישום הגבייה');
+    return;
+  }
 
   try {
     const actualDate = Timestamp.fromDate(new Date(actualDateStr));
@@ -4210,7 +4235,7 @@ window.savePayment = async () => {
       const monthAmount = (i === months.length - 1) ? lastMonthAmount : perMonth;
       const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
       batch.set(paymentRef, {
-        apt, name: resident?.name || '', amount: monthAmount, month: ym,
+        apt, name: payerName, amount: monthAmount, month: ym,
         note: note || `גבייה חריגה (${payerTag}) עבור ${months.length} חודשים`,
         payerType,
         method, category: storedCategory, paidAt: actualDate, recordedBy: currentUser.uid, exceptionalTransfer: true
@@ -4218,7 +4243,7 @@ window.savePayment = async () => {
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
-      type: 'payment', apt, name: resident?.name || '', amount, action: 'paid', category: storedCategory,
+      type: 'payment', apt, name: payerName, amount, action: 'paid', category: storedCategory,
       payerType,
       month: `${fromMonth} עד ${toMonth}`, exceptionalTransfer: true, actualDate: actualDateStr,
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
