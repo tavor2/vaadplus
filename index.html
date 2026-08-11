@@ -1720,17 +1720,19 @@ function fmtDateDMY(dateStr) {
   return `${d}/${m}/${y}`;
 }
 
-// עוטף מספר דירה (למשל "5א") ב-span שכופה סדר תווים חזותי שמאל-לימין
-// פשוטו כמשמעו (bidi-override), לשימוש בטבלאות דוחות PDF שרצות בהקשר RTL.
-// ניסיון קודם עם unicode-bidi:isolate בלבד לא הספיק — html2canvas מיישם
-// גרסה מפושטת של אלגוריתם ה-bidi ועדיין הפך ספרה שאחריה מיד אות עברית
-// ("5א" הוצג כ"א5"), למרות שסדר התווים במחרוזת עצמה תקין. bidi-override
-// מבטל את ההסתמכות על סיווג התווים (ספרה חלשה מול אות RTL חזקה) ופשוט
-// מציג את התווים בדיוק לפי הסדר שהוזן, שמאל-לימין — כך "5" תמיד ראשון
-// (מימין, כנהוג בתווית "5א") ו-"א" אחריו. משמש רק בעמודת "דירה" בדוחות
-// (לא בתוך האפליקציה עצמה שם הבעיה לא נצפתה/דווחה).
+// עוטף מספר דירה (למשל "5א") לשימוש בעמודת "דירה" בטבלאות דוחות PDF שרצות
+// בהקשר RTL. שני ניסיונות קודמים (unicode-bidi:isolate, ואז bidi-override)
+// לא הועילו — כנראה ש-html2canvas מיישם שכבת bidi/עיצוב-טקסט פשוטה משלו
+// שלא מכבדת את תכונות ה-CSS האלה באופן מלא, ועדיין הפך ספרה שאחריה מיד
+// אות עברית ("5א" הוצג כ"א5"), למרות שסדר התווים במחרוזת עצמה תקין.
+// הפתרון כאן לא מסתמך בכלל על bidi/shaping של טקסט: כל תו הופך ל-span
+// עצמאי (inline-block) בתוך מיכל flex בכיוון שמאל-לימין — כך הסדר החזותי
+// נקבע לגמרי ע"י מנגנון הפריסה (flex box layout), ש-html2canvas משכפל
+// באמינות הרבה יותר גבוהה מאשר shaping של ריצת טקסט מעורבת-כיוון. משמש רק
+// בעמודת "דירה" בדוחות (לא בתוך האפליקציה עצמה שם הבעיה לא נצפתה/דווחה).
 function aptDisplay(apt) {
-  return '<span dir="ltr" style="unicode-bidi:bidi-override;display:inline-block;">' + (apt ?? '') + '</span>';
+  const chars = [...String(apt ?? '')].map(ch => '<span style="display:inline-block;">' + ch + '</span>').join('');
+  return '<span style="display:inline-flex;flex-direction:row;direction:ltr;">' + chars + '</span>';
 }
 
 // ===== SPLIT APARTMENTS (דירות מפוצלות) =====
@@ -2129,7 +2131,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.14.0'; // דירה מפוצלת: הוסר לצמיתות inputmode="numeric" משדה "מספר דירה" (לעולם לא לשנות את מקלדת המכשיר של המשתמש) — הוחלף ב-checkbox "דירה מפוצלת" + כפתורי אות (א-ה) שמעדכנים את השדה בלחיצה בלבד. תוקן גם באג bidi בדוחות PDF שהציג "א5" במקום "5א" (aptDisplay). מאזן: יתרת בנק/מזומן בבולד עדין יותר.
+const APP_VERSION = '2.14.2'; // תיקון נוסף למספרי דירה בדוחות PDF ("5א" הוצג "א5"): ניסיונות CSS מבוססי bidi (isolate, אז bidi-override) לא שרדו את html2canvas — aptDisplay() עברה לפריסת flex ברמת תו-בתו, שלא תלויה כלל ב-bidi/shaping של טקסט. מאזן: הבולד עבר לכיתוב "יתרת בנק/מזומן" (היה חסר) במקום למספר עצמו (שכבר היה בולד כברירת מחדל).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
