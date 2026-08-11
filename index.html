@@ -1720,13 +1720,17 @@ function fmtDateDMY(dateStr) {
   return `${d}/${m}/${y}`;
 }
 
-// עוטף מספר דירה (למשל "5א") ב-span עם dir="ltr" לשימוש בטבלאות דוחות
-// PDF שרצות בהקשר RTL — בלי זה, ספרה שאחריה מיד אות עברית עלולה להתהפך
-// חזותית ע"י אלגוריתם ה-bidi (מוצג "א5" במקום "5א"), למרות שסדר התווים
-// במחרוזת עצמה תקין. משמש רק בעמודת "דירה" בדוחות (לא בתוך האפליקציה עצמה
-// שם הבעיה לא נצפתה/דווחה).
+// עוטף מספר דירה (למשל "5א") ב-span שכופה סדר תווים חזותי שמאל-לימין
+// פשוטו כמשמעו (bidi-override), לשימוש בטבלאות דוחות PDF שרצות בהקשר RTL.
+// ניסיון קודם עם unicode-bidi:isolate בלבד לא הספיק — html2canvas מיישם
+// גרסה מפושטת של אלגוריתם ה-bidi ועדיין הפך ספרה שאחריה מיד אות עברית
+// ("5א" הוצג כ"א5"), למרות שסדר התווים במחרוזת עצמה תקין. bidi-override
+// מבטל את ההסתמכות על סיווג התווים (ספרה חלשה מול אות RTL חזקה) ופשוט
+// מציג את התווים בדיוק לפי הסדר שהוזן, שמאל-לימין — כך "5" תמיד ראשון
+// (מימין, כנהוג בתווית "5א") ו-"א" אחריו. משמש רק בעמודת "דירה" בדוחות
+// (לא בתוך האפליקציה עצמה שם הבעיה לא נצפתה/דווחה).
 function aptDisplay(apt) {
-  return '<span dir="ltr" style="unicode-bidi:isolate;">' + (apt ?? '') + '</span>';
+  return '<span dir="ltr" style="unicode-bidi:bidi-override;display:inline-block;">' + (apt ?? '') + '</span>';
 }
 
 // ===== SPLIT APARTMENTS (דירות מפוצלות) =====
@@ -5672,8 +5676,8 @@ function renderBalance() {
 
   // יתרת בנק | יתרת מזומן (יתרות אמיתיות — כוללות את כל הכסף בפועל, מכל הקטגוריות)
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
-    + '<div class="stat-card"><div class="stat-value" style="color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';font-weight:600;">₪'+bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">🏦 יתרת בנק</div></div>'
-    + '<div class="stat-card"><div class="stat-value" style="color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';font-weight:600;">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label">💵 יתרת מזומן</div></div>'
+    + '<div class="stat-card"><div class="stat-value" style="color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';">₪'+bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">🏦 יתרת בנק</div></div>'
+    + '<div class="stat-card"><div class="stat-value" style="color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 יתרת מזומן</div></div>'
     + '</div>';
 
   // פירוט גבייה — 5 השורות שמרכיבות יחד את "סה"כ גבייה" למעלה. "הועבר
