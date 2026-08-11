@@ -911,7 +911,8 @@
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">מספר דירה *</label>
-        <input class="form-input" id="r-apt" type="number" min="1" max="99" placeholder="1"/>
+        <input class="form-input" id="r-apt" type="text" inputmode="text" placeholder="1, או 5א לדירה מפוצלת"/>
+        <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">לדירה שפוצלה בפועל למספר יחידות עם דיירים נפרדים — הוסיפו אות אחרי המספר (5א, 5ב וכו'), כשכל יחידה נרשמת בנפרד.</div>
       </div>
       <div class="form-group">
         <label class="form-label">קומה *</label>
@@ -1698,6 +1699,46 @@ function fmtDateDMY(dateStr) {
   return `${d}/${m}/${y}`;
 }
 
+// ===== SPLIT APARTMENTS (דירות מפוצלות) =====
+// The apartment identifier (`apt`) is free text, not a plain integer — this
+// supports a physical apartment (single Tabu registration) that was split
+// into separate rentable/sellable units with their own residents/payments,
+// identified by a letter suffix on the same base number (e.g. "5א", "5ב").
+// A plain "5" (no suffix) is just a normal, unsplit apartment.
+//
+// parseAptId() splits an apt string into its numeric base and suffix — used
+// for: (1) floor auto-calculation and "next apartment number" suggestions,
+// which only care about the base number, and (2) natural sorting, so lists
+// read 5, 5א, 5ב, 6 instead of alphabetical/numeric-string order.
+//
+// IMPORTANT: apt values that already exist in Firestore from before this
+// feature may still be stored as a number, not a string (Firestore is
+// type-strict on equality, and JS === is too) — every comparison against
+// apt anywhere in the app must go through String(...) on both sides rather
+// than assuming either value's type, so old numeric-apt residents/payments
+// keep matching correctly alongside new text-apt ones.
+function parseAptId(apt) {
+  const str = String(apt ?? '').trim();
+  const match = str.match(/^(\d+)(.*)$/);
+  if (match) return { num: parseInt(match[1], 10), suffix: match[2].trim() };
+  return { num: 0, suffix: str };
+}
+
+// Comparator for sorting by apartment: numeric base first, then suffix
+// alphabetically (Hebrew-aware) — e.g. 5, 5א, 5ב, 6, 12.
+function aptCompare(aptA, aptB) {
+  const a = parseAptId(aptA), b = parseAptId(aptB);
+  if (a.num !== b.num) return a.num - b.num;
+  return a.suffix.localeCompare(b.suffix, 'he');
+}
+
+// Type-safe equality for apt values coming from anywhere (resident doc,
+// payment doc, a select-element value, a function param) — always compares
+// as strings so a legacy numeric apt (5) still matches a text one ("5").
+function aptEquals(a, b) {
+  return String(a ?? '') === String(b ?? '');
+}
+
 // Shared across monthLabel(), exportExcel(), createPDFReport(), generateReceipt()
 // and renderHistoryGrid() — was previously duplicated 5x in the file.
 const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
@@ -2054,7 +2095,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.12.1'; // כפתור "איתור תשלומים כפולים" הוסתר (display:none) בתפריט ניהול כספים — הקוד/הפונקציונליות נשארו במקום לשימוש עתידי, רק לא מוצג לדייר/מנהל. כפתור "חריגים וטעינה חשמלית" אוחד לצבע הכחול הרגיל של שאר כפתורי התפריט (הוסרה ה-inline style הבהירה שבלטה מהשאר).
+const APP_VERSION = '2.13.0'; // תמיכה בדירות מפוצלות: מספר דירה הפך לטקסט חופשי (למשל "5א"/"5ב") במקום מספר בלבד, עם וולידציה ואזהרה רכה נגד טעויות הקלדה, מיון טבעי בכל מסכי הדיירים/תשלומים/PDF/Excel, והשוואות apt בטוחות-לטיפוסים בכל הקוד (תאימות לאחור לדיירים ישנים ששמורים ב-Firestore עם apt כמספר).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2867,7 +2908,7 @@ function loadResidents() {
     // מנהל או ועד — onSnapshot על כל הרשימה
     onSnapshot(collection(db, 'buildings', buildingId, 'residents'), (snap) => {
       allResidents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      allResidents.sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+      allResidents.sort((a,b) => aptCompare(a.apt, b.apt));
       renderResidents(allResidents);
       updateHomeStats();
     });
@@ -2979,9 +3020,11 @@ window.openAddResident = () => {
   document.getElementById('btn-delete-resident').style.display = 'none';
   document.getElementById('modal-resident-title').textContent = 'הוסף דייר';
   document.getElementById('edit-resident-id').value = '';
-  // מספר דירה הבא — המספר הגבוה ביותר הקיים + 1 (לא allResidents.length,
-  // כדי שרצף עם "חורים" לדוגמה 1,2,4 יציע 5 ולא ידרוס דירה קיימת)
-  const maxApt = allResidents.reduce((max, r) => Math.max(max, parseInt(r.apt) || 0), 0);
+  // מספר דירה הבא — המספר הבסיסי (ללא סיומת פיצול) הגבוה ביותר הקיים + 1
+  // (לא allResidents.length, כדי שרצף עם "חורים" לדוגמה 1,2,4 יציע 5 ולא
+  // ידרוס דירה קיימת). דירה מפוצלת כמו "5א"/"5ב" נספרת לפי הבסיס שלה (5),
+  // כך שהצעת "הדירה הבאה" תמיד מציעה מספר שלם חדש, לא סיומת נוספת לפיצול.
+  const maxApt = allResidents.reduce((max, r) => Math.max(max, parseAptId(r.apt).num), 0);
   const newApt = maxApt + 1;
   document.getElementById('r-apt').value = newApt;
   // 4 דירות לקומה, קומה 0 ריקה מדירות (קומה 1 = דירות 1-4, קומה 2 = דירות 5-8 וכו')
@@ -3233,12 +3276,38 @@ window.saveResident = async () => {
     return;
   }
 
-  // בדיקת ייחודיות מספר דירה — מונעת רישום כפול של אותה דירה
-  const aptNum = parseInt(apt);
-  const duplicateApt = allResidents.find(r => r.apt === aptNum && r.id !== id);
-  if (duplicateApt) {
-    showToast(`⚠️ דירה ${aptNum} כבר קיימת במערכת (${duplicateApt.name}) — לא ניתן לרשום אותה פעמיים`);
+  // מספר דירה — טקסט חופשי (לא רק מספר) כדי לתמוך בדירות מפוצלות (5א, 5ב).
+  // אותה סיבה כמו בשם: הגרש/גרשיים שוברים אינטראקציות מבוססות onclick.
+  if (apt.includes("'") || apt.includes('"')) {
+    showToast('⚠️ מספר הדירה לא יכול להכיל גרש (\') או גרשיים (")');
     return;
+  }
+  if (!/^\d/.test(apt)) {
+    showToast('⚠️ מספר דירה חייב להתחיל בספרה (למשל: 5 או, לדירה מפוצלת, 5א)');
+    return;
+  }
+
+  // בדיקת ייחודיות מספר דירה — מונעת רישום כפול של אותה דירה. ההשוואה
+  // תמיד עם String() משני הצדדים כי דיירים ישנים עשויים עדיין להיות שמורים
+  // ב-Firestore עם apt כמספר (מלפני תמיכת דירות מפוצלות), לא כטקסט.
+  const duplicateApt = allResidents.find(r => aptEquals(r.apt, apt) && r.id !== id);
+  if (duplicateApt) {
+    showToast(`⚠️ דירה ${apt} כבר קיימת במערכת (${duplicateApt.name}) — לא ניתן לרשום אותה פעמיים`);
+    return;
+  }
+
+  // אזהרה רכה (לא חוסמת) — אם הדירה הזו היא חלק מדירה מפוצלת (יש לה סיומת
+  // אות, או שקיימות כבר יחידות אחרות עם אותו מספר בסיס), מוודאים מול המנהל
+  // שזה אכן מכוון ולא טעות הקלדה במספר הדירה.
+  const { num: aptBaseNum, suffix: aptSuffix } = parseAptId(apt);
+  const relatedUnits = allResidents.filter(r => r.id !== id && parseAptId(r.apt).num === aptBaseNum && !aptEquals(r.apt, apt));
+  if (relatedUnits.length) {
+    const unitsLabel = relatedUnits.map(r => r.apt).join(', ');
+    const msg = aptSuffix
+      ? `שים לב: בדירה ${aptBaseNum} רשומות כבר יחידות נוספות (${unitsLabel}). אם דירה ${aptBaseNum} פוצלה בפועל ליחידות נפרדות זה תקין — להמשיך?`
+      : `שים לב: קיימות כבר יחידות מפוצלות של דירה ${aptBaseNum} (${unitsLabel}). האם באמת התכוונת לרשום את דירה ${apt} בפני עצמה (ולא כיחידה נוספת עם סיומת אות)?`;
+    const ok = await customConfirm(msg);
+    if (!ok) return;
   }
 
   const phone = document.getElementById('r-phone').value.trim();
@@ -3293,7 +3362,7 @@ window.saveResident = async () => {
   }
 
   const data = {
-    apt: parseInt(apt),
+    apt,
     floor: parseInt(document.getElementById('r-floor').value) || 0,
     name, email, role,
     phone,
@@ -3407,7 +3476,7 @@ function renderPayments(ym) {
   // דייר — מציג רק את הדירה שלו
   if (!isAdmin) {
     const myApt = currentResident?.apt;
-    const myResident = allResidents.find(r => r.apt === parseInt(myApt)) || currentResident;
+    const myResident = allResidents.find(r => aptEquals(r.apt, myApt)) || currentResident;
     const fee = aptFee(myApt, myResident);
     const payment = paidMap[myApt];
 
@@ -3499,7 +3568,7 @@ function renderPayments(ym) {
   const ps = document.getElementById('pay-pending-section');
   ps.querySelector('div').textContent = `⏳ ממתינים (${pendingItems.length})`;
   document.getElementById('pay-pending-list').innerHTML = pendingItems.map(({ resident: r }) => `
-    <div class="payment-item" onclick="showResidentHistory(${r.apt},'${r.name}',${aptFee(r.apt, r)})" style="cursor:pointer;">
+    <div class="payment-item" onclick="showResidentHistory('${r.apt}','${r.name}',${aptFee(r.apt, r)})" style="cursor:pointer;">
       <div class="payment-item-info">
         <div class="payment-item-name">${r.name}</div>
         <div class="payment-item-sub">דירה ${r.apt} • קומה ${r.floor !== undefined ? r.floor : '-'}</div>
@@ -3512,20 +3581,20 @@ function renderPayments(ym) {
   const paid_s = document.getElementById('pay-paid-section');
   paid_s.querySelector('div').textContent = `✅ שילמו (${paidItems.length})`;
   document.getElementById('pay-paid-list').innerHTML = paidItems.map(({ resident: r, payment: p }) => `
-    <div class="payment-item" onclick="showResidentHistory(${r.apt},'${r.name}',${aptFee(r.apt, r)})" style="cursor:pointer;">
+    <div class="payment-item" onclick="showResidentHistory('${r.apt}','${r.name}',${aptFee(r.apt, r)})" style="cursor:pointer;">
       <div class="payment-item-info">
         <div class="payment-item-name">${r.name}</div>
         <div class="payment-item-sub">דירה ${r.apt} • ${p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : ''}</div>
       </div>
       <div class="payment-item-amount" style="color:var(--green)">${fmtCurrency(p.amount || aptFee(r.apt, r))} ${PAYMENT_METHOD_ICONS[p.method]||''}</div>
-      <button class="btn-icon" style="margin-right:6px;padding:6px 10px;font-size:12px;" onclick="event.stopPropagation();generateReceipt(${r.apt},'${r.name}',${aptFee(r.apt, r)},'${ym}','${p.id}')">🧾</button>
-      <button class="btn-icon" style="margin-right:4px;padding:6px 10px;font-size:12px;background:#25D366;color:white;" onclick="event.stopPropagation();generateReceipt(${r.apt},'${r.name}',${aptFee(r.apt, r)},'${ym}','${p.id}',true)">💬</button>
+      <button class="btn-icon" style="margin-right:6px;padding:6px 10px;font-size:12px;" onclick="event.stopPropagation();generateReceipt('${r.apt}','${r.name}',${aptFee(r.apt, r)},'${ym}','${p.id}')">🧾</button>
+      <button class="btn-icon" style="margin-right:4px;padding:6px 10px;font-size:12px;background:#25D366;color:white;" onclick="event.stopPropagation();generateReceipt('${r.apt}','${r.name}',${aptFee(r.apt, r)},'${ym}','${p.id}',true)">💬</button>
       <button class="btn-danger" style="margin-right:8px;" onclick="event.stopPropagation();cancelPayment('${p.id}')">חזור</button>
     </div>
   `).join('');
 
   const fullList = [...paidItems.map(x => ({...x, paid: true})), ...pendingItems.map(x => ({...x, paid: false}))];
-  fullList.sort((a,b) => (parseInt(a.resident.apt)||0) - (parseInt(b.resident.apt)||0));
+  fullList.sort((a,b) => aptCompare(a.resident.apt, b.resident.apt));
   document.getElementById('pay-full-list').innerHTML = `
     <div style="overflow-x:auto;">
       <table class="po-table">
@@ -3569,18 +3638,18 @@ window.setPayView = (view, btn) => {
 
 window.markPaid = async (apt, name, amount) => {
   const ym = document.getElementById('payment-month-select').value;
-  const resident = allResidents.find(r => r.apt === parseInt(apt));
+  const resident = allResidents.find(r => aptEquals(r.apt, apt));
   const method = resident?.paymentMethod || 'transfer';
   try {
     const batch = writeBatch(db);
     const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
     batch.set(paymentRef, {
-      apt: parseInt(apt), name, amount, month: ym, method, category: 'vaad',
+      apt, name, amount, month: ym, method, category: 'vaad',
       paidAt: serverTimestamp(), recordedBy: currentUser.uid
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
-      apt: parseInt(apt), name, amount, month: ym, method, action: 'paid', category: 'vaad',
+      apt, name, amount, month: ym, method, action: 'paid', category: 'vaad',
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
     });
     await batch.commit();
@@ -3865,7 +3934,7 @@ async function renderDuplicatePayments() {
 
     html += dupGroups.map(([key, arr]) => {
       const [aptStr, ym, cat] = key.split('_');
-      const resident = allResidents.find(r => r.apt === parseInt(aptStr));
+      const resident = allResidents.find(r => aptEquals(r.apt, aptStr));
       const catLabel = cat === 'charging' ? ' • 🔌 טעינה חשמלית' : cat === 'exceptional' ? ' • 👑 גבייה חריגה' : '';
       const sorted = [...arr].sort((a,b) => (a.paidAt?.toMillis?.() || 0) - (b.paidAt?.toMillis?.() || 0));
       return '<div class="card" style="margin-bottom:10px;">'
@@ -3987,7 +4056,7 @@ async function renderPaymentReminders() {
           + '<div style="font-weight:700;">' + r.name + ' (דירה ' + r.apt + ')</div>'
           + '<div style="font-size:12px;color:var(--red);margin-top:2px;">חייב ' + streak + ' חודשים • ' + fmtCurrency(owedTotal) + '</div>'
           + '</div>'
-          + '<button class="btn-icon" style="background:' + (already ? 'var(--gray-100)' : '#25D366') + ';color:' + (already ? 'var(--gray-600)' : 'white') + ';white-space:nowrap;" onclick="sendBulkPaymentReminder(' + r.apt + ')">' + (already ? '✅ נשלח' : '💬 שלח') + '</button>'
+          + '<button class="btn-icon" style="background:' + (already ? 'var(--gray-100)' : '#25D366') + ';color:' + (already ? 'var(--gray-600)' : 'white') + ';white-space:nowrap;" onclick="sendBulkPaymentReminder(\'' + r.apt + '\')">' + (already ? '✅ נשלח' : '💬 שלח') + '</button>'
           + '</div></div>';
       }).join('');
   } catch(e) {
@@ -3997,7 +4066,7 @@ async function renderPaymentReminders() {
 
 window.sendBulkPaymentReminder = async (apt) => {
   const data = _remindersDebtorsMap[apt];
-  const resident = allResidents.find(r => r.apt === parseInt(apt));
+  const resident = allResidents.find(r => aptEquals(r.apt, apt));
   if (!resident?.phone) { showToast('⚠️ לא נמצא מספר טלפון לדייר הזה'); return; }
   if (!data || !data.missing.length) return;
 
@@ -4010,7 +4079,7 @@ window.sendBulkPaymentReminder = async (apt) => {
 
   try {
     await addDoc(collection(db, 'buildings', buildingId, 'paymentLog'), {
-      type: 'reminder', action: 'reminder_sent', apt: parseInt(apt), name: resident.name,
+      type: 'reminder', action: 'reminder_sent', apt, name: resident.name,
       months: data.missing, sentForMonth: currentYmString(),
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
     });
@@ -4068,7 +4137,7 @@ function updatePaymentPayerNote() {
   const category = document.getElementById('p-category').value;
   if (!category.startsWith('exceptional')) { noteEl.style.display = 'none'; return; }
   const sel = document.getElementById('p-apt');
-  const resident = allResidents.find(x => x.apt === parseInt(sel.value));
+  const resident = allResidents.find(x => aptEquals(x.apt, sel.value));
   if (!resident) { noteEl.style.display = 'none'; return; }
   noteEl.style.display = 'block';
   if (category === 'exceptional_renter') {
@@ -4160,7 +4229,7 @@ window.onPaymentCategoryChange = () => {
 window.onPaymentAptChange = () => {
   const category = document.getElementById('p-category').value;
   const sel = document.getElementById('p-apt');
-  const r = allResidents.find(x => x.apt === parseInt(sel.value));
+  const r = allResidents.find(x => aptEquals(x.apt, sel.value));
   document.getElementById('p-method').value = r?.paymentMethod || 'transfer';
   if (category === 'vaad') {
     document.getElementById('p-amount').value = r ? aptFee(r.apt, r) : '';
@@ -4196,13 +4265,13 @@ window.openAddPayment = (category) => {
 window.savePayment = async () => {
   const category = document.getElementById('p-category').value; // 'vaad' | 'charging' | 'exceptional_owner' | 'exceptional_renter'
   const isExceptional = category.startsWith('exceptional');
-  const apt = parseInt(document.getElementById('p-apt').value);
+  const apt = document.getElementById('p-apt').value;
   const fromMonth = document.getElementById('p-month').value;
   const amount = parseFloat(document.getElementById('p-amount').value);
   const note = document.getElementById('p-note').value.trim();
   const method = document.getElementById('p-method').value;
   if (!apt || !fromMonth || !amount) { showToast('חובה למלא כל השדות'); return; }
-  const resident = allResidents.find(r => r.apt === apt);
+  const resident = allResidents.find(r => aptEquals(r.apt, apt));
 
   // ולידציית זכאות — הגנה כפולה מעבר לסינון שכבר בוצע ברשימת הבחירה, למקרה
   // שרשימת הדיירים השתנתה מאז פתיחת הטופס. "בעלים" תמיד זכאי (לכל דירה יש
@@ -4221,11 +4290,15 @@ window.savePayment = async () => {
     // חריגה לאותה דירה/חודש לא נחשבים כפילות של דמי הועד.
     if (category === 'vaad') {
       try {
+        // מסננים רק לפי חודש דרך Firestore, ואת ההתאמה לדירה עצמה עושים
+        // בצד הלקוח עם aptEquals — כי Firestore רגיש לטיפוס בהשוואת שוויון,
+        // ותשלומים ישנים עשויים להיות שמורים עם apt כמספר (מלפני תמיכת
+        // דירות מפוצלות), לא כטקסט כמו apt כאן.
         const dupSnap = await getDocs(query(
           collection(db, 'buildings', buildingId, 'payments'),
-          where('apt','==', apt), where('month','==', fromMonth)
+          where('month','==', fromMonth)
         ));
-        const existingVaad = dupSnap.docs.map(d => d.data()).find(p => (p.category || 'vaad') === 'vaad');
+        const existingVaad = dupSnap.docs.map(d => d.data()).find(p => aptEquals(p.apt, apt) && (p.category || 'vaad') === 'vaad');
         if (existingVaad) {
           const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
           showToast('⚠️ כבר קיים תשלום ועד לדירה ' + apt + ' עבור ' + monthLabel(fromMonth) + ' (נרשם ב-' + dateStr + '). לתיקון סכום יש לבטל קודם את התשלום הקיים דרך היסטוריית הדייר.', 6500);
@@ -4242,7 +4315,7 @@ window.savePayment = async () => {
       });
       const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
       batch.set(logRef, {
-        apt: parseInt(apt), name: resident?.name || '', amount, month: fromMonth, action: 'paid', category,
+        apt, name: resident?.name || '', amount, month: fromMonth, action: 'paid', category,
         at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
       });
       await batch.commit();
@@ -4513,7 +4586,7 @@ function renderSpecialDetail() {
     + '<button class="btn-icon" style="width:100%;margin-top:8px;" onclick="generateSpecialCollectionPDF(\''+sc.id+'\')">📄 הפק דוח PDF לדיירים</button>'
     + '</div>';
 
-  const sortedResidents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  const sortedResidents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
   html += sortedResidents.map(r => {
     const p = payMap[r.apt];
     if (p) {
@@ -4541,11 +4614,11 @@ function renderSpecialDetail() {
 
 window.markSpecialPaid = async (collectionId, apt, name, amount) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
-  const resident = allResidents.find(r => r.apt === parseInt(apt));
+  const resident = allResidents.find(r => aptEquals(r.apt, apt));
   const method = resident?.paymentMethod || 'transfer';
   try {
     await addDoc(collection(db, 'buildings', buildingId, 'specialPayments'), {
-      collectionId, apt: parseInt(apt), name, amount, method,
+      collectionId, apt, name, amount, method,
       paidAt: serverTimestamp(), recordedBy: currentUser.uid
     });
     showToast(`✅ ${name} - תשלום נרשם עבור הגבייה המיוחדת`);
@@ -4598,7 +4671,7 @@ async function createSpecialCollectionPDFReport(id) {
 
   const payMap = {};
   allSpecialPayments.filter(p => p.collectionId === id).forEach(p => { payMap[p.apt] = p; });
-  const residents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  const residents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
   const totalTarget = (sc.amountPerApt || 0) * residents.length;
 
   let totalCollected = 0, paidCount = 0;
@@ -5945,7 +6018,7 @@ window.exportExcel = async () => {
 
     // טען נתונים
     const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
-    const residents = resSnap.docs.map(d => ({id:d.id,...d.data()})).sort((a,b)=>(parseInt(a.apt)||0)-(parseInt(b.apt)||0));
+    const residents = resSnap.docs.map(d => ({id:d.id,...d.data()})).sort((a,b) => aptCompare(a.apt, b.apt));
 
     const paySnap = await getDocs(query(
       collection(db, 'buildings', buildingId, 'payments'),
@@ -6339,7 +6412,7 @@ async function createPDFReport() {
   
   // Fetch data
   const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
-  const residents = resSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  const residents = resSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => aptCompare(a.apt, b.apt));
   
   const paySnap = await getDocs(query(
     collection(db, 'buildings', buildingId, 'payments'),
@@ -6600,7 +6673,7 @@ async function createMonthlyPDFReport() {
   const exceptionalOwnerCollectedMonth = monthPayments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
   const exceptionalRenterCollectedMonth = monthPayments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
 
-  const residents = [...allResidents].sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  const residents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
   let totalCollected = 0, paidCount = 0;
   const residentRows = residents.map(r => {
     const fee = aptFee(r.apt, r);
@@ -6789,7 +6862,7 @@ async function createSemiAnnualPDFReport() {
 
   // דיירים ותשלומי התקופה
   const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
-  const residents = resSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (parseInt(a.apt)||0) - (parseInt(b.apt)||0));
+  const residents = resSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => aptCompare(a.apt, b.apt));
 
   const paySnap = await getDocs(query(
     collection(db, 'buildings', buildingId, 'payments'),
@@ -7028,10 +7101,14 @@ window.showResidentHistory = async (apt, name, fee) => {
 async function renderHistoryGrid(apt, name, fee) {
   const year = new Date().getFullYear();
   const monthNames = HEBREW_MONTHS;
-  const snap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('apt','==', parseInt(apt))));
+  // Firestore רגיש לטיפוס בהשוואת שוויון, ותשלומים ישנים עשויים להיות שמורים
+  // עם apt כמספר (מלפני תמיכת דירות מפוצלות) — לכן שולפים את כל תשלומי
+  // הבניין ומסננים בצד הלקוח עם aptEquals, במקום להסתמך על where('apt',...).
+  const snap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
   const paidMonths = {};
   snap.docs.forEach(d => {
     const p = d.data();
+    if (!aptEquals(p.apt, apt)) return;
     // רק תשלומי ועד שוטפים — תשלומי טעינה/גבייה חריגה לא אמורים לסמן חודש
     // כ"שולם" ברשת דמי הועד (יש להם מסך נפרד: חריגים וטעינה חשמלית).
     if (p.month && p.month.startsWith(String(year)) && isVaadPayment(p)) paidMonths[p.month] = { id: d.id, ...p };
@@ -7052,7 +7129,7 @@ async function renderHistoryGrid(apt, name, fee) {
         + '<div style="font-size:12px;font-weight:700;color:var(--green);">'+monthNames[m]+'</div>'
         + '<div style="font-size:18px;margin:4px 0;">'+(isSelected ? '☑️' : '✅')+'</div>'
         + '<div style="font-size:11px;color:var(--green);">₪'+(paid.amount||fee)+' '+(PAYMENT_METHOD_ICONS[paid.method]||'')+'</div>'
-        + (_histMultiMode ? '' : '<div style="display:flex;gap:4px;margin-top:6px;"><button onclick="event.stopPropagation();generateReceipt('+apt+',\''+name+'\','+fee+',\''+ym+'\',\''+paid.id+'\')" style="flex:1;background:#1A56DB;color:white;border:none;border-radius:6px;padding:4px 0;font-size:10px;font-weight:700;cursor:pointer;">🧾 קבלה</button><button onclick="event.stopPropagation();generateReceipt('+apt+',\''+name+'\','+fee+',\''+ym+'\',\''+paid.id+'\',true)" style="background:#25D366;color:white;border:none;border-radius:6px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;">💬</button></div>')
+        + (_histMultiMode ? '' : '<div style="display:flex;gap:4px;margin-top:6px;"><button onclick="event.stopPropagation();generateReceipt(\''+apt+'\',\''+name+'\','+fee+',\''+ym+'\',\''+paid.id+'\')" style="flex:1;background:#1A56DB;color:white;border:none;border-radius:6px;padding:4px 0;font-size:10px;font-weight:700;cursor:pointer;">🧾 קבלה</button><button onclick="event.stopPropagation();generateReceipt(\''+apt+'\',\''+name+'\','+fee+',\''+ym+'\',\''+paid.id+'\',true)" style="background:#25D366;color:white;border:none;border-radius:6px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;">💬</button></div>')
         + '</div>';
     } else if (isFuture) {
       // חודש עתידי — לחיץ למנהל כדי לאפשר תשלום מראש (דייר שרוצה לשלם שנה קדימה)
@@ -7125,23 +7202,23 @@ async function renderHistoryGrid(apt, name, fee) {
         batch.delete(paymentRef);
         const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
         batch.set(logRef, {
-          apt: parseInt(_histApt), name: _histName, amount: _histFee, month: ym, action: 'cancelled',
+          apt: _histApt, name: _histName, amount: _histFee, month: ym, action: 'cancelled',
           at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
         });
         await batch.commit();
         showToast('תשלום בוטל');
       } else {
-        const histResident = allResidents.find(r => r.apt === parseInt(_histApt));
+        const histResident = allResidents.find(r => aptEquals(r.apt, _histApt));
         const histMethod = histResident?.paymentMethod || 'transfer';
         const batch = writeBatch(db);
         const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
         batch.set(paymentRef, {
-          apt: parseInt(_histApt), name: _histName, amount: _histFee,
+          apt: _histApt, name: _histName, amount: _histFee,
           month: ym, method: histMethod, paidAt: serverTimestamp(), recordedBy: currentUser.uid
         });
         const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
         batch.set(logRef, {
-          apt: parseInt(_histApt), name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid',
+          apt: _histApt, name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid',
           at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
         });
         await batch.commit();
@@ -7169,7 +7246,7 @@ window.generateMultiReceiptSelected = async (share = false) => {
 };
 
 window.sendWhatsAppReminder = () => {
-  const resident = allResidents.find(r => r.apt === parseInt(_histApt));
+  const resident = allResidents.find(r => aptEquals(r.apt, _histApt));
   const phone = resident?.phone;
   if (!phone) { showToast('⚠️ לא נמצא מספר טלפון לדייר הזה'); return; }
   if (!_histUnpaidMonths.length) { showToast('הדייר שילם את כל החודשים עד כה 🎉'); return; }
@@ -7452,8 +7529,12 @@ window.generateReceipt = async (apt, name, fee, ym, paymentId, share = false) =>
       if (snap.exists()) payment = snap.data();
     }
     if (!payment) {
-      const snap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('apt','==', parseInt(apt)), where('month','==', ym)));
-      if (!snap.empty) payment = snap.docs[0].data();
+      // apt ממויין בצד הלקוח (aptEquals) ולא דרך where('apt',...) — Firestore
+      // רגיש לטיפוס בהשוואת שוויון, ותשלומים ישנים עשויים להיות שמורים עם
+      // apt כמספר (מלפני תמיכת דירות מפוצלות).
+      const snap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','==', ym)));
+      const match = snap.docs.find(d => aptEquals(d.data().apt, apt));
+      if (match) payment = match.data();
     }
 
     const amount = payment?.amount || fee;
