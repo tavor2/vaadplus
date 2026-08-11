@@ -1228,7 +1228,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
       <button class="btn-primary" style="display:none;background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גביות מיוחדות לתיקונים</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת לתיקונים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 חריגים וטעינה חשמלית</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
@@ -1353,9 +1353,9 @@
 <!-- Special Collections (repair-specific levies) — List Modal -->
 <div class="modal-overlay" id="modal-special-list">
   <div class="modal">
-    <div class="modal-title">🔧 גביות מיוחדות לתיקונים</div>
+    <div class="modal-title">🔧 גבייה מיוחדת לתיקונים</div>
     <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
-      גבייה חד-פעמית מהדיירים עבור תיקון ספציפי (למשל שיפוץ מעלית, תיקון גג) — נפרדת לגמרי מהגבייה השוטפת. הכספים כאן <b>אינם</b> נכללים במאזן, בתחזית או בדוחות הרגילים.
+      גבייה חד-פעמית מהדיירים עבור תיקון ספציפי (למשל שיפוץ מעלית, תיקון גג) — נפרדת לגמרי מהגבייה השוטפת ואינה נכללת בחישובי התחזית או הדוחות הרגילים. הסכום הכולל מוצג להפניה בלבד בלשונית "מאזן".
     </div>
     <button class="btn-primary" onclick="openAddSpecialCollection()">➕ גבייה מיוחדת חדשה</button>
     <div id="special-collections-list" style="margin-top:14px;"></div>
@@ -1441,7 +1441,8 @@
 <div class="modal-overlay" id="modal-cash-deposit">
   <div class="modal">
     <div class="modal-title">🏦 הפקדת מזומן לבנק</div>
-    <div style="font-size:13px;color:var(--gray-600);margin-bottom:12px;">הפקד סכום מקופת המזומן לחשבון הבנק</div>
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:4px;">הפקד סכום מקופת המזומן לחשבון הבנק</div>
+    <div id="deposit-available-note" style="font-size:12px;color:var(--gray-500);margin-bottom:12px;"></div>
     <div class="form-group">
       <label class="form-label">סכום להפקדה (₪) *</label>
       <input class="form-input" id="deposit-amount" type="number" step="0.01" placeholder="0"/>
@@ -2139,7 +2140,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.14.5'; // תיקון סדר קריאה במספרי דירה בדוחות PDF: aptDisplay() (טבלה פנימית תא-לכל-תו, מ-2.14.3) הוגדרה בטעות עם direction:ltr, מה שהציב את הספרה בצד שמאל ואת האות בצד ימין — קורא עברית שסורק מימין לשמאל נתקל באות קודם ("א7" בפועל, למרות שסדר ה-DOM היה תקין). הוחלף ל-direction:rtl כך שהתא הראשון (הספרה) יוצב בקצה הימני, כנדרש לקריאה נכונה "7א".
+const APP_VERSION = '2.14.7'; // כפתור "גביות מיוחדות לתיקונים" שונה ליחיד: "גבייה מיוחדת לתיקונים" (גם בכותרת המודל). בלשונית מאזן נוספה שורת "גבייה מיוחדת לתיקונים" בכרטיס "פירוט גבייה", מתחת ל"גבייה טעינה חשמלית" — להצגה בלבד, לא נכללת בחישוב הסה"כ/יתרות (גבייה זו נשארת נפרדת לגמרי מהגבייה השוטפת, כמו קודם).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3173,11 +3174,30 @@ window.deleteResident = async () => {
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
-window.openCashDeposit = () => {
+window.openCashDeposit = async () => {
   document.getElementById('deposit-amount').value = '';
   document.getElementById('deposit-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('deposit-note').value = '';
+  const note = document.getElementById('deposit-available-note');
+  note.textContent = 'טוען יתרת מזומן זמינה...';
   openModal('modal-cash-deposit');
+  try {
+    const [paySnap, expSnap, depSnap] = await Promise.all([
+      getDocs(collection(db, 'buildings', buildingId, 'payments')),
+      getDocs(collection(db, 'buildings', buildingId, 'expenses')),
+      getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'))
+    ]);
+    const { cashBalance } = computeBalanceFigures(
+      paySnap.docs.map(d => d.data()),
+      expSnap.docs.map(d => d.data()),
+      depSnap.docs.map(d => d.data()),
+      buildingData?.openingBalance || 0,
+      buildingData?.cashOpeningBalance || 0
+    );
+    note.textContent = `💵 יתרת מזומן זמינה כרגע: ${fmtCurrency(cashBalance)}`;
+  } catch(e) {
+    note.textContent = '';
+  }
 };
 
 window.saveCashDeposit = async () => {
@@ -3187,6 +3207,28 @@ window.saveCashDeposit = async () => {
   const note = document.getElementById('deposit-note').value.trim();
   if (!amount || !date) { showToast('חובה למלא סכום ותאריך'); return; }
   try {
+    // בדיקת יתרת מזומן זמינה — קריאה עדכנית ישירות מ-Firestore (ולא
+    // מהמערכים הגלובליים balPaymentsAll/allExpenses/balDepositsAll, שעשויים
+    // עוד לא להיות טעונים אם המנהל פתח "הפקד מזומן" ישירות מתפריט הכספים
+    // בלי לבקר קודם בלשונית "מאזן") כדי לוודא שההפקדה לא עולה על מה שבאמת
+    // קיים בקופה כרגע, ולמנוע יתרת מזומן שלילית מלאכותית.
+    const [paySnap, expSnap, depSnap] = await Promise.all([
+      getDocs(collection(db, 'buildings', buildingId, 'payments')),
+      getDocs(collection(db, 'buildings', buildingId, 'expenses')),
+      getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'))
+    ]);
+    const { cashBalance } = computeBalanceFigures(
+      paySnap.docs.map(d => d.data()),
+      expSnap.docs.map(d => d.data()),
+      depSnap.docs.map(d => d.data()),
+      buildingData?.openingBalance || 0,
+      buildingData?.cashOpeningBalance || 0
+    );
+    if (amount > cashBalance + 0.01) {
+      showToast(`⚠️ הסכום גבוה מיתרת המזומן הזמינה כרגע (${fmtCurrency(cashBalance)}) — לא ניתן להפקיד יותר ממה שיש בקופה`, 5500);
+      return;
+    }
+
     const batch = writeBatch(db);
     const depositRef = doc(collection(db, 'buildings', buildingId, 'cashDeposits'));
     batch.set(depositRef, {
@@ -4506,6 +4548,7 @@ function ensureSpecialPaymentsListener() {
       allSpecialPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderSpecialCollectionsList();
       if (currentSpecialId) renderSpecialDetail();
+      renderBalance(); // עדכון סכום "גבייה מיוחדת לתיקונים" המוצג בלשונית מאזן
     }
   );
 }
@@ -5625,6 +5668,7 @@ let balanceListenersBuildingId = null; // which building the above listeners are
 
 function ensureBalanceListeners() {
   ensureExpensesListener(); // shared with the expenses tab — one listener, not two
+  ensureSpecialPaymentsListener(); // כדי שסכום "גבייה מיוחדת לתיקונים" יהיה זמין במאזן גם בלי לפתוח קודם את המודל הייעודי
   if (balanceListenersBuildingId === buildingId && unsubBalPayments) return; // already listening for this building
   if (unsubBalPayments) unsubBalPayments();
   if (unsubBalDeposits) unsubBalDeposits();
@@ -5667,6 +5711,12 @@ function renderBalance() {
   } = computeBalanceFigures(balPaymentsAll, allExpenses, balDepositsAll, openingBalance, cashOpeningBalance);
   const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
   const balIcon = balance >= 0 ? '📈' : '📉';
+  // סכום כולל שנגבה בכל הגביות המיוחדות לתיקונים (allSpecialPayments, על
+  // פני כל הקמפיינים) — מוצג בכרטיס "פירוט גבייה" להפניה בלבד. בכוונה לא
+  // נכלל בחישוב totalCollected/computeBalanceFigures למעלה: זו גבייה נפרדת
+  // לגמרי מהגבייה השוטפת (ראה התיעוד ליד allSpecialPayments/openSpecialCollectionsList),
+  // ולכן גם השורה שלו כאן מסומנת חזותית כנפרדת מ-5 הרכיבים שמרכיבים את ה"סה"כ".
+  const specialCollectedTotal = allSpecialPayments.reduce((s,p) => s + (p.amount||0), 0);
 
   // Group expenses by category
   const byCat = {};
@@ -5690,9 +5740,11 @@ function renderBalance() {
     + '<div class="stat-card"><div class="stat-value" style="color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 יתרת מזומן</div></div>'
     + '</div>';
 
-  // פירוט גבייה — 5 השורות שמרכיבות יחד את "סה"כ גבייה" למעלה. "הועבר
-  // לבנק"/"מזומן שנגבה" כאן הם דמי ועד שוטפים בלבד (לא כוללים טעינה/גבייה
-  // חריגה) — כדי לא לערבב בין הגבייה החודשית השוטפת לגבייה החריגה/טעינה.
+  // פירוט גבייה — 5 השורות הראשונות מרכיבות יחד את "סה"כ גבייה" למעלה.
+  // "הועבר לבנק"/"מזומן שנגבה" כאן הם דמי ועד שוטפים בלבד (לא כוללים
+  // טעינה/גבייה חריגה) — כדי לא לערבב בין הגבייה החודשית השוטפת לגבייה
+  // החריגה/טעינה. השורה השישית ("גבייה מיוחדת לתיקונים") מוצגת להפניה בלבד
+  // ואינה חלק מ-5 הרכיבים או מה"סה"כ" (ראה specialCollectedTotal למעלה).
   html += '<div class="card" style="margin-bottom:16px;">'
     + '<div style="font-weight:700;margin-bottom:10px;">פירוט גבייה</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
@@ -5707,8 +5759,11 @@ function renderBalance() {
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
     + '<span style="font-size:13px;">🔑 גבייה חריגה - שוכרים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalRenterCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
     + '<span style="font-size:13px;">🔌 גבייה טעינה חשמלית</span><span style="font-weight:700;color:var(--blue);">₪'+chargingCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
+    + '<span style="font-size:13px;">🔧 גבייה מיוחדת לתיקונים <span style="color:var(--gray-400);">(נפרד מהסה"כ)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialCollectedTotal.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:4px;border-top:2px solid var(--gray-200);">'
     + '<span style="font-size:13px;font-weight:700;">סה"כ</span><span style="font-weight:800;">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
