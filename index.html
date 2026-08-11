@@ -1721,18 +1721,20 @@ function fmtDateDMY(dateStr) {
 }
 
 // עוטף מספר דירה (למשל "5א") לשימוש בעמודת "דירה" בטבלאות דוחות PDF שרצות
-// בהקשר RTL. שני ניסיונות קודמים (unicode-bidi:isolate, ואז bidi-override)
-// לא הועילו — כנראה ש-html2canvas מיישם שכבת bidi/עיצוב-טקסט פשוטה משלו
-// שלא מכבדת את תכונות ה-CSS האלה באופן מלא, ועדיין הפך ספרה שאחריה מיד
-// אות עברית ("5א" הוצג כ"א5"), למרות שסדר התווים במחרוזת עצמה תקין.
-// הפתרון כאן לא מסתמך בכלל על bidi/shaping של טקסט: כל תו הופך ל-span
-// עצמאי (inline-block) בתוך מיכל flex בכיוון שמאל-לימין — כך הסדר החזותי
-// נקבע לגמרי ע"י מנגנון הפריסה (flex box layout), ש-html2canvas משכפל
-// באמינות הרבה יותר גבוהה מאשר shaping של ריצת טקסט מעורבת-כיוון. משמש רק
-// בעמודת "דירה" בדוחות (לא בתוך האפליקציה עצמה שם הבעיה לא נצפתה/דווחה).
+// בהקשר RTL. שלושה ניסיונות קודמים (unicode-bidi:isolate, אז bidi-override,
+// אז flexbox ברמת תו-בתו) לא הועילו בפועל בדוחות אמיתיים למרות שנבדקו
+// ועבדו כצפוי ב-HTML גולמי — ל-html2canvas יש תמיכה חלקית וידועה בפריסת
+// flexbox, אז ייתכן שההוראה display:inline-flex פשוט לא כובדה בפועל בזמן
+// הציור לקנבס. הפתרון כאן משתמש בטבלת HTML זעירה (שורה אחת, תא לכל תו)
+// במקום flexbox — פריסת <table> היא בדיוק המנגנון שעליו כל שאר הדוח (כל
+// עמודות ה-✓/חודשים) כבר מסתמך ומוכח כעובד אמין ב-html2canvas. כל תא
+// מכיל תו בודד בלבד, כך שאין בכלל אפשרות ל-bidi להתערב בתוך תא — הסדר
+// היחיד שמשנה משהו הוא סדר התאים בשורה, שנשלט לגמרי ע"י direction:ltr על
+// הטבלה עצמה. משמש רק בעמודת "דירה" בדוחות (לא בתוך האפליקציה עצמה שם
+// הבעיה לא נצפתה/דווחה).
 function aptDisplay(apt) {
-  const chars = [...String(apt ?? '')].map(ch => '<span style="display:inline-block;">' + ch + '</span>').join('');
-  return '<span style="display:inline-flex;flex-direction:row;direction:ltr;">' + chars + '</span>';
+  const cells = [...String(apt ?? '')].map(ch => '<td style="padding:0;border:none;">' + ch + '</td>').join('');
+  return '<table style="display:inline-table;direction:ltr;border-collapse:collapse;" dir="ltr"><tr>' + cells + '</tr></table>';
 }
 
 // ===== SPLIT APARTMENTS (דירות מפוצלות) =====
@@ -2131,7 +2133,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.14.2'; // תיקון נוסף למספרי דירה בדוחות PDF ("5א" הוצג "א5"): ניסיונות CSS מבוססי bidi (isolate, אז bidi-override) לא שרדו את html2canvas — aptDisplay() עברה לפריסת flex ברמת תו-בתו, שלא תלויה כלל ב-bidi/shaping של טקסט. מאזן: הבולד עבר לכיתוב "יתרת בנק/מזומן" (היה חסר) במקום למספר עצמו (שכבר היה בולד כברירת מחדל).
+const APP_VERSION = '2.14.3'; // תיקון שלישי למספרי דירה בדוחות PDF ("5א" הוצג "א5"): גם flexbox ברמת תו-בתו לא שרד בפועל את html2canvas (תמיכה חלקית וידועה בפריסת flexbox) — aptDisplay() עברה לטבלת HTML זעירה (תא לכל תו, direction:ltr) — אותו מנגנון פריסה (<table>) שכל שאר עמודות הדוח כבר מסתמכות עליו ומוכח כעובד. תא בודד עם תו יחיד לא יכול לעבור bidi reordering פנימי מלכתחילה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
