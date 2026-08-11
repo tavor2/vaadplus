@@ -1728,13 +1728,19 @@ function fmtDateDMY(dateStr) {
 // הציור לקנבס. הפתרון כאן משתמש בטבלת HTML זעירה (שורה אחת, תא לכל תו)
 // במקום flexbox — פריסת <table> היא בדיוק המנגנון שעליו כל שאר הדוח (כל
 // עמודות ה-✓/חודשים) כבר מסתמך ומוכח כעובד אמין ב-html2canvas. כל תא
-// מכיל תו בודד בלבד, כך שאין בכלל אפשרות ל-bidi להתערב בתוך תא — הסדר
-// היחיד שמשנה משהו הוא סדר התאים בשורה, שנשלט לגמרי ע"י direction:ltr על
-// הטבלה עצמה. משמש רק בעמודת "דירה" בדוחות (לא בתוך האפליקציה עצמה שם
-// הבעיה לא נצפתה/דווחה).
+// מכיל תו בודד בלבד, כך שאין בכלל אפשרות ל-bidi להתערב בתוך תא.
+// חשוב: כיוון הטבלה חייב להיות RTL, לא LTR — כדי שהתו הראשון בסדר ה-DOM
+// (הספרה, שאמורה להיקרא ראשונה) יוצב בקצה הימני (שם קורא עברית מתחיל
+// לקרוא), והתו השני (האות) יוצב משמאלו. עם direction:ltr (ניסיון קודם)
+// הספרה הוצבה משמאל בטעות — התוצאה הייתה שקורא עברית שסורק מימין לשמאל
+// נתקל באות קודם, בדיוק הבאג המקורי. width:1px + white-space:nowrap על כל
+// תא הוא טריק CSS ידוע שמכריח תא טבלה להצטמצם לרוחב התוכן שלו בלבד
+// (table-layout:auto) — בלי זה הטבלה הפנימית התמתחה למלא את כל רוחב
+// העמודה החיצונית. משמש רק בעמודת "דירה" בדוחות (לא בתוך האפליקציה עצמה
+// שם הבעיה לא נצפתה/דווחה).
 function aptDisplay(apt) {
-  const cells = [...String(apt ?? '')].map(ch => '<td style="padding:0;border:none;">' + ch + '</td>').join('');
-  return '<table style="display:inline-table;direction:ltr;border-collapse:collapse;" dir="ltr"><tr>' + cells + '</tr></table>';
+  const cells = [...String(apt ?? '')].map(ch => '<td style="padding:0;border:none;width:1px;white-space:nowrap;">' + ch + '</td>').join('');
+  return '<table style="display:inline-table;direction:rtl;border-collapse:collapse;table-layout:auto;width:auto;margin:0 auto;" dir="rtl"><tr>' + cells + '</tr></table>';
 }
 
 // ===== SPLIT APARTMENTS (דירות מפוצלות) =====
@@ -2133,7 +2139,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.14.3'; // תיקון שלישי למספרי דירה בדוחות PDF ("5א" הוצג "א5"): גם flexbox ברמת תו-בתו לא שרד בפועל את html2canvas (תמיכה חלקית וידועה בפריסת flexbox) — aptDisplay() עברה לטבלת HTML זעירה (תא לכל תו, direction:ltr) — אותו מנגנון פריסה (<table>) שכל שאר עמודות הדוח כבר מסתמכות עליו ומוכח כעובד. תא בודד עם תו יחיד לא יכול לעבור bidi reordering פנימי מלכתחילה.
+const APP_VERSION = '2.14.5'; // תיקון סדר קריאה במספרי דירה בדוחות PDF: aptDisplay() (טבלה פנימית תא-לכל-תו, מ-2.14.3) הוגדרה בטעות עם direction:ltr, מה שהציב את הספרה בצד שמאל ואת האות בצד ימין — קורא עברית שסורק מימין לשמאל נתקל באות קודם ("א7" בפועל, למרות שסדר ה-DOM היה תקין). הוחלף ל-direction:rtl כך שהתא הראשון (הספרה) יוצב בקצה הימני, כנדרש לקריאה נכונה "7א".
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
