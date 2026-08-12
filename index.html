@@ -2152,7 +2152,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.1'; // הוסר display:none מכפתור "🔍 איתור תשלומים כפולים" בתפריט ניהול כספים (הכלי היה קיים ועובד אך מוסתר) — עוזר לאבחן פערים בין "סה"כ גבייה" במאזן (סכימה גולמית של כל התשלומים) לבין דוחות ה-PDF (מדוללים לתשלום אחד לדירה/חודש דרך paymentMap) כשיש תשלומי ועד כפולים בפועל. גם נוסף פילוח "מתוכן הועבר לבנק / מתוכן מזומן שנגבה" לדוח השנתי ולדוח החצי-שנתי (הדוח החודשי כבר כלל את זה) — לבקשה מפורשת.
+const APP_VERSION = '2.15.2'; // נמצא שורש הבאג שאיפשר תשלומי ועד כפולים לאותה דירה/חודש: רק savePayment() (המודל "רשום תשלום") עבר בדיקת כפילות — markPaid() ("✓ סמן כשולם" ברשימת התשלומים) וסימון תשלום מתוך היסטוריית דייר יצרו תשלום ישירות בלי שום בדיקה. שתי הפעולות עכשיו עוברות דרך checkExistingVaadPayment() המשותפת (אותה בדיקה שכבר הייתה ב-savePayment), ועם מגן _vaadPaymentInFlight נגד לחיצה כפולה/מהירה על אותו כפתור.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3783,9 +3783,19 @@ window.setPayView = (view, btn) => {
 
 window.markPaid = async (apt, name, amount) => {
   const ym = document.getElementById('payment-month-select').value;
+  const flightKey = apt + '_' + ym;
+  if (_vaadPaymentInFlight.has(flightKey)) return; // כבר בתהליך רישום — מונע לחיצה כפולה/מהירה
+  _vaadPaymentInFlight.add(flightKey);
   const resident = allResidents.find(r => aptEquals(r.apt, apt));
   const method = resident?.paymentMethod || 'transfer';
   try {
+    const existingVaad = await checkExistingVaadPayment(apt, ym);
+    if (existingVaad) {
+      const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
+      showToast('⚠️ כבר קיים תשלום ועד לדירה ' + apt + ' עבור ' + monthLabel(ym) + ' (נרשם ב-' + dateStr + ')', 5500);
+      loadPayments();
+      return;
+    }
     const batch = writeBatch(db);
     const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
     batch.set(paymentRef, {
@@ -3802,6 +3812,7 @@ window.markPaid = async (apt, name, amount) => {
     loadPayments();
     logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS' });
   } catch(e) { showToast('שגיאה: ' + e.message); }
+  finally { _vaadPaymentInFlight.delete(flightKey); }
 };
 
 window.cancelPayment = async (id) => {
@@ -4250,6 +4261,29 @@ window.sendBulkPaymentReminder = async (apt) => {
 function isVaadPayment(p) {
   return !p.category || p.category === 'vaad';
 }
+
+// בודקת אם כבר קיים תשלום "ועד" (category==='vaad', כולל תשלומים ישנים
+// ללא category כלל — ראה isVaadPayment) עבור דירה/חודש נתונים, ומחזירה את
+// הרשומה הקיימת (או null). קוראת ישירות מ-Firestore (לא מ-allPayments
+// המקומי) כי הפעולה עשויה להיקרא ממסכים שלא בהכרח טענו את החודש הרלוונטי.
+// חובה להשתמש בזה בכל מקום שיוצר תשלום ועד (savePayment, markPaid, סימון
+// תשלום מתוך היסטוריית דייר) כדי למנוע רישום כפול לאותה דירה/חודש —
+// בעבר markPaid() וסימון מהיסטוריית דייר לא עברו את הבדיקה הזו בכלל
+// (רק savePayment דרך המודל "רשום תשלום" כן), מה שאפשר בפועל שני תשלומי
+// ועד לאותה דירה/חודש דרך אותם שני מסכים.
+async function checkExistingVaadPayment(apt, ym) {
+  const dupSnap = await getDocs(query(
+    collection(db, 'buildings', buildingId, 'payments'),
+    where('month','==', ym)
+  ));
+  return dupSnap.docs.map(d => d.data()).find(p => aptEquals(p.apt, apt) && (p.category || 'vaad') === 'vaad') || null;
+}
+
+// מגן בסיסי מפני לחיצה כפולה/מהירה על אותו כפתור "סמן כשולם" לפני שהכתיבה
+// הראשונה הספיקה להיכתב ל-Firestore — גם עם הבדיקה ב-checkExistingVaadPayment
+// יש חלון race מזערי בין הקריאה לכתיבה; המפתח כאן (apt_ym) חוסם בקשה שנייה
+// לאותה דירה/חודש כל עוד הראשונה עדיין רצה, בלי צורך בשינוי סכימת הנתונים.
+const _vaadPaymentInFlight = new Set();
 
 function eligibleResidentsForPaymentCategory(category) {
   if (category === 'charging') return allResidents.filter(r => r.chargingStation === 'building');
@@ -7448,21 +7482,33 @@ async function renderHistoryGrid(apt, name, fee) {
         await batch.commit();
         showToast('תשלום בוטל');
       } else {
-        const histResident = allResidents.find(r => aptEquals(r.apt, _histApt));
-        const histMethod = histResident?.paymentMethod || 'transfer';
-        const batch = writeBatch(db);
-        const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
-        batch.set(paymentRef, {
-          apt: _histApt, name: _histName, amount: _histFee,
-          month: ym, method: histMethod, paidAt: serverTimestamp(), recordedBy: currentUser.uid
-        });
-        const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
-        batch.set(logRef, {
-          apt: _histApt, name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid',
-          at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-        });
-        await batch.commit();
-        showToast('✅ שולם');
+        const flightKey = _histApt + '_' + ym;
+        if (_vaadPaymentInFlight.has(flightKey)) return; // כבר בתהליך רישום — מונע לחיצה כפולה/מהירה
+        _vaadPaymentInFlight.add(flightKey);
+        try {
+          const existingVaad = await checkExistingVaadPayment(_histApt, ym);
+          if (existingVaad) {
+            const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
+            showToast('⚠️ כבר קיים תשלום ועד לדירה ' + _histApt + ' עבור ' + monthLabel(ym) + ' (נרשם ב-' + dateStr + ')', 5500);
+            await renderHistoryGrid(_histApt, _histName, _histFee);
+            return;
+          }
+          const histResident = allResidents.find(r => aptEquals(r.apt, _histApt));
+          const histMethod = histResident?.paymentMethod || 'transfer';
+          const batch = writeBatch(db);
+          const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+          batch.set(paymentRef, {
+            apt: _histApt, name: _histName, amount: _histFee,
+            month: ym, method: histMethod, category: 'vaad', paidAt: serverTimestamp(), recordedBy: currentUser.uid
+          });
+          const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+          batch.set(logRef, {
+            apt: _histApt, name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid', category: 'vaad',
+            at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+          });
+          await batch.commit();
+          showToast('✅ שולם');
+        } finally { _vaadPaymentInFlight.delete(flightKey); }
       }
       await renderHistoryGrid(_histApt, _histName, _histFee);
       loadPayments();
