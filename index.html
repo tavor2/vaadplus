@@ -2161,7 +2161,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.3'; // תוקן רגרסיה חמורה ב-aptDisplay() (דוחות PDF): הפיצול לתווים+טבלת RTL הופעל על *כל* מספר דירה, כולל דירות רגילות בלי סיומת אות — עבור מספר דו-ספרתי ומעלה בלי אות (למשל "10", "21") זה בטעות הפך את סדר הספרות עצמן ("01", "12"). באג לא התגלה קודם כי בניין הבדיקה לא הכיל אף דירה רגילה דו-ספרתית. עכשיו aptDisplay() קודם בודק עם parseAptId() אם יש בכלל סיומת אות — אם אין, מחזיר את המספר כמו שהוא בלי שום עטיפה מיוחדת; הטבלה מופעלת רק כשיש סיומת בפועל (למשל "5א").
+const APP_VERSION = '2.15.4'; // שלב א' בשינוי תשלומי הועד: בורר החודשים ב"כספים" (ליד "ניהול") הוחלף מחלון נגלל של "12 החודשים האחרונים" לטווח קבוע של שנה נוכחית מלאה + שנה קודמת מלאה (24 חודשים, ינואר עד דצמבר). למשל באוגוסט 2026 רואים ינואר 2025 עד דצמבר 2026; מ-1 בינואר 2027 הטווח קופץ בבת אחת לינואר 2026 עד דצמבר 2027.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2905,26 +2905,25 @@ function initUI() {
   }
 
   // Month selector
-  // אוספים לקבוצה אחת גם את 12 החודשים האחרונים וגם את שאר חודשי השנה
-  // הנוכחית שעוד לא הגיעו (כדי לצפות/לנהל תשלומים שנרשמו מראש — למשל דרך
-  // תא "חודש עתידי" בהיסטוריית דייר, או העברה חריגה שמכסה חודשים קדימה),
-  // ואז ממיינים כרונולוגית יורד (מהמאוחר למוקדם) כרשימה אחת רציפה. בעבר
-  // שני הטווחים נבנו בלולאות נפרדות ופשוט חוברו זה אחרי זה — מה שיצר קפיצה
-  // מבלבלת בסדר (למשל "אוגוסט 2025" ואז מיד "אוגוסט 2026").
+  // תמיד מציג את השנה הנוכחית המלאה (ינואר-דצמבר) ואת השנה הקודמת המלאה —
+  // סה"כ 24 חודשים קבועים, ולא חלון נגלל של "12 החודשים האחרונים" כמו
+  // בעבר. כך למשל באוגוסט 2026 רואים ינואר 2025 עד דצמבר 2026, ומה-1
+  // בינואר 2027 הטווח "יזוז" בבת אחת לינואר 2026 עד דצמבר 2027 — לא בהדרגה
+  // חודש-חודש כמו קודם. זה גם מכסה חודשים עתידיים של השנה הנוכחית (לצפייה/
+  // ניהול תשלומים שנרשמו מראש — למשל דרך תא "חודש עתידי" בהיסטוריית דייר,
+  // או העברה חריגה שמכסה חודשים קדימה) בלי צורך בלוגיקה נפרדת בשבילם.
   const sel = document.getElementById('payment-month-select');
   sel.innerHTML = '';
   const now = new Date();
-  const currentYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-  const ymsSet = new Set();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    ymsSet.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+  const currentYear = now.getFullYear();
+  const currentYm = currentYear + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const yms = [];
+  for (let y = currentYear - 1; y <= currentYear; y++) {
+    for (let m = 1; m <= 12; m++) {
+      yms.push(y + '-' + String(m).padStart(2,'0'));
+    }
   }
-  for (let m = now.getMonth() + 1; m <= 11; m++) {
-    const d = new Date(now.getFullYear(), m, 1);
-    ymsSet.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
-  }
-  [...ymsSet].sort().reverse().forEach(ym => {
+  yms.sort().reverse().forEach(ym => {
     const opt = document.createElement('option');
     opt.value = ym;
     opt.textContent = monthLabel(ym);
