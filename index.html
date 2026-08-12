@@ -1737,9 +1737,18 @@ function fmtDateDMY(dateStr) {
 // נתקל באות קודם, בדיוק הבאג המקורי. width:1px + white-space:nowrap על כל
 // תא הוא טריק CSS ידוע שמכריח תא טבלה להצטמצם לרוחב התוכן שלו בלבד
 // (table-layout:auto) — בלי זה הטבלה הפנימית התמתחה למלא את כל רוחב
-// העמודה החיצונית. משמש רק בעמודת "דירה" בדוחות (לא בתוך האפליקציה עצמה
-// שם הבעיה לא נצפתה/דווחה).
+// העמודה החיצונית.
+// קריטי: הפיצול לתווים חייב לחול רק כשיש בפועל סיומת אות (דירה מפוצלת,
+// למשל "5א") — לא על כל מספר דירה! עבור דירה רגילה עם שני ספרות ומעלה
+// (למשל "10", "21") אין שום בעיית bidi מלכתחילה (ספרות תמיד נשארות בסדר
+// הרגיל שלהן גם בטקסט RTL), אז הפעלת אותה טבלת RTL תו-בתו על מספר "10"
+// למעשה הפכה את סדר הספרות בטעות ל-"01" — באג שהתגלה כשבניין עם 10+
+// דירות (בלי אף דירה מפוצלת) הופק כדוח PDF. parseAptId() כבר יודע להבחין
+// בין בסיס מספרי לסיומת אות; אם אין סיומת בכלל, מחזירים את המחרוזת כמו
+// שהיא בלי שום עטיפה מיוחדת.
 function aptDisplay(apt) {
+  const { suffix } = parseAptId(apt);
+  if (!suffix) return String(apt ?? '');
   const cells = [...String(apt ?? '')].map(ch => '<td style="padding:0;border:none;width:1px;white-space:nowrap;">' + ch + '</td>').join('');
   return '<table style="display:inline-table;direction:rtl;border-collapse:collapse;table-layout:auto;width:auto;margin:0 auto;" dir="rtl"><tr>' + cells + '</tr></table>';
 }
@@ -2152,7 +2161,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.2'; // נמצא שורש הבאג שאיפשר תשלומי ועד כפולים לאותה דירה/חודש: רק savePayment() (המודל "רשום תשלום") עבר בדיקת כפילות — markPaid() ("✓ סמן כשולם" ברשימת התשלומים) וסימון תשלום מתוך היסטוריית דייר יצרו תשלום ישירות בלי שום בדיקה. שתי הפעולות עכשיו עוברות דרך checkExistingVaadPayment() המשותפת (אותה בדיקה שכבר הייתה ב-savePayment), ועם מגן _vaadPaymentInFlight נגד לחיצה כפולה/מהירה על אותו כפתור.
+const APP_VERSION = '2.15.3'; // תוקן רגרסיה חמורה ב-aptDisplay() (דוחות PDF): הפיצול לתווים+טבלת RTL הופעל על *כל* מספר דירה, כולל דירות רגילות בלי סיומת אות — עבור מספר דו-ספרתי ומעלה בלי אות (למשל "10", "21") זה בטעות הפך את סדר הספרות עצמן ("01", "12"). באג לא התגלה קודם כי בניין הבדיקה לא הכיל אף דירה רגילה דו-ספרתית. עכשיו aptDisplay() קודם בודק עם parseAptId() אם יש בכלל סיומת אות — אם אין, מחזיר את המספר כמו שהוא בלי שום עטיפה מיוחדת; הטבלה מופעלת רק כשיש סיומת בפועל (למשל "5א").
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
