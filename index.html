@@ -1226,7 +1226,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
-      <button class="btn-primary" style="display:none;background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
+      <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת לתיקונים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 חריגים וטעינה חשמלית</button>
@@ -2152,7 +2152,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.0'; // בעקבות בקשת הוועד: "גבייה מיוחדת לתיקונים" (specialPayments) הפכה מנפרדת-לגמרי-מהמאזן לחלק מהסה"כ גבייה וביתרת בנק/מזומן — הכסף עובר בפועל דרך אותו חשבון ומשולם ממנו לתיקון. computeBalanceFigures() מקבל כעת פרמטר שישי (specialPayments) ומשולב בכל קריאה: renderBalance, renderForecast, exportExcel, createPDFReport, createMonthlyPDFReport, createSemiAnnualPDFReport, saveCashDeposit/openCashDeposit. מאחר ול-specialPayments אין שדה 'month'/'date' (רק Timestamp paidAt), הסינון לפי טווח תאריכים בדוחות נעשה בצד הלקוח על כל האוסף, לא בשאילתת Firestore.
+const APP_VERSION = '2.15.1'; // הוסר display:none מכפתור "🔍 איתור תשלומים כפולים" בתפריט ניהול כספים (הכלי היה קיים ועובד אך מוסתר) — עוזר לאבחן פערים בין "סה"כ גבייה" במאזן (סכימה גולמית של כל התשלומים) לבין דוחות ה-PDF (מדוללים לתשלום אחד לדירה/חודש דרך paymentMap) כשיש תשלומי ועד כפולים בפועל. גם נוסף פילוח "מתוכן הועבר לבנק / מתוכן מזומן שנגבה" לדוח השנתי ולדוח החצי-שנתי (הדוח החודשי כבר כלל את זה) — לבקשה מפורשת.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6672,6 +6672,12 @@ async function createPDFReport() {
     totalCollected += rowTotal;
   });
 
+  // פילוח בנק/מזומן עבור "ועד בית שוטף" — מחושב מאותה קבוצת תשלומים מדוללת
+  // (paymentMap, תשלום אחד לכל דירה/חודש) שממנה נבנה totalCollected למעלה,
+  // כדי שהפילוח יסתכם בדיוק לאותו סה"כ. ביקשו להוסיף פירוט זה לדוח, במקביל
+  // למה שכבר מוצג בלשונית "מאזן".
+  const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(Object.values(paymentMap));
+
   // חישוב יתרות לדוח
   const openingBalance = buildingData?.openingBalance || 0;
   const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
@@ -6772,6 +6778,8 @@ async function createPDFReport() {
         ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.openingBalanceDate)}</span>` : ''}</div>` : ''}
         ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.cashOpeningBalanceDate)}</span>` : ''}</div>` : ''}
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה — ועד בית שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>💳 מתוכן הועבר לבנק:</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>💵 מתוכן מזומן שנגבה:</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         ${(chargingCollectedYear || exceptionalOwnerCollectedYear || exceptionalRenterCollectedYear || specialCollectedYear) ? `
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -7123,6 +7131,10 @@ async function createSemiAnnualPDFReport() {
     totalCollected += rowTotal;
   });
 
+  // פילוח בנק/מזומן עבור "ועד בית שוטף" — מאותה קבוצת תשלומים מדוללת
+  // (paymentMap) שממנה נבנה totalCollected למעלה, כמו בדוח השנתי.
+  const { cash: vaadCashCollectedHalf, bank: vaadBankCollectedHalf } = splitCashBank(Object.values(paymentMap));
+
   // הוצאות התקופה
   const expSnap = await getDocs(query(
     collection(db, 'buildings', buildingId, 'expenses'),
@@ -7257,6 +7269,8 @@ async function createSemiAnnualPDFReport() {
 
       <div class="summary">
         <div class="summary-line"><span class="total">סה"כ גבייה בתקופה — ועד שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>💳 מתוכן הועבר לבנק:</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>💵 מתוכן מזומן שנגבה:</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         ${(chargingCollectedHalf || exceptionalOwnerCollectedHalf || exceptionalRenterCollectedHalf || specialCollectedHalf) ? `
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
