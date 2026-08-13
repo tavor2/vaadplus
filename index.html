@@ -2161,7 +2161,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.4'; // שלב א' בשינוי תשלומי הועד: בורר החודשים ב"כספים" (ליד "ניהול") הוחלף מחלון נגלל של "12 החודשים האחרונים" לטווח קבוע של שנה נוכחית מלאה + שנה קודמת מלאה (24 חודשים, ינואר עד דצמבר). למשל באוגוסט 2026 רואים ינואר 2025 עד דצמבר 2026; מ-1 בינואר 2027 הטווח קופץ בבת אחת לינואר 2026 עד דצמבר 2027.
+const APP_VERSION = '2.15.5'; // שלב ב' בשינוי תשלומי הועד: לא ניתן עוד לרשום תשלום ועד שוטף חדש (category='vaad') עבור חודש משנה שקדמה לנוכחית — נחסם בכל 3 נקודות היצירה (markPaid/"✓ סמן כשולם", סימון מהיסטוריית דייר, savePayment דרך המודל "הוסף תשלום"), עם הודעה שמפנה ל"גבייה חריגה - בעלים/שוכרים". ביטול תשלום (cancelPayment) נשאר פתוח תמיד, ללא הגבלה. בטופס גבייה חריגה, "תאריך העברה בפועל" מוגבל (min + ולידציה) לשנה הנוכחית ואילך — לא ניתן עוד לבחור תאריך משנה קודמת.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3791,6 +3791,7 @@ window.setPayView = (view, btn) => {
 
 window.markPaid = async (apt, name, amount) => {
   const ym = document.getElementById('payment-month-select').value;
+  if (isClosedYearForVaad(ym)) { showToast(CLOSED_YEAR_VAAD_MSG(ym.split('-')[0]), 6500); return; }
   const flightKey = apt + '_' + ym;
   if (_vaadPaymentInFlight.has(flightKey)) return; // כבר בתהליך רישום — מונע לחיצה כפולה/מהירה
   _vaadPaymentInFlight.add(flightKey);
@@ -4293,6 +4294,18 @@ async function checkExistingVaadPayment(apt, ym) {
 // לאותה דירה/חודש כל עוד הראשונה עדיין רצה, בלי צורך בשינוי סכימת הנתונים.
 const _vaadPaymentInFlight = new Set();
 
+// "שנה סגורה" לתשלומי ועד בית חדשים = כל שנה שקודמת לשנה הקלנדרית
+// הנוכחית (למשל 2025 בעוד אנחנו ב-2026). לא ניתן עוד לרשום תשלום ועד
+// שוטף (category='vaad') עבור חודש כזה — חוב מתקופה כזו נכנס אך ורק דרך
+// "גבייה חריגה - בעלים/שוכרים" (עם תאריך העברה בפועל בשנה הנוכחית ואילך;
+// ראה isClosedYearActualDate למטה). לא חל על ביטול תשלום קיים (cancelPayment) —
+// זה נשאר פתוח תמיד, לבקשת הוועד.
+function isClosedYearForVaad(ym) {
+  const year = parseInt(String(ym).split('-')[0], 10);
+  return year < new Date().getFullYear();
+}
+const CLOSED_YEAR_VAAD_MSG = year => `⚠️ שנת ${year} סגורה לתשלומי ועד בית חדשים. יש להוסיף תשלום עבור חוב משנה קודמת דרך: ניהול ← הוסף תשלום ← גבייה חריגה - בעלים/שוכרים`;
+
 function eligibleResidentsForPaymentCategory(category) {
   if (category === 'charging') return allResidents.filter(r => r.chargingStation === 'building');
   if (category === 'exceptional_renter') return allResidents.filter(r => r.ownershipType === 'renter');
@@ -4401,8 +4414,16 @@ function buildPaymentModalForCategory(category) {
   document.getElementById('p-amount-note').textContent = isExceptional ? 'הסכום יחולק שווה בשווה בין החודשים שנבחרו.' : '';
   monthToGroup.style.display = isExceptional ? '' : 'none';
   actualDateGroup.style.display = isExceptional ? '' : 'none';
-  if (isExceptional && !document.getElementById('p-actual-date').value) {
-    document.getElementById('p-actual-date').value = new Date().toISOString().split('T')[0];
+  if (isExceptional) {
+    // "תאריך העברה בפועל" הוא התאריך הקובע לאיזו שנה תשלום חריג ייחשב
+    // שייך אליה (לצורך דוחות/מאזן) — לכן לא ניתן לבחור תאריך משנה שקדמה
+    // לנוכחית: חוב מ-2025 שמשולם בפועל ב-2026 צריך "להיכנס" ל-2026, לא
+    // ל-2025 (ששם הוא לא באמת נכנס לחשבון הבנק).
+    const currentYearStart = new Date().getFullYear() + '-01-01';
+    document.getElementById('p-actual-date').min = currentYearStart;
+    if (!document.getElementById('p-actual-date').value) {
+      document.getElementById('p-actual-date').value = new Date().toISOString().split('T')[0];
+    }
   }
 
   onPaymentAptChange();
@@ -4476,6 +4497,7 @@ window.savePayment = async () => {
     // את החודש הרלוונטי, ורק תשלום מסוג "ועד" חוסם — תשלומי טעינה/גבייה
     // חריגה לאותה דירה/חודש לא נחשבים כפילות של דמי הועד.
     if (category === 'vaad') {
+      if (isClosedYearForVaad(fromMonth)) { showToast(CLOSED_YEAR_VAAD_MSG(fromMonth.split('-')[0]), 6500); return; }
       try {
         // מסננים רק לפי חודש דרך Firestore, ואת ההתאמה לדירה עצמה עושים
         // בצד הלקוח עם aptEquals — כי Firestore רגיש לטיפוס בהשוואת שוויון,
@@ -4518,6 +4540,10 @@ window.savePayment = async () => {
   const toMonth = document.getElementById('p-month-to').value;
   const actualDateStr = document.getElementById('p-actual-date').value;
   if (!toMonth || !actualDateStr) { showToast('חובה למלא עד חודש ותאריך העברה בפועל'); return; }
+  if (parseInt(actualDateStr.split('-')[0], 10) < new Date().getFullYear()) {
+    showToast('⚠️ תאריך ההעברה בפועל חייב להיות בשנה הנוכחית ואילך — לא ניתן לרשום תאריך משנה קודמת', 5500);
+    return;
+  }
   const months = enumerateMonths(fromMonth, toMonth);
   if (!months.length) { showToast('טווח החודשים לא תקין'); return; }
 
@@ -7490,6 +7516,7 @@ async function renderHistoryGrid(apt, name, fee) {
         await batch.commit();
         showToast('תשלום בוטל');
       } else {
+        if (isClosedYearForVaad(ym)) { showToast(CLOSED_YEAR_VAAD_MSG(ym.split('-')[0]), 6500); return; }
         const flightKey = _histApt + '_' + ym;
         if (_vaadPaymentInFlight.has(flightKey)) return; // כבר בתהליך רישום — מונע לחיצה כפולה/מהירה
         _vaadPaymentInFlight.add(flightKey);
