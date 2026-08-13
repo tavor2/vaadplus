@@ -2161,7 +2161,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.5'; // שלב ב' בשינוי תשלומי הועד: לא ניתן עוד לרשום תשלום ועד שוטף חדש (category='vaad') עבור חודש משנה שקדמה לנוכחית — נחסם בכל 3 נקודות היצירה (markPaid/"✓ סמן כשולם", סימון מהיסטוריית דייר, savePayment דרך המודל "הוסף תשלום"), עם הודעה שמפנה ל"גבייה חריגה - בעלים/שוכרים". ביטול תשלום (cancelPayment) נשאר פתוח תמיד, ללא הגבלה. בטופס גבייה חריגה, "תאריך העברה בפועל" מוגבל (min + ולידציה) לשנה הנוכחית ואילך — לא ניתן עוד לבחור תאריך משנה קודמת.
+const APP_VERSION = '2.15.6'; // סיכום הגבייה בדוח השנתי/חודשי/חצי-שנתי ובגיליון "מאזן" באקסל שוכתב כך שיציג בדיוק את אותם 7 סעיפים באותו סדר כמו כרטיס "פירוט גבייה" בלשונית מאזן באפליקציה (הועבר לבנק, מזומן שנגבה, גבייה חריגה-בעלים, גבייה חריגה-שוכרים, טעינה חשמלית, גבייה מיוחדת לתיקונים, סה"כ) — במקום המבנה הקודם שהיה שונה בכל דוח (חלק שילבו "ועד שוטף" לשורה אחת עם תת-סעיפים, חלק הסתירו את הפירוט כשהכל אפס). כל השורות מוצגות תמיד, גם כשהסכום אפס, כמו במאזן.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6262,6 +6262,9 @@ window.exportExcel = async () => {
     const chargingCollectedYear = yearPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
     const exceptionalOwnerCollectedYear = yearPayments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
     const exceptionalRenterCollectedYear = yearPayments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
+    // פילוח בנק/מזומן עבור "ועד בית שוטף" — מאותה קבוצת תשלומים מדוללת
+    // (paymentMap) שממנה נבנה totalCollected, כמו בדוחות ה-PDF.
+    const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(Object.values(paymentMap));
 
     const expSnap = await getDocs(query(
       collection(db, 'buildings', buildingId, 'expenses'),
@@ -6423,12 +6426,13 @@ window.exportExcel = async () => {
       ['יתרת קופת מזומן (נוכחית)', cashBalanceAll],
       ['יתרה כוללת', balance],
       [], [],
-      [`סה"כ גבייה — ועד בית שוטף (${year})`, totalCollected],
-      [`🔌 גבייה טעינה חשמלית (${year})`, chargingCollectedYear],
-      [`👑 גבייה חריגה - בעלים (${year})`, exceptionalOwnerCollectedYear],
-      [`🔑 גבייה חריגה - שוכרים (${year})`, exceptionalRenterCollectedYear],
-      [`🔧 גבייה מיוחדת לתיקונים (${year})`, specialCollectedYear],
-      [`סה"כ גבייה — הכל (${year})`, totalCollected + chargingCollectedYear + exceptionalOwnerCollectedYear + exceptionalRenterCollectedYear + specialCollectedYear],
+      ['💳 הועבר לבנק (ועד שוטף)', vaadBankCollectedYear],
+      ['💵 מזומן שנגבה (ועד שוטף)', vaadCashCollectedYear],
+      ['👑 גבייה חריגה - בעלים', exceptionalOwnerCollectedYear],
+      ['🔑 גבייה חריגה - שוכרים', exceptionalRenterCollectedYear],
+      ['🔌 גבייה טעינה חשמלית', chargingCollectedYear],
+      ['🔧 גבייה מיוחדת לתיקונים', specialCollectedYear],
+      [`סה"כ גבייה (${year})`, totalCollected + chargingCollectedYear + exceptionalOwnerCollectedYear + exceptionalRenterCollectedYear + specialCollectedYear],
       [], [],
       [`סה"כ הוצאות (${year})`, totalExpenses],
       [`מתוכן הוצאות מהבנק (${year})`, bankExpensesYear],
@@ -6845,16 +6849,13 @@ async function createPDFReport() {
       <div class="summary">
         ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.openingBalanceDate)}</span>` : ''}</div>` : ''}
         ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.cashOpeningBalanceDate)}</span>` : ''}</div>` : ''}
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה — ועד בית שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>💳 מתוכן הועבר לבנק:</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>💵 מתוכן מזומן שנגבה:</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        ${(chargingCollectedYear || exceptionalOwnerCollectedYear || exceptionalRenterCollectedYear || specialCollectedYear) ? `
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה — הכל:</span><span dir="ltr">₪${(totalCollected+chargingCollectedYear+exceptionalOwnerCollectedYear+exceptionalRenterCollectedYear+specialCollectedYear).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        ` : ''}
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה:</span><span dir="ltr">₪${(totalCollected+chargingCollectedYear+exceptionalOwnerCollectedYear+exceptionalRenterCollectedYear+specialCollectedYear).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות במזומן:</span><span dir="ltr">₪${cashExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -7053,16 +7054,13 @@ async function createMonthlyPDFReport() {
       <tbody>${catRowsHtml}</tbody></table>
 
       <div class="summary">
-        <div class="summary-line"><span class="total">סה"כ נגבה החודש — ועד שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן העברות/בנק:</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מזומן:</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        ${(chargingCollectedMonth || exceptionalOwnerCollectedMonth || exceptionalRenterCollectedMonth || specialCollectedMonth) ? `
-        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span class="total">סה"כ נגבה החודש — הכל:</span><span dir="ltr">₪${(totalCollected+chargingCollectedMonth+exceptionalOwnerCollectedMonth+exceptionalRenterCollectedMonth+specialCollectedMonth).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        ` : ''}
+        <div class="summary-line"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total">סה"כ גבייה החודש:</span><span dir="ltr">₪${(totalCollected+chargingCollectedMonth+exceptionalOwnerCollectedMonth+exceptionalRenterCollectedMonth+specialCollectedMonth).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ הוצאות החודש:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מהבנק:</span><span dir="ltr">₪${bankExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מזומן:</span><span dir="ltr">₪${cashExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
@@ -7336,16 +7334,13 @@ async function createSemiAnnualPDFReport() {
       </table>
 
       <div class="summary">
-        <div class="summary-line"><span class="total">סה"כ גבייה בתקופה — ועד שוטף:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>💳 מתוכן הועבר לבנק:</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>💵 מתוכן מזומן שנגבה:</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        ${(chargingCollectedHalf || exceptionalOwnerCollectedHalf || exceptionalRenterCollectedHalf || specialCollectedHalf) ? `
-        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span class="total">סה"כ גבייה בתקופה — הכל:</span><span dir="ltr">₪${(totalCollected+chargingCollectedHalf+exceptionalOwnerCollectedHalf+exceptionalRenterCollectedHalf+specialCollectedHalf).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        ` : ''}
+        <div class="summary-line"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span class="total">סה"כ גבייה בתקופה:</span><span dir="ltr">₪${(totalCollected+chargingCollectedHalf+exceptionalOwnerCollectedHalf+exceptionalRenterCollectedHalf+specialCollectedHalf).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ הוצאות בתקופה:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות במזומן:</span><span dir="ltr">₪${cashExpensesHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
