@@ -2161,7 +2161,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.7'; // שלב ג' בשינוי תשלומי הועד: דוחות/אקסל משייכים תשלומי "גבייה חריגה" (owner/renter) לתקופה לפי paidAt (תאריך העברה בפועל שהוזן בטופס) במקום לפי 'month' (החודשים שהתשלום מכסה) — כך חוב מ-2025 שמשולם בפועל ב-2026 נכנס לדוח/מאזן 2026, לא 2025. עודכנו: createPDFReport, createMonthlyPDFReport (כולל היתרה המצטברת לסוף חודש), createSemiAnnualPDFReport (יתרת פתיחה/סגירה של התקופה), exportExcel (כולל פירוט חודשי). נוספו fetchAllExceptionalPayments()/splitPaymentsForPeriod() משותפות. הלשונית "מאזן" עצמה ו"חריגים וטעינה חשמלית" לא השתנו — הן כבר פועלות על האוסף המלא ללא תלות ב-month.
+const APP_VERSION = '2.15.8'; // 3 שיפורים בדוח השנתי/חודשי/חצי-שנתי/גבייה מיוחדת: (1) נוספו קווים שחורים מפרידים בין יתרות פתיחה לרשימת הגבייה, ובין סה"כ גבייה לסה"כ הוצאות — עקבי עם הקו שכבר היה לפני יתרות הבנק/מזומן. (2) נוספה הגנת page-break-inside:avoid (גם ב-CSS וגם באפשרות pagebreak.avoid של html2pdf) לשורות טבלה ולשורות סיכום, כדי שדוח מרובה-עמודים לא ייחתך באמצע שורה. (3) כל 4 מפיקי הדוחות/PDF כעת משהים את ה-listeners החיים הרלוונטיים (תשלומי החודש הנבחר / גבייה מיוחדת) למשך ההפקה ומחברים מחדש בסיום — אותו תיקון בדיוק שכבר טופל ב-generateReceipt() לבעיית קבלות חלקיות/ריקות, שם הסיבה הייתה onSnapshot שמפעיל רינדור רקע בדיוק בזמן שה-canvas מצלם.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4893,6 +4893,13 @@ window.generateSpecialCollectionPDF = async (id) => {
     return;
   }
   receiptGenerationInProgress = true;
+  // אותו תיקון כמו בשאר מפיקי הדוחות/קבלות: משהים את ה-listeners החיים של
+  // המודל הזה (שיכולים להפעיל רינדור רקע בדיוק כשה-canvas מצלם) למשך
+  // ההפקה, ומחברים מחדש בסיום.
+  const pausedCollections = !!unsubSpecialCollections;
+  const pausedPayments = !!unsubSpecialPayments;
+  if (pausedCollections) { unsubSpecialCollections(); unsubSpecialCollections = null; specialCollectionsListenerBuildingId = null; }
+  if (pausedPayments) { unsubSpecialPayments(); unsubSpecialPayments = null; specialPaymentsListenerBuildingId = null; }
   try {
     showToast('📄 מכין דוח...');
     if (!window.html2pdf) {
@@ -4909,6 +4916,8 @@ window.generateSpecialCollectionPDF = async (id) => {
     showToast('שגיאה: ' + e.message);
   } finally {
     receiptGenerationInProgress = false;
+    if (pausedCollections) ensureSpecialCollectionsListener();
+    if (pausedPayments) ensureSpecialPaymentsListener();
   }
 };
 
@@ -4953,8 +4962,9 @@ async function createSpecialCollectionPDFReport(id) {
       table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
       th { background: #1A56DB; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
       td { padding: 8px; border: 1px solid #ddd; }
+      tr { page-break-inside: avoid; break-inside: avoid; }
       .summary { margin-top: 20px; font-size: 15px; }
-      .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; }
+      .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; page-break-inside: avoid; break-inside: avoid; }
       .total { font-weight: bold; color: #1A56DB; }
     </style></head><body>
       <h1>דוח&nbsp;גבייה&nbsp;מיוחדת&nbsp;לתיקון</h1>
@@ -4990,7 +5000,8 @@ async function createSpecialCollectionPDFReport(id) {
     filename: `גביה_מיוחדת_${(sc.title||'תיקון').replace(/\s+/g,'_')}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
-    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
@@ -6683,6 +6694,13 @@ window.generatePDF = async () => {
     return;
   }
   receiptGenerationInProgress = true;
+  // משהה את ה-listener החי של תשלומי החודש הנבחר (אם פעיל) למשך הפקת
+  // הדוח — אותו תיקון בדיוק שכבר בוצע ב-generateReceipt(): onSnapshot יכול
+  // להפעיל רינדור רקע בדיוק כשה-canvas מצלם את התוכן, וזה עלול "לגזול" זמן
+  // ציור ולגרום לדוח חלקי/פגום (הסיבה שלעיתים היה צריך לנקות cache/למחוק
+  // דוחות ישנים ולנסות שוב). loadPayments() בסוף מחבר את ה-listener מחדש.
+  const pausedListener = !!unsubPayments;
+  if (pausedListener) { unsubPayments(); unsubPayments = null; currentPaymentsYm = null; }
   try {
     showToast('📄 מכין דוח...');
     // Load html2pdf library
@@ -6700,6 +6718,7 @@ window.generatePDF = async () => {
     showToast('שגיאה: ' + e.message);
   } finally {
     receiptGenerationInProgress = false;
+    if (pausedListener) loadPayments();
   }
 };
 
@@ -6831,8 +6850,9 @@ async function createPDFReport() {
         table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
         th { background: #1A56DB; color: white; padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
         td { padding: 8px; border: 1px solid #ddd; }
+        tr { page-break-inside: avoid; break-inside: avoid; }
         .summary { margin-top: 30px; font-size: 16px; }
-        .summary-line { margin: 10px 0; }
+        .summary-line { margin: 10px 0; page-break-inside: avoid; break-inside: avoid; }
         .total { font-weight: bold; color: #1A56DB; }
       </style>
     </head>
@@ -6903,6 +6923,7 @@ async function createPDFReport() {
       <div class="summary">
         ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.openingBalanceDate)}</span>` : ''}</div>` : ''}
         ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.cashOpeningBalanceDate)}</span>` : ''}</div>` : ''}
+        <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -6910,9 +6931,12 @@ async function createPDFReport() {
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה:</span><span dir="ltr">₪${(totalCollected+chargingCollectedYear+exceptionalOwnerCollectedYear+exceptionalRenterCollectedYear+specialCollectedYear).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        </div>
+        <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות במזומן:</span><span dir="ltr">₪${cashExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        </div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
           <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">יתרה בחשבון הבנק:</span><span dir="ltr">&#8362;${bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
           <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">יתרת מזומן:</span><span dir="ltr">&#8362;${cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -6938,7 +6962,8 @@ async function createPDFReport() {
     filename: `vaad_bait_${year}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
-    jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
+    jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
@@ -6953,6 +6978,8 @@ window.generateMonthlyPDF = async () => {
     return;
   }
   receiptGenerationInProgress = true;
+  const pausedListener = !!unsubPayments;
+  if (pausedListener) { unsubPayments(); unsubPayments = null; currentPaymentsYm = null; }
   try {
     showToast('📄 מכין דוח חודשי...');
     if (!window.html2pdf) {
@@ -6969,6 +6996,7 @@ window.generateMonthlyPDF = async () => {
     showToast('שגיאה: ' + e.message);
   } finally {
     receiptGenerationInProgress = false;
+    if (pausedListener) loadPayments();
   }
 };
 
@@ -7096,8 +7124,9 @@ async function createMonthlyPDFReport() {
       table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
       th { background: #1A56DB; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
       td { padding: 8px; border: 1px solid #ddd; }
+      tr { page-break-inside: avoid; break-inside: avoid; }
       .summary { margin-top: 20px; font-size: 15px; }
-      .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; }
+      .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; page-break-inside: avoid; break-inside: avoid; }
       .total { font-weight: bold; color: #1A56DB; }
     </style></head><body>
       <h1>דוח&nbsp;חודשי&nbsp;—&nbsp;הכנסות,&nbsp;הוצאות&nbsp;ומאזן</h1>
@@ -7154,7 +7183,8 @@ async function createMonthlyPDFReport() {
     filename: `vaad_bait_${ym}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
-    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
@@ -7169,6 +7199,8 @@ window.generateSemiAnnualPDF = async () => {
     return;
   }
   receiptGenerationInProgress = true;
+  const pausedListener = !!unsubPayments;
+  if (pausedListener) { unsubPayments(); unsubPayments = null; currentPaymentsYm = null; }
   try {
     showToast('📄 מכין דוח חצי שנתי...');
     if (!window.html2pdf) {
@@ -7185,6 +7217,7 @@ window.generateSemiAnnualPDF = async () => {
     showToast('שגיאה: ' + e.message);
   } finally {
     receiptGenerationInProgress = false;
+    if (pausedListener) loadPayments();
   }
 };
 
@@ -7344,8 +7377,9 @@ async function createSemiAnnualPDFReport() {
         table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
         th { background: #1A56DB; color: white; padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
         td { padding: 8px; border: 1px solid #ddd; }
+        tr { page-break-inside: avoid; break-inside: avoid; }
         .summary { margin-top: 30px; font-size: 16px; }
-        .summary-line { margin: 10px 0; display:flex; direction:rtl; gap:5px; }
+        .summary-line { margin: 10px 0; display:flex; direction:rtl; gap:5px; page-break-inside: avoid; break-inside: avoid; }
         .total { font-weight: bold; color: #1A56DB; }
       </style>
     </head>
@@ -7453,7 +7487,8 @@ async function createSemiAnnualPDFReport() {
     filename: `vaad_bait_${fromYm}_${toYm}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
-    jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
+    jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
