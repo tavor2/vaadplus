@@ -1421,6 +1421,35 @@
   </div>
 </div>
 
+<!-- Edit Category Payment (charging / exceptional) Modal -->
+<div class="modal-overlay" id="modal-edit-category-payment">
+  <div class="modal">
+    <div class="modal-title">✏️ עריכת תשלום</div>
+    <input type="hidden" id="ecp-key"/>
+    <div id="ecp-context" style="font-size:13px;color:var(--gray-600);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
+    <div class="form-group">
+      <label class="form-label" id="ecp-amount-label">סכום כולל (₪) *</label>
+      <input class="form-input" id="ecp-amount" type="number" step="0.01" min="0"/>
+      <div id="ecp-amount-note" style="font-size:11px;color:var(--gray-500);margin-top:4px;"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">אופן תשלום</label>
+      <select class="form-select" id="ecp-method">
+        <option value="transfer">💳 העברה בנקאית</option>
+        <option value="standingOrder">🔁 הוראת קבע</option>
+        <option value="cash">💵 מזומן</option>
+        <option value="check">🧾 שיק</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">הערה</label>
+      <input class="form-input" id="ecp-note" placeholder="אופציונלי"/>
+    </div>
+    <button class="btn-primary" onclick="saveEditCategoryGroup()">💾 שמור שינויים</button>
+    <button class="btn-secondary" onclick="closeModal('modal-edit-category-payment')">ביטול</button>
+  </div>
+</div>
+
 <!-- Custom Confirm Modal (avoids native browser confirm() showing the site URL) -->
 <div class="modal-overlay" id="modal-confirm">
   <div class="modal" style="max-width:340px;">
@@ -2161,7 +2190,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.8'; // 3 שיפורים בדוח השנתי/חודשי/חצי-שנתי/גבייה מיוחדת: (1) נוספו קווים שחורים מפרידים בין יתרות פתיחה לרשימת הגבייה, ובין סה"כ גבייה לסה"כ הוצאות — עקבי עם הקו שכבר היה לפני יתרות הבנק/מזומן. (2) נוספה הגנת page-break-inside:avoid (גם ב-CSS וגם באפשרות pagebreak.avoid של html2pdf) לשורות טבלה ולשורות סיכום, כדי שדוח מרובה-עמודים לא ייחתך באמצע שורה. (3) כל 4 מפיקי הדוחות/PDF כעת משהים את ה-listeners החיים הרלוונטיים (תשלומי החודש הנבחר / גבייה מיוחדת) למשך ההפקה ומחברים מחדש בסיום — אותו תיקון בדיוק שכבר טופל ב-generateReceipt() לבעיית קבלות חלקיות/ריקות, שם הסיבה הייתה onSnapshot שמפעיל רינדור רקע בדיוק בזמן שה-canvas מצלם.
+const APP_VERSION = '2.15.9'; // הוספת אפשרות עריכה (✏️ ערוך) לתשלומי "חריגים וטעינה חשמלית" קיימים — סכום כולל + אופן תשלום + הערה (לא דירה/חודשים/תאריך). לגבייה חריגה מרובת-חודשים הסכום מחולק מחדש שווה בשווה עם אותה לוגיקת עיגול כמו ביצירה המקורית (savePayment). יומן הפעולות מציג כעת "✏️ עודכן" עם ₪ישן←₪חדש עבור עדכונים כאלה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5084,7 +5113,11 @@ function renderCategoryPaymentsList() {
   });
 
   _categoryGroupsCache = {};
-  let groupList = Object.entries(groups).map(([key, items]) => {
+  let groupList = Object.entries(groups).map(([key, itemsRaw]) => {
+    // ממוינים לפי חודש — כדי שחלוקת סכום מחדש בעריכה (saveEditCategoryGroup)
+    // תהיה דטרמיניסטית ותואמת לסדר שבו savePayment() יוצר אותם מלכתחילה
+    // (עודף העיגול נספג תמיד בחודש האחרון).
+    const items = [...itemsRaw].sort((a,b) => (a.month||'').localeCompare(b.month||''));
     const first = items[0];
     const totalAmount = items.reduce((s,p) => s + (p.amount||0), 0);
     const months = [...new Set(items.map(p => p.month))].sort();
@@ -5123,7 +5156,8 @@ function renderCategoryPaymentsList() {
       + '<div style="text-align:left;white-space:nowrap;">'
       + '<div style="font-weight:700;font-size:16px;">'+fmtCurrency(g.totalAmount)+' '+(PAYMENT_METHOD_ICONS[g.method]||'')+'</div>'
       + '</div></div>'
-      + '<div style="display:flex;gap:8px;border-top:1px solid var(--gray-100);padding-top:10px;margin-top:10px;">'
+      + '<div style="display:flex;gap:8px;border-top:1px solid var(--gray-100);padding-top:10px;margin-top:10px;flex-wrap:wrap;">'
+      + '<button class="btn-icon" style="flex:1;" onclick="openEditCategoryGroup(\''+g.key+'\')">✏️ ערוך</button>'
       + '<button class="btn-icon" style="flex:1;" onclick="generateCategoryGroupReceipt(\''+g.key+'\')">🧾 קבלה</button>'
       + '<button class="btn-icon" style="flex:1;background:#25D366;color:white;" onclick="generateCategoryGroupReceipt(\''+g.key+'\',true)">💬 שתף</button>'
       + '<button class="btn-danger" style="flex:1;" onclick="cancelCategoryGroup(\''+g.key+'\')">חזור</button>'
@@ -5146,6 +5180,69 @@ window.cancelCategoryGroup = async (key) => {
     });
     await batch.commit();
     showToast('תשלום בוטל');
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// פותח את טופס עריכת תשלום קטגוריה (טעינה/גבייה חריגה) עבור קבוצה קיימת.
+// ניתן לערוך רק סכום כולל + אופן תשלום + הערה — לא דירה/חודשים/תאריך
+// ההעברה, כדי לא לפתוח מחדש את כל שאלות הזכאות/הכפילות שכבר טופלו
+// ב-savePayment() בזמן היצירה. לקבוצה מרובת-חודשים (גבייה חריגה) הסכום
+// מוצג כסכום כולל ומחולק מחדש בשמירה — בדיוק כמו ביצירה המקורית.
+window.openEditCategoryGroup = (key) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const g = _categoryGroupsCache[key];
+  if (!g) return;
+  document.getElementById('ecp-key').value = key;
+  const catLabel = g.category === 'charging' ? '🔌 טעינה חשמלית' : (g.payerType === 'renter' ? '🔑 גבייה חריגה - שוכרים' : '👑 גבייה חריגה - בעלים');
+  const monthsLabel = g.months.length > 1 ? formatMonthRanges(g.months) : (g.months[0] ? monthLabel(g.months[0]) : '');
+  document.getElementById('ecp-context').innerHTML = '<strong>' + (g.name||'') + '</strong> • דירה ' + g.apt
+    + '<br/>' + catLabel + ' • ' + monthsLabel;
+  document.getElementById('ecp-amount-label').textContent = g.months.length > 1 ? 'סכום כולל (₪) *' : 'סכום (₪) *';
+  document.getElementById('ecp-amount-note').textContent = g.months.length > 1 ? 'הסכום יחולק מחדש שווה בשווה בין ' + g.months.length + ' החודשים.' : '';
+  document.getElementById('ecp-amount').value = g.totalAmount;
+  document.getElementById('ecp-method').value = g.method || 'transfer';
+  document.getElementById('ecp-note').value = g.note || '';
+  openModal('modal-edit-category-payment');
+};
+
+window.saveEditCategoryGroup = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const key = document.getElementById('ecp-key').value;
+  const g = _categoryGroupsCache[key];
+  if (!g) { showToast('שגיאה: התשלום לא נמצא'); return; }
+  const amount = parseFloat(document.getElementById('ecp-amount').value);
+  const method = document.getElementById('ecp-method').value;
+  const note = document.getElementById('ecp-note').value.trim();
+  if (!amount || amount <= 0) { showToast('הכנס סכום תקין'); return; }
+
+  // חלוקה מחדש בין החודשים באותו אופן שבו savePayment() חילק ביצירה
+  // המקורית — חודש אחרון סופג את שארית העיגול. עבור קבוצה של חודש בודד
+  // (כל תשלומי הטעינה, וגבייה חריגה שכוסתה בחודש אחד בלבד) זה פשוט מציב
+  // את הסכום המלא באותו תשלום יחיד.
+  const n = g.items.length;
+  const perItem = Math.round((amount / n) * 100) / 100;
+  const roundedRest = Math.round(perItem * (n - 1) * 100) / 100;
+  const lastItemAmount = Math.round((amount - roundedRest) * 100) / 100;
+
+  try {
+    const batch = writeBatch(db);
+    g.items.forEach((p, i) => {
+      const itemAmount = (i === n - 1) ? lastItemAmount : perItem;
+      batch.update(doc(db, 'buildings', buildingId, 'payments', p.id), {
+        amount: itemAmount, method,
+        note: note || (n > 1 ? `גבייה חריגה עבור ${n} חודשים` : null)
+      });
+    });
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: g.apt, name: g.name, amount, previousAmount: g.totalAmount, month: g.months.join(', '),
+      action: 'category_payment_updated', category: g.category, payerType: g.payerType || null,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    showToast('✅ התשלום עודכן');
+    closeModal('modal-edit-category-payment');
     loadBalance();
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
@@ -6668,14 +6765,20 @@ window.openLog = async () => {
 
     // type === 'payment' (default, includes legacy entries without a type field)
     const isCancelled = p.action === 'cancelled';
+    const isUpdated = p.action === 'category_payment_updated';
     const badge = isCancelled
       ? '<div style="text-align:left;color:var(--red);font-weight:600;">❌ בוטל</div>'
+      : isUpdated
+      ? '<div style="text-align:left;color:var(--blue);font-weight:600;">✏️ עודכן</div>'
       : '<div style="text-align:left;color:var(--green);font-weight:600;">✅ שולם</div>';
+    const amountLine = isUpdated
+      ? '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.month||'-')+' • ₪'+(p.previousAmount??0)+' ← ₪'+(p.amount||0)+'</div>'
+      : '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.month||'-')+' • ₪'+(p.amount||0)+'</div>';
     return '<div class="card" style="margin-bottom:8px;padding:12px;font-size:13px;'+(isCancelled ? 'opacity:0.7;' : '')+'">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
       + '<div>'
       + '<div style="font-weight:700;'+(isCancelled ? 'text-decoration:line-through;' : '')+'">'+p.name+' (דירה '+p.apt+')</div>'
-      + '<div style="color:var(--gray-400);font-size:12px;margin-top:2px;">'+(p.month||'-')+' • ₪'+(p.amount||0)+'</div>'
+      + amountLine
       + byLine
       + '</div>'
       + badge
