@@ -2204,7 +2204,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.12'; // טאב "מאזן" — הכרטיסים "סה"כ הועבר לבנק"/"סה"כ מזומן שנגבה" (v2.15.11) עוצבו מחדש כ-grid של שני stat-card נפרדים, זהה בדיוק לעיצוב "יתרת בנק"/"יתרת מזומן" שמתחתיהם — במקום להיות טקסט קטן בתוך כרטיס הסה"כ הירוק, שנראה לא עקבי.
+const APP_VERSION = '2.15.13'; // הפרדת בנק/מזומן (כמו שכבר קיימת ל"ועד שוטף") הורחבה לשלושת ערוצי הגבייה הנוספים — טעינה חשמלית, גבייה חריגה בעלים/שוכרים, גבייה מיוחדת לתיקונים — בכל 4 הדוחות: PDF שנתי, PDF חודשי, PDF חצי-שנתי, וגיליון "מאזן" באקסל. כל אחד מהם כעת מציג "💳 הועבר לבנק (X)" + "💵 מזומן שנגבה (X)" לכל ערוץ, במקום שורת סה"כ יחידה. משתמש ב-splitCashBank() הקיים, אותה גישה שכבר יושמה בטאב "מאזן" באפליקציה (v2.15.10).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6435,7 +6435,8 @@ window.exportExcel = async () => {
     yearPayments.filter(isVaadPayment).forEach(p => {
       paymentMap[`${p.apt}_${p.month}`] = p;
     });
-    const chargingCollectedYear = yearPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+    const chargingPaymentsYearXl = yearPayments.filter(p => p.category === 'charging');
+    const { cash: chargingCashCollectedYear, bank: chargingBankCollectedYear, total: chargingCollectedYear } = splitCashBank(chargingPaymentsYearXl);
     // "גבייה חריגה" משויכת לשנה לפי paidAt (תאריך העברה בפועל), לא לפי
     // 'month' — ראה אותו תיעוד ב-createPDFReport.
     const allExceptionalPayments = await fetchAllExceptionalPayments();
@@ -6443,8 +6444,10 @@ window.exportExcel = async () => {
       const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
       return d && d.getFullYear() === year;
     });
-    const exceptionalOwnerCollectedYear = yearExceptionalPayments.filter(p => p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
-    const exceptionalRenterCollectedYear = yearExceptionalPayments.filter(p => p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
+    const exceptionalOwnerPaymentsYearXl = yearExceptionalPayments.filter(p => p.payerType !== 'renter');
+    const { cash: exceptionalOwnerCashCollectedYear, bank: exceptionalOwnerBankCollectedYear, total: exceptionalOwnerCollectedYear } = splitCashBank(exceptionalOwnerPaymentsYearXl);
+    const exceptionalRenterPaymentsYearXl = yearExceptionalPayments.filter(p => p.payerType === 'renter');
+    const { cash: exceptionalRenterCashCollectedYear, bank: exceptionalRenterBankCollectedYear, total: exceptionalRenterCollectedYear } = splitCashBank(exceptionalRenterPaymentsYearXl);
     // פילוח לפי חודש (לפי paidAt) לשימוש ב"פירוט חודשי" למטה — אותו עיקרון
     // כמו specialByMonth.
     const exceptionalByMonth = {};
@@ -6475,7 +6478,8 @@ window.exportExcel = async () => {
       const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
       return d && d.getFullYear() === year;
     });
-    const specialCollectedYear = yearSpecialPayments.reduce((s,p) => s + (p.amount||0), 0);
+    const specialPaymentsYearXl = yearSpecialPayments;
+    const { cash: specialCashCollectedYear, bank: specialBankCollectedYear, total: specialCollectedYear } = splitCashBank(specialPaymentsYearXl);
     const specialByMonth = {};
     yearSpecialPayments.forEach(p => {
       const d = p.paidAt.toDate();
@@ -6621,10 +6625,14 @@ window.exportExcel = async () => {
       [], [],
       ['💳 הועבר לבנק (ועד שוטף)', vaadBankCollectedYear],
       ['💵 מזומן שנגבה (ועד שוטף)', vaadCashCollectedYear],
-      ['👑 גבייה חריגה - בעלים', exceptionalOwnerCollectedYear],
-      ['🔑 גבייה חריגה - שוכרים', exceptionalRenterCollectedYear],
-      ['🔌 גבייה טעינה חשמלית', chargingCollectedYear],
-      ['🔧 גבייה מיוחדת לתיקונים', specialCollectedYear],
+      ['💳 הועבר לבנק (חריגה - בעלים)', exceptionalOwnerBankCollectedYear],
+      ['💵 מזומן שנגבה (חריגה - בעלים)', exceptionalOwnerCashCollectedYear],
+      ['💳 הועבר לבנק (חריגה - שוכרים)', exceptionalRenterBankCollectedYear],
+      ['💵 מזומן שנגבה (חריגה - שוכרים)', exceptionalRenterCashCollectedYear],
+      ['💳 הועבר לבנק (טעינה חשמלית)', chargingBankCollectedYear],
+      ['💵 מזומן שנגבה (טעינה חשמלית)', chargingCashCollectedYear],
+      ['💳 הועבר לבנק (גבייה מיוחדת)', specialBankCollectedYear],
+      ['💵 מזומן שנגבה (גבייה מיוחדת)', specialCashCollectedYear],
       [`סה"כ גבייה (${year})`, totalCollected + chargingCollectedYear + exceptionalOwnerCollectedYear + exceptionalRenterCollectedYear + specialCollectedYear],
       [], [],
       [`סה"כ הוצאות (${year})`, totalExpenses],
@@ -6886,7 +6894,8 @@ async function createPDFReport() {
     const key = p.apt + '_' + p.month;
     paymentMap[key] = p;
   });
-  const chargingCollectedYear = yearPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const chargingPaymentsYear = yearPayments.filter(p => p.category === 'charging');
+  const { cash: chargingCashCollectedYear, bank: chargingBankCollectedYear, total: chargingCollectedYear } = splitCashBank(chargingPaymentsYear);
 
   // "גבייה חריגה" (owner/renter) משויכת לדוח לפי paidAt (תאריך ההעברה
   // בפועל שהוזן בטופס) — לא לפי 'month' (החודשים שהתשלום מכסה). כך חוב
@@ -6896,16 +6905,18 @@ async function createPDFReport() {
     const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
     return d && d.getFullYear() === year;
   });
-  const exceptionalOwnerCollectedYear = yearExceptionalPayments.filter(p => p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalRenterCollectedYear = yearExceptionalPayments.filter(p => p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerPaymentsYear = yearExceptionalPayments.filter(p => p.payerType !== 'renter');
+  const { cash: exceptionalOwnerCashCollectedYear, bank: exceptionalOwnerBankCollectedYear, total: exceptionalOwnerCollectedYear } = splitCashBank(exceptionalOwnerPaymentsYear);
+  const exceptionalRenterPaymentsYear = yearExceptionalPayments.filter(p => p.payerType === 'renter');
+  const { cash: exceptionalRenterCashCollectedYear, bank: exceptionalRenterBankCollectedYear, total: exceptionalRenterCollectedYear } = splitCashBank(exceptionalRenterPaymentsYear);
 
   // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month', לכן
   // שולפים את כל האוסף ומסננים לפי paidAt בצד הלקוח (ראה אותו תיעוד ב-exportExcel).
   const allSpecialPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'specialPayments'));
   const allSpecialPaymentsData = allSpecialPaySnap.docs.map(d => d.data());
-  const specialCollectedYear = allSpecialPaymentsData
-    .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d.getFullYear() === year; })
-    .reduce((s,p) => s + (p.amount||0), 0);
+  const specialPaymentsYear = allSpecialPaymentsData
+    .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d.getFullYear() === year; });
+  const { cash: specialCashCollectedYear, bank: specialBankCollectedYear, total: specialCollectedYear } = splitCashBank(specialPaymentsYear);
 
   const months = HEBREW_MONTHS;
   
@@ -7069,10 +7080,14 @@ async function createPDFReport() {
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (טעינה חשמלית):</span><span dir="ltr">₪${chargingBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (טעינה חשמלית):</span><span dir="ltr">₪${chargingCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (גבייה מיוחדת):</span><span dir="ltr">₪${specialBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (גבייה מיוחדת):</span><span dir="ltr">₪${specialCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה:</span><span dir="ltr">₪${(totalCollected+chargingCollectedYear+exceptionalOwnerCollectedYear+exceptionalRenterCollectedYear+specialCollectedYear).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         </div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
@@ -7161,7 +7176,8 @@ async function createMonthlyPDFReport() {
   const vaadMonthPayments = monthPayments.filter(isVaadPayment);
   const paymentMap = {};
   vaadMonthPayments.forEach(p => { paymentMap[p.apt] = p; });
-  const chargingCollectedMonth = monthPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const chargingPaymentsMonth = monthPayments.filter(p => p.category === 'charging');
+  const { cash: chargingCashCollectedMonth, bank: chargingBankCollectedMonth, total: chargingCollectedMonth } = splitCashBank(chargingPaymentsMonth);
 
   // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month'/'date'
   // בפורמט מחרוזת כמו לתשלומים/הוצאות רגילים, אלא רק Timestamp (paidAt),
@@ -7171,9 +7187,9 @@ async function createMonthlyPDFReport() {
   const monthEndDate = new Date(ymYear, ymMonthNum, 0, 23, 59, 59, 999); // רגע אחרון של החודש הנבחר
   const allSpecialPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'specialPayments'));
   const allSpecialPaymentsData = allSpecialPaySnap.docs.map(d => d.data());
-  const specialCollectedMonth = allSpecialPaymentsData
-    .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d.getFullYear() === ymYear && (d.getMonth()+1) === ymMonthNum; })
-    .reduce((s,p) => s + (p.amount||0), 0);
+  const specialPaymentsMonth = allSpecialPaymentsData
+    .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d.getFullYear() === ymYear && (d.getMonth()+1) === ymMonthNum; });
+  const { cash: specialCashCollectedMonth, bank: specialBankCollectedMonth, total: specialCollectedMonth } = splitCashBank(specialPaymentsMonth);
   const cumSpecialPaymentsData = allSpecialPaymentsData
     .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d <= monthEndDate; });
 
@@ -7184,8 +7200,10 @@ async function createMonthlyPDFReport() {
     const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
     return d && d.getFullYear() === ymYear && (d.getMonth()+1) === ymMonthNum;
   });
-  const exceptionalOwnerCollectedMonth = monthExceptionalPayments.filter(p => p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalRenterCollectedMonth = monthExceptionalPayments.filter(p => p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerPaymentsMonth = monthExceptionalPayments.filter(p => p.payerType !== 'renter');
+  const { cash: exceptionalOwnerCashCollectedMonth, bank: exceptionalOwnerBankCollectedMonth, total: exceptionalOwnerCollectedMonth } = splitCashBank(exceptionalOwnerPaymentsMonth);
+  const exceptionalRenterPaymentsMonth = monthExceptionalPayments.filter(p => p.payerType === 'renter');
+  const { cash: exceptionalRenterCashCollectedMonth, bank: exceptionalRenterBankCollectedMonth, total: exceptionalRenterCollectedMonth } = splitCashBank(exceptionalRenterPaymentsMonth);
 
   const residents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
   let totalCollected = 0, paidCount = 0;
@@ -7294,10 +7312,14 @@ async function createMonthlyPDFReport() {
       <div class="summary">
         <div class="summary-line"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (טעינה חשמלית):</span><span dir="ltr">₪${chargingBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (טעינה חשמלית):</span><span dir="ltr">₪${chargingCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (גבייה מיוחדת):</span><span dir="ltr">₪${specialBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (גבייה מיוחדת):</span><span dir="ltr">₪${specialCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה החודש:</span><span dir="ltr">₪${(totalCollected+chargingCollectedMonth+exceptionalOwnerCollectedMonth+exceptionalRenterCollectedMonth+specialCollectedMonth).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ הוצאות החודש:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן מהבנק:</span><span dir="ltr">₪${bankExpensesMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
@@ -7397,7 +7419,8 @@ async function createSemiAnnualPDFReport() {
   halfPayments.filter(isVaadPayment).forEach(p => {
     paymentMap[p.apt + '_' + p.month] = p;
   });
-  const chargingCollectedHalf = halfPayments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
+  const chargingPaymentsHalf = halfPayments.filter(p => p.category === 'charging');
+  const { cash: chargingCashCollectedHalf, bank: chargingBankCollectedHalf, total: chargingCollectedHalf } = splitCashBank(chargingPaymentsHalf);
 
   // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month'/'date'
   // בפורמט מחרוזת, רק Timestamp (paidAt), כך ששאילתת טווח לפי 'date'/'month'
@@ -7408,9 +7431,9 @@ async function createSemiAnnualPDFReport() {
   const toDateEndObj = new Date(toDateLastDay + 'T23:59:59.999');
   const allSpecialPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'specialPayments'));
   const allSpecialPaymentsData = allSpecialPaySnap.docs.map(d => d.data());
-  const specialCollectedHalf = allSpecialPaymentsData
-    .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d >= fromDateObj && d <= toDateEndObj; })
-    .reduce((s,p) => s + (p.amount||0), 0);
+  const specialPaymentsHalf = allSpecialPaymentsData
+    .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d >= fromDateObj && d <= toDateEndObj; });
+  const { cash: specialCashCollectedHalf, bank: specialBankCollectedHalf, total: specialCollectedHalf } = splitCashBank(specialPaymentsHalf);
   const preSpecialPaymentsData = allSpecialPaymentsData
     .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d < fromDateObj; });
   const cumSpecialPaymentsData = allSpecialPaymentsData
@@ -7423,8 +7446,10 @@ async function createSemiAnnualPDFReport() {
     const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
     return d && d >= fromDateObj && d <= toDateEndObj;
   });
-  const exceptionalOwnerCollectedHalf = halfExceptionalPayments.filter(p => p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalRenterCollectedHalf = halfExceptionalPayments.filter(p => p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
+  const exceptionalOwnerPaymentsHalf = halfExceptionalPayments.filter(p => p.payerType !== 'renter');
+  const { cash: exceptionalOwnerCashCollectedHalf, bank: exceptionalOwnerBankCollectedHalf, total: exceptionalOwnerCollectedHalf } = splitCashBank(exceptionalOwnerPaymentsHalf);
+  const exceptionalRenterPaymentsHalf = halfExceptionalPayments.filter(p => p.payerType === 'renter');
+  const { cash: exceptionalRenterCashCollectedHalf, bank: exceptionalRenterBankCollectedHalf, total: exceptionalRenterCollectedHalf } = splitCashBank(exceptionalRenterPaymentsHalf);
 
   let tableRows = '';
   let totalCollected = 0;
@@ -7592,10 +7617,14 @@ async function createSemiAnnualPDFReport() {
       <div class="summary">
         <div class="summary-line"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>👑 גבייה חריגה - בעלים:</span><span dir="ltr">₪${exceptionalOwnerCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>🔑 גבייה חריגה - שוכרים:</span><span dir="ltr">₪${exceptionalRenterCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>🔌 גבייה טעינה חשמלית:</span><span dir="ltr">₪${chargingCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>🔧 גבייה מיוחדת לתיקונים:</span><span dir="ltr">₪${specialCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (טעינה חשמלית):</span><span dir="ltr">₪${chargingBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (טעינה חשמלית):</span><span dir="ltr">₪${chargingCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק (גבייה מיוחדת):</span><span dir="ltr">₪${specialBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה (גבייה מיוחדת):</span><span dir="ltr">₪${specialCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה בתקופה:</span><span dir="ltr">₪${(totalCollected+chargingCollectedHalf+exceptionalOwnerCollectedHalf+exceptionalRenterCollectedHalf+specialCollectedHalf).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ הוצאות בתקופה:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
