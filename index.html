@@ -2204,7 +2204,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.10'; // טאב "מאזן" — פיצול בנק/מזומן נוסף לכל ערוצי הגבייה (טעינה חשמלית, גבייה חריגה בעלים/שוכרים, גבייה מיוחדת לתיקונים), לא רק ל"ועד שוטף" כמו קודם. computeBalanceFigures() כעת מחזיר גם *CashCollected/*TransferCollected לכל ערוץ (בעזרת splitCashBank() הקיים) — לא רק *Collected כולל.
+const APP_VERSION = '2.15.11'; // טאב "מאזן" — מתחת לכותרת הגדולה "סה"כ גבייה" נוספו שתי שורות קטנות: סה"כ הועבר לבנק וסה"כ מזומן שנגבה (transferCollected/cashCollected, כבר קיימים ב-computeBalanceFigures) — סיכום מהיר בלי לגלול לפירוט המלא לפי ערוץ שמופיע בהמשך הטאב.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5965,9 +5965,16 @@ function renderBalance() {
   // כותרת ראשית — סה"כ גבייה (כולל את יתרת הבנק ויתרת המזומן שמפורטות מתחתיה).
   // מורכב מ-5 רכיבים המפורטים בכרטיס "פירוט גבייה" למטה: הועבר לבנק/מזומן
   // שנגבה (ועד בית שוטף בלבד) + גבייה חריגה בעלים/שוכרים + גבייה טעינה.
+  // שתי השורות הקטנות מתחת לסכום הגדול (transferCollected/cashCollected)
+  // הן סה"כ בנק/מזומן על פני כל חמשת ערוצי הגבייה יחד (לא רק "ועד שוטף") —
+  // פירוט מלא, ערוץ-ערוץ, מופיע בכרטיס "פירוט גבייה" למטה.
   html += '<div class="card" style="margin-bottom:16px;text-align:center;">'
     + '<div style="font-size:14px;color:var(--gray-600);margin-bottom:8px;">💰 סה"כ גבייה</div>'
     + '<div style="font-size:36px;font-weight:800;color:var(--green);">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div>'
+    + '<div style="display:flex;justify-content:center;gap:22px;margin-top:10px;padding-top:10px;border-top:1px solid var(--gray-100);">'
+    + '<div><div style="font-size:11px;color:var(--gray-400);">💳 סה"כ הועבר לבנק</div><div style="font-size:15px;font-weight:700;color:var(--gray-800);">₪'+transferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div></div>'
+    + '<div><div style="font-size:11px;color:var(--gray-400);">💵 סה"כ מזומן שנגבה</div><div style="font-size:15px;font-weight:700;color:var(--gray-800);">₪'+cashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div></div>'
+    + '</div>'
     + '</div>';
 
   // יתרת בנק | יתרת מזומן (יתרות אמיתיות — כוללות את כל הכסף בפועל, מכל הקטגוריות)
