@@ -1967,10 +1967,22 @@ function computeBalanceFigures(payments, expenses, deposits, openingBalance, cas
   const vaadCollected = vaadPayments.reduce((s,p) => s + (p.amount||0), 0);
   const vaadCashCollected = vaadPayments.filter(p => p.method === 'cash').reduce((s,p) => s + (p.amount||0), 0);
   const vaadTransferCollected = vaadCollected - vaadCashCollected;
-  const chargingCollected = payments.filter(p => p.category === 'charging').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalOwnerCollected = payments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter').reduce((s,p) => s + (p.amount||0), 0);
-  const exceptionalRenterCollected = payments.filter(p => p.category === 'exceptional' && p.payerType === 'renter').reduce((s,p) => s + (p.amount||0), 0);
-  const specialCollected = specialPayments.reduce((s,p) => s + (p.amount||0), 0);
+
+  // פילוח בנק/מזומן, לא רק סה"כ, גם עבור שלושת ערוצי הגבייה הנוספים —
+  // בדיוק כמו שכבר קיים למעלה עבור "ועד בית שוטף" (vaadCashCollected/
+  // vaadTransferCollected). עד לשינוי הזה הטאב "מאזן" הציג רק סכום כולל
+  // לכל אחד מהם, בלי לגלות כמה מתוכו הגיע בפועל לבנק לעומת קופת המזומן —
+  // מידע שהוועד צריך כדי להבין מאיפה בדיוק מגיעה יתרת המזומן/הבנק, לא רק
+  // מדמי הועד השוטפים. splitCashBank() כבר קיים ומשמש בדיוק לצורך הזה
+  // (יצוא אקסל/דוחות PDF) — כאן פשוט מיישמים אותו על כל אחד מארבעת
+  // הערוצים הנוספים.
+  const chargingPayments = payments.filter(p => p.category === 'charging');
+  const { cash: chargingCashCollected, bank: chargingTransferCollected, total: chargingCollected } = splitCashBank(chargingPayments);
+  const exceptionalOwnerPayments = payments.filter(p => p.category === 'exceptional' && p.payerType !== 'renter');
+  const { cash: exceptionalOwnerCashCollected, bank: exceptionalOwnerTransferCollected, total: exceptionalOwnerCollected } = splitCashBank(exceptionalOwnerPayments);
+  const exceptionalRenterPayments = payments.filter(p => p.category === 'exceptional' && p.payerType === 'renter');
+  const { cash: exceptionalRenterCashCollected, bank: exceptionalRenterTransferCollected, total: exceptionalRenterCollected } = splitCashBank(exceptionalRenterPayments);
+  const { cash: specialCashCollected, bank: specialTransferCollected, total: specialCollected } = splitCashBank(specialPayments);
 
   const totalExpenses = expenses.reduce((s,e) => s + (e.amount||0), 0);
   const cashExpenses = expenses.filter(e => e.method === 'cash').reduce((s,e) => s + (e.amount||0), 0);
@@ -1984,8 +1996,10 @@ function computeBalanceFigures(payments, expenses, deposits, openingBalance, cas
   return {
     totalCollected, cashCollected, transferCollected,
     vaadCollected, vaadCashCollected, vaadTransferCollected,
-    chargingCollected, exceptionalOwnerCollected, exceptionalRenterCollected,
-    specialCollected,
+    chargingCollected, chargingCashCollected, chargingTransferCollected,
+    exceptionalOwnerCollected, exceptionalOwnerCashCollected, exceptionalOwnerTransferCollected,
+    exceptionalRenterCollected, exceptionalRenterCashCollected, exceptionalRenterTransferCollected,
+    specialCollected, specialCashCollected, specialTransferCollected,
     totalExpenses, cashExpenses, bankExpenses,
     totalDeposits, bankBalance, cashBalance,
     balance: bankBalance + cashBalance
@@ -2190,7 +2204,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.9'; // הוספת אפשרות עריכה (✏️ ערוך) לתשלומי "חריגים וטעינה חשמלית" קיימים — סכום כולל + אופן תשלום + הערה (לא דירה/חודשים/תאריך). לגבייה חריגה מרובת-חודשים הסכום מחולק מחדש שווה בשווה עם אותה לוגיקת עיגול כמו ביצירה המקורית (savePayment). יומן הפעולות מציג כעת "✏️ עודכן" עם ₪ישן←₪חדש עבור עדכונים כאלה.
+const APP_VERSION = '2.15.10'; // טאב "מאזן" — פיצול בנק/מזומן נוסף לכל ערוצי הגבייה (טעינה חשמלית, גבייה חריגה בעלים/שוכרים, גבייה מיוחדת לתיקונים), לא רק ל"ועד שוטף" כמו קודם. computeBalanceFigures() כעת מחזיר גם *CashCollected/*TransferCollected לכל ערוץ (בעזרת splitCashBank() הקיים) — לא רק *Collected כולל.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5930,8 +5944,10 @@ function renderBalance() {
   const {
     totalCollected, cashCollected, transferCollected,
     vaadCollected, vaadCashCollected, vaadTransferCollected,
-    chargingCollected, exceptionalOwnerCollected, exceptionalRenterCollected,
-    specialCollected,
+    chargingCollected, chargingCashCollected, chargingTransferCollected,
+    exceptionalOwnerCollected, exceptionalOwnerCashCollected, exceptionalOwnerTransferCollected,
+    exceptionalRenterCollected, exceptionalRenterCashCollected, exceptionalRenterTransferCollected,
+    specialCollected, specialCashCollected, specialTransferCollected,
     totalExpenses, cashExpenses, bankExpenses,
     totalDeposits, bankBalance, cashBalance, balance
   } = computeBalanceFigures(balPaymentsAll, allExpenses, balDepositsAll, openingBalance, cashOpeningBalance, allSpecialPayments);
@@ -5960,12 +5976,14 @@ function renderBalance() {
     + '<div class="stat-card"><div class="stat-value" style="color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 יתרת מזומן</div></div>'
     + '</div>';
 
-  // פירוט גבייה — 6 השורות מרכיבות יחד את "סה"כ גבייה" למעלה. "הועבר
-  // לבנק"/"מזומן שנגבה" כאן הם דמי ועד שוטפים בלבד (לא כוללים טעינה/גבייה
-  // חריגה/גבייה מיוחדת) — כדי לא לערבב בין הגבייה החודשית השוטפת לגבייה
-  // החריגה/טעינה/מיוחדת. "גבייה מיוחדת לתיקונים" נכללת בסה"כ (מ-v2.15.0,
-  // לבקשת הוועד — הכסף עובר בפועל דרך אותו חשבון בנק/קופה, ראה
-  // computeBalanceFigures).
+  // פירוט גבייה — 10 השורות (2 לכל אחד מ-5 הערוצים: בנק+מזומן) מרכיבות יחד
+  // את "סה"כ גבייה" למעלה. עד לשינוי הזה רק "ועד שוטף" היה מפוצל לבנק/מזומן
+  // (2 שורות) בעוד טעינה/גבייה חריגה בעלים/שוכרים/גבייה מיוחדת הוצגו כל אחת
+  // כשורת סה"כ יחידה — לבקשת הוועד, כעת כל ערוצי הגבייה מפוצלים לבנק/מזומן
+  // באותו אופן בדיוק, כדי לדעת בדיוק מאיפה מגיעה כל שקל ביתרת הבנק/המזומן
+  // בפועל, לא רק מדמי הועד השוטפים. "גבייה מיוחדת לתיקונים" נכללת בסה"כ
+  // (מ-v2.15.0, לבקשת הוועד — הכסף עובר בפועל דרך אותו חשבון בנק/קופה,
+  // ראה computeBalanceFigures).
   html += '<div class="card" style="margin-bottom:16px;">'
     + '<div style="font-weight:700;margin-bottom:10px;">פירוט גבייה</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
@@ -5975,16 +5993,28 @@ function renderBalance() {
     + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(ועד שוטף)</span></span><span style="font-weight:700;color:var(--green);">₪'+vaadCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
-    + '<span style="font-size:13px;">👑 גבייה חריגה - בעלים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalOwnerCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(חריגה - בעלים)</span></span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalOwnerTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
-    + '<span style="font-size:13px;">🔑 גבייה חריגה - שוכרים</span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalRenterCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(חריגה - בעלים)</span></span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalOwnerCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
-    + '<span style="font-size:13px;">🔌 גבייה טעינה חשמלית</span><span style="font-weight:700;color:var(--blue);">₪'+chargingCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(חריגה - שוכרים)</span></span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalRenterTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(חריגה - שוכרים)</span></span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalRenterCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(טעינה חשמלית)</span></span><span style="font-weight:700;color:var(--blue);">₪'+chargingTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(טעינה חשמלית)</span></span><span style="font-weight:700;color:var(--blue);">₪'+chargingCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(גבייה מיוחדת לתיקונים)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
-    + '<span style="font-size:13px;">🔧 גבייה מיוחדת לתיקונים</span><span style="font-weight:700;color:var(--gray-600);">₪'+specialCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(גבייה מיוחדת לתיקונים)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:4px;border-top:2px solid var(--gray-200);">'
     + '<span style="font-size:13px;font-weight:700;">סה"כ</span><span style="font-weight:800;">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
