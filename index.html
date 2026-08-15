@@ -2204,7 +2204,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.11'; // טאב "מאזן" — מתחת לכותרת הגדולה "סה"כ גבייה" נוספו שתי שורות קטנות: סה"כ הועבר לבנק וסה"כ מזומן שנגבה (transferCollected/cashCollected, כבר קיימים ב-computeBalanceFigures) — סיכום מהיר בלי לגלול לפירוט המלא לפי ערוץ שמופיע בהמשך הטאב.
+const APP_VERSION = '2.15.12'; // טאב "מאזן" — הכרטיסים "סה"כ הועבר לבנק"/"סה"כ מזומן שנגבה" (v2.15.11) עוצבו מחדש כ-grid של שני stat-card נפרדים, זהה בדיוק לעיצוב "יתרת בנק"/"יתרת מזומן" שמתחתיהם — במקום להיות טקסט קטן בתוך כרטיס הסה"כ הירוק, שנראה לא עקבי.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5965,16 +5965,19 @@ function renderBalance() {
   // כותרת ראשית — סה"כ גבייה (כולל את יתרת הבנק ויתרת המזומן שמפורטות מתחתיה).
   // מורכב מ-5 רכיבים המפורטים בכרטיס "פירוט גבייה" למטה: הועבר לבנק/מזומן
   // שנגבה (ועד בית שוטף בלבד) + גבייה חריגה בעלים/שוכרים + גבייה טעינה.
-  // שתי השורות הקטנות מתחת לסכום הגדול (transferCollected/cashCollected)
-  // הן סה"כ בנק/מזומן על פני כל חמשת ערוצי הגבייה יחד (לא רק "ועד שוטף") —
-  // פירוט מלא, ערוץ-ערוץ, מופיע בכרטיס "פירוט גבייה" למטה.
-  html += '<div class="card" style="margin-bottom:16px;text-align:center;">'
+  html += '<div class="card" style="margin-bottom:10px;text-align:center;">'
     + '<div style="font-size:14px;color:var(--gray-600);margin-bottom:8px;">💰 סה"כ גבייה</div>'
     + '<div style="font-size:36px;font-weight:800;color:var(--green);">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div>'
-    + '<div style="display:flex;justify-content:center;gap:22px;margin-top:10px;padding-top:10px;border-top:1px solid var(--gray-100);">'
-    + '<div><div style="font-size:11px;color:var(--gray-400);">💳 סה"כ הועבר לבנק</div><div style="font-size:15px;font-weight:700;color:var(--gray-800);">₪'+transferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div></div>'
-    + '<div><div style="font-size:11px;color:var(--gray-400);">💵 סה"כ מזומן שנגבה</div><div style="font-size:15px;font-weight:700;color:var(--gray-800);">₪'+cashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div></div>'
-    + '</div>'
+    + '</div>';
+
+  // סה"כ הועבר לבנק | סה"כ מזומן שנגבה — סה"כ על פני כל חמשת ערוצי הגבייה
+  // יחד (לא רק "ועד שוטף"); הפירוט המלא ערוץ-ערוץ מופיע בכרטיס "פירוט
+  // גבייה" למטה. אותה סגנון בדיוק כמו כרטיסי "יתרת בנק/יתרת מזומן"
+  // שמתחת (grid של שני stat-card), לבקשת הוועד — כדי שהעין תזהה מיד
+  // שמדובר באותו סוג נתון.
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
+    + '<div class="stat-card"><div class="stat-value" style="color:var(--green);">₪'+transferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💳 סה"כ הועבר לבנק</div></div>'
+    + '<div class="stat-card"><div class="stat-value" style="color:var(--green);">₪'+cashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 סה"כ מזומן שנגבה</div></div>'
     + '</div>';
 
   // יתרת בנק | יתרת מזומן (יתרות אמיתיות — כוללות את כל הכסף בפועל, מכל הקטגוריות)
