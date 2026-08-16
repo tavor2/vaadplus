@@ -1409,6 +1409,28 @@
   </div>
 </div>
 
+<!-- Special Collection — Choose/Edit Payment Method Modal (used both when
+     marking a unit as paid, and when editing an already-recorded payment's
+     method) -->
+<div class="modal-overlay" id="modal-special-mark-paid">
+  <div class="modal">
+    <div class="modal-title" id="modal-special-mark-paid-title">רישום תשלום</div>
+    <input type="hidden" id="spm-collection-id"/>
+    <input type="hidden" id="spm-unit-key"/>
+    <input type="hidden" id="spm-payment-id"/>
+    <div id="spm-context" style="font-size:13px;color:var(--gray-600);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
+    <div class="form-group">
+      <label class="form-label">אמצעי תשלום *</label>
+      <select class="form-select" id="spm-method">
+        <option value="transfer">💳 העברה לבנק</option>
+        <option value="cash">💵 מזומן</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="btn-spm-confirm" onclick="confirmSpecialPaymentMethod()">💾 שמור</button>
+    <button class="btn-secondary" onclick="closeModal('modal-special-mark-paid')">ביטול</button>
+  </div>
+</div>
+
 <!-- Category Payments (charging / exceptional collection) — List Modal -->
 <div class="modal-overlay" id="modal-category-payments">
   <div class="modal">
@@ -2211,7 +2233,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.21'; // גבייה מיוחדת עם "ממי גובים: בעלי הדירות" — נוסף שדה "מיזוג דירות מפוצלות" (sp-merge-split, נשמר כ-sc.mergeSplitApartments, מוצג רק כשנבחר "בעלי הדירות"). כשמופעל, דירות מפוצלות (למשל 5א+5ב) עם אותו בעלים ממוזגות ליחידת חיוב אחת (פעם אחת בלבד, לא כפול מספר היחידות) המזוהה לפי המספר הבסיסי; אם ליחידות המפוצלות בעלים שונים (או שאחת חסרת שם בעלים), לא ניתן למזג בבטחה — הן חוזרות אוטומטית להיספר בנפרד עם אזהרה מפורשת (⚠️) בפרטי הגבייה ובדוח ה-PDF, ללא קשר לבחירת המיזוג. תשתית חדשה: computeSpecialBillingUnits() מחליפה את המעבר הישיר על allResidents בכל מקום שמציג/סופר יחידות גבייה מיוחדת (רשימה/פרטים/דוח PDF/יעד לתצוגה בטופס), ו-markSpecialPaidUnit() (מבוסס מטמון _specialUnitsCache, במקום markSpecialPaid() הישן) מחליפה את פעולת "סמן כשולם" כך שתתמוך גם ביחידה ממוזגת שאין לה resident.apt תואם ישירות, וגם לא תישבר משם בעלים עם גרש/גרשיים המוטמע ב-onclick.
+const APP_VERSION = '2.15.22'; // גבייה מיוחדת: הוספת בחירת אמצעי תשלום (💳 העברה לבנק / 💵 מזומן) בזמן סימון "סמן כשולם", ואפשרות לערוך את אמצעי התשלום גם אחרי שהתשלום כבר נרשם. מודל חדש modal-special-mark-paid (spm-method) משמש לשני התרחישים — openSpecialMarkPaidModal() לרישום חדש, openSpecialEditPaymentMethod() לעריכת תשלום קיים (זמין דרך כפתור "✏️ ערוך" חדש לצד "חזור" בכל שורה ששולמה) — ו-confirmSpecialPaymentMethod() מבחין ביניהם לפי spm-payment-id. markSpecialPaidUnit() מקבל עכשיו method מפורש כפרמטר שלישי (אופציונלי, נופל בחזרה לאמצעי התשלום של הדייר כברירת מחדל אם לא סופק). קודם לכן אמצעי התשלום נקבע אוטומטית מכרטיס הדייר בזמן הסימון ולא ניתן היה לשנות אותו כלל.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5028,12 +5050,13 @@ function renderSpecialDetail() {
         + '<div class="payment-item-sub">דירה '+paidAptLabel+' • '+(p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '')+'</div>'
         + '</div>'
         + '<div class="payment-item-amount" style="color:var(--green)">'+fmtCurrency(p.amount)+' '+(PAYMENT_METHOD_ICONS[p.method]||'')+'</div>'
+        + '<button class="btn-icon" style="margin-right:6px;padding:6px 10px;font-size:12px;" onclick="openSpecialEditPaymentMethod(\''+p.id+'\')">✏️ ערוך</button>'
         + '<button class="btn-danger" style="margin-right:8px;" onclick="cancelSpecialPayment(\''+p.id+'\')">חזור</button>'
         + '</div>';
     }
     // דירה מושכרת בלי שם בעלים רשום, כשהגבייה מוגדרת "ממי גובים: בעלי
     // הדירות" — אין למי לייחס את הגבייה בפועל. מוצג באדום עם הנחיה
-    // להשלמה בכרטיס הדייר, וכפתור "סמן כשולם" עדיין קיים אך markSpecialPaidUnit()
+    // להשלמה בכרטיס הדייר, וכפתור "סמן כשולם" עדיין קיים אך openSpecialMarkPaidModal()
     // עצמה חוסמת ומציגה טוסט מקביל (הגנה כפולה, כמו savePayment עבור
     // exceptional_owner).
     if (u.missingOwner) {
@@ -5043,7 +5066,7 @@ function renderSpecialDetail() {
         + '<div class="payment-item-sub">דירה '+aptLabel+' • יש להשלים בכרטיס הדייר</div>'
         + '</div>'
         + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
-        + '<button class="btn-success" style="margin-right:8px;opacity:0.5;" onclick="markSpecialPaidUnit(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
+        + '<button class="btn-success" style="margin-right:8px;opacity:0.5;" onclick="openSpecialMarkPaidModal(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
         + '</div>';
     }
     // דירה מפוצלת (יחידות עם אותו בסיס) עם בעלים שונים ליחידות — לא ניתן
@@ -5056,7 +5079,7 @@ function renderSpecialDetail() {
         + '<div class="payment-item-sub">דירה '+aptLabel+' • יחידה מפוצלת עם בעלים שונה מיחידה אחות — לא מוזגה</div>'
         + '</div>'
         + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
-        + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaidUnit(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
+        + '<button class="btn-success" style="margin-right:8px;" onclick="openSpecialMarkPaidModal(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
         + '</div>';
     }
     return '<div class="payment-item">'
@@ -5065,7 +5088,7 @@ function renderSpecialDetail() {
       + '<div class="payment-item-sub">דירה '+aptLabel+'</div>'
       + '</div>'
       + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
-      + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaidUnit(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
+      + '<button class="btn-success" style="margin-right:8px;" onclick="openSpecialMarkPaidModal(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
       + '</div>';
   }).join('');
 
@@ -5088,8 +5111,11 @@ function specialPayerMissingOwner(sc, resident) {
 // ממוזגת שאין לה resident.apt תואם ישירות (unitKey הוא מספר הדירה הבסיסי,
 // למשל "5", לא "5א"/"5ב" בפני עצמם), ו-(2) לא להישבר משם בעלים עם גרש/
 // גרשיים שמוטמע ישירות במחרוזת onclick (ownerName, בשונה משם דייר, לא עובר
-// ולידציה נגד תווים כאלה ב-saveResident).
-window.markSpecialPaidUnit = async (collectionId, unitKey) => {
+// ולידציה נגד תווים כאלה ב-saveResident). method הוא פרמטר מפורש שנבחר על
+// ידי המנהל במודל modal-special-mark-paid (openSpecialMarkPaidModal) — אם
+// לא סופק (למשל קריאה ישנה), נופלים בחזרה לאמצעי התשלום המוגדר בכרטיס
+// הדייר, כברירת מחדל היסטורית.
+window.markSpecialPaidUnit = async (collectionId, unitKey, method) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const sc = allSpecialCollections.find(x => x.id === collectionId);
   const unit = _specialUnitsCache[unitKey];
@@ -5099,18 +5125,93 @@ window.markSpecialPaidUnit = async (collectionId, unitKey) => {
     return;
   }
   const primaryResident = unit.residentsIncluded[0];
-  const method = primaryResident?.paymentMethod || 'transfer';
+  const finalMethod = method === 'cash' ? 'cash' : (method === 'transfer' ? 'transfer' : (primaryResident?.paymentMethod === 'cash' ? 'cash' : 'transfer'));
   // mergedApts נשמר רק ליחידה ממוזגת בפועל (יותר מתת-יחידה אחת) — משמש
   // לתצוגה בלבד (renderSpecialDetail/createSpecialCollectionPDFReport
   // מציגים "5 (מוזג מ-5א+5ב)"); null עבור יחידה רגילה/לא ממוזגת.
   const mergedApts = unit.residentsIncluded.length > 1 ? unit.residentsIncluded.map(r => r.apt) : null;
   try {
     await addDoc(collection(db, 'buildings', buildingId, 'specialPayments'), {
-      collectionId, apt: unitKey, name: unit.name, amount: sc.amountPerApt, method, mergedApts,
+      collectionId, apt: unitKey, name: unit.name, amount: sc.amountPerApt, method: finalMethod, mergedApts,
       paidAt: serverTimestamp(), recordedBy: currentUser.uid
     });
     showToast(`✅ ${unit.name} - תשלום נרשם עבור הגבייה המיוחדת`);
   } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// פותח את מודל בחירת אמצעי התשלום כדי לסמן יחידת חיוב כשולמה — צעד ביניים
+// לפני markSpecialPaidUnit() בפועל (שנקרא רק לאחר אישור המודל, ראה
+// confirmSpecialPaymentMethod). בודק את חסימת "חסר שם בעלים" כאן גם כן,
+// כדי לתת משוב מיידי בלי לפתוח מודל שממילא ייחסם בשמירה.
+window.openSpecialMarkPaidModal = (collectionId, unitKey) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const unit = _specialUnitsCache[unitKey];
+  if (!unit) { showToast('שגיאה: הפריט לא נמצא, נסה/י לפתוח את הגבייה מחדש'); return; }
+  if (unit.missingOwner) {
+    showToast('⚠️ לדירה ' + unit.displayApt + ' לא הוזן שם בעלים (מוגדרת כדירה בשכירות, והגבייה הזו מוגדרת "ממי גובים: בעלי הדירות") — יש להשלים בכרטיס הדייר לפני רישום הגבייה', 6500);
+    return;
+  }
+  document.getElementById('spm-collection-id').value = collectionId;
+  document.getElementById('spm-unit-key').value = unitKey;
+  document.getElementById('spm-payment-id').value = '';
+  document.getElementById('modal-special-mark-paid-title').textContent = 'רישום תשלום';
+  const aptLabel = unit.mergedFromLabel ? unit.displayApt + ' (מוזג מ-' + unit.mergedFromLabel + ')' : unit.displayApt;
+  document.getElementById('spm-context').innerHTML = '<strong>'+(unit.name||'')+'</strong> • דירה '+aptLabel;
+  const primaryResident = unit.residentsIncluded[0];
+  document.getElementById('spm-method').value = primaryResident?.paymentMethod === 'cash' ? 'cash' : 'transfer';
+  document.getElementById('btn-spm-confirm').textContent = '💾 שמור';
+  openModal('modal-special-mark-paid');
+};
+
+// פותח את אותו מודל, אך לעריכת אמצעי התשלום של תשלום שכבר נרשם (לא ליצירת
+// תשלום חדש) — מזוהה לפי spm-payment-id שאינו ריק (ראה confirmSpecialPaymentMethod).
+window.openSpecialEditPaymentMethod = (paymentId) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const p = allSpecialPayments.find(x => x.id === paymentId);
+  if (!p) { showToast('שגיאה: התשלום לא נמצא'); return; }
+  document.getElementById('spm-collection-id').value = p.collectionId;
+  document.getElementById('spm-unit-key').value = p.apt;
+  document.getElementById('spm-payment-id').value = paymentId;
+  document.getElementById('modal-special-mark-paid-title').textContent = 'עריכת אמצעי תשלום';
+  const aptLabel = p.mergedApts && p.mergedApts.length > 1 ? p.apt + ' (מוזג מ-' + p.mergedApts.join('+') + ')' : p.apt;
+  document.getElementById('spm-context').innerHTML = '<strong>'+(p.name||'')+'</strong> • דירה '+aptLabel;
+  document.getElementById('spm-method').value = p.method === 'cash' ? 'cash' : 'transfer';
+  document.getElementById('btn-spm-confirm').textContent = '💾 עדכן';
+  openModal('modal-special-mark-paid');
+};
+
+// מטפלת בשני המקרים דרך אותו מודל: spm-payment-id ריק = רישום תשלום חדש
+// (קורא ל-markSpecialPaidUnit עם האמצעי שנבחר); לא ריק = עריכת אמצעי תשלום
+// על תשלום קיים (updateDoc + רישום ביומן הפעולות, בדומה ל-saveEditCategoryGroup).
+window.confirmSpecialPaymentMethod = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const collectionId = document.getElementById('spm-collection-id').value;
+  const unitKey = document.getElementById('spm-unit-key').value;
+  const paymentId = document.getElementById('spm-payment-id').value;
+  const method = document.getElementById('spm-method').value === 'cash' ? 'cash' : 'transfer';
+
+  if (paymentId) {
+    try {
+      const paymentRef = doc(db, 'buildings', buildingId, 'specialPayments', paymentId);
+      const snap = await getDoc(paymentRef);
+      const prev = snap.exists() ? snap.data() : {};
+      if (prev.method === method) { closeModal('modal-special-mark-paid'); return; } // אין שינוי בפועל
+      await updateDoc(paymentRef, { method });
+      const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+      await setDoc(logRef, {
+        type: 'specialPayment', action: 'special_payment_method_updated',
+        apt: prev.apt || null, name: prev.name || null, amount: prev.amount || 0,
+        previousMethod: prev.method || null, method,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      showToast('✅ אמצעי התשלום עודכן');
+      closeModal('modal-special-mark-paid');
+    } catch(e) { showToast('שגיאה: ' + e.message); }
+    return;
+  }
+
+  await markSpecialPaidUnit(collectionId, unitKey, method);
+  closeModal('modal-special-mark-paid');
 };
 
 window.cancelSpecialPayment = async (id) => {
