@@ -1363,7 +1363,31 @@
   </div>
 </div>
 
-<!-- Special Collection — Create/Edit Modal -->
+<!-- Special Collection — Detail / Per-Resident Collection Modal -->
+<div class="modal-overlay" id="modal-special-detail">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <div class="modal-title" id="modal-special-detail-title" style="margin-bottom:0;">גבייה מיוחדת</div>
+      <button onclick="closeModal('modal-special-detail')" style="background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div id="special-detail-content"></div>
+  </div>
+</div>
+
+<!-- Special Collection — Create/Edit Modal — placed after modal-special-detail
+     in DOM order (not before, as it originally was) on purpose: every
+     .modal-overlay shares the same z-index, so with no other stacking
+     context involved, paint order between simultaneously-open overlays
+     follows DOM/source order (later sibling on top) — not which one called
+     openModal() more recently. editSpecialCollection() is invoked from a
+     button inside modal-special-detail while that modal is still open
+     underneath it, so modal-special-new must come after modal-special-detail
+     in the markup or it silently opens hidden behind it (this was the bug:
+     "ערוך פרטי הגבייה" appeared to do nothing until the detail modal, still
+     open behind it, was closed manually). Also invoked from modal-special-list
+     directly (which sits even earlier in the DOM) via "➕ גבייה מיוחדת חדשה",
+     so this modal must render above that one too — this position satisfies
+     both call sites. -->
 <div class="modal-overlay" id="modal-special-new">
   <div class="modal">
     <div class="modal-title" id="modal-special-new-title">גבייה מיוחדת חדשה</div>
@@ -1395,17 +1419,6 @@
     <button class="btn-primary" onclick="saveSpecialCollection()">שמור</button>
     <button class="btn-icon" id="btn-delete-special" style="display:none;width:100%;margin-top:8px;color:#d33;border-color:#d33;" onclick="deleteSpecialCollection()">🗑️ מחק גבייה</button>
     <button class="btn-secondary" onclick="closeModal('modal-special-new')">ביטול</button>
-  </div>
-</div>
-
-<!-- Special Collection — Detail / Per-Resident Collection Modal -->
-<div class="modal-overlay" id="modal-special-detail">
-  <div class="modal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <div class="modal-title" id="modal-special-detail-title" style="margin-bottom:0;">גבייה מיוחדת</div>
-      <button onclick="closeModal('modal-special-detail')" style="background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
-    </div>
-    <div id="special-detail-content"></div>
   </div>
 </div>
 
@@ -2233,7 +2246,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.22'; // גבייה מיוחדת: הוספת בחירת אמצעי תשלום (💳 העברה לבנק / 💵 מזומן) בזמן סימון "סמן כשולם", ואפשרות לערוך את אמצעי התשלום גם אחרי שהתשלום כבר נרשם. מודל חדש modal-special-mark-paid (spm-method) משמש לשני התרחישים — openSpecialMarkPaidModal() לרישום חדש, openSpecialEditPaymentMethod() לעריכת תשלום קיים (זמין דרך כפתור "✏️ ערוך" חדש לצד "חזור" בכל שורה ששולמה) — ו-confirmSpecialPaymentMethod() מבחין ביניהם לפי spm-payment-id. markSpecialPaidUnit() מקבל עכשיו method מפורש כפרמטר שלישי (אופציונלי, נופל בחזרה לאמצעי התשלום של הדייר כברירת מחדל אם לא סופק). קודם לכן אמצעי התשלום נקבע אוטומטית מכרטיס הדייר בזמן הסימון ולא ניתן היה לשנות אותו כלל.
+const APP_VERSION = '2.15.23'; // תוקן באג: "✏️ ערוך פרטי הגבייה" בתוך פרטי גבייה מיוחדת נראה כלא-מגיב עד לסגירת מודל הפרטים. הסיבה: כל ה-.modal-overlay חולקים אותו z-index, ולכן סדר הציור בין שני מודלים פתוחים בו-זמנית נקבע לפי סדר ה-DOM (siblings מאוחרים יותר מצוירים מעל) ולא לפי מי נפתח אחרון — ו-modal-special-new הופיע לפני modal-special-detail בקוד, כך שנפתח בפועל, רק מתחת למודל הפרטים שכבר פתוח. תוקן ע"י העברת modal-special-new למקומו החדש, אחרי modal-special-detail (וגם עדיין אחרי modal-special-list, כך ששני מסלולי הפתיחה — "➕ גבייה מיוחדת חדשה" מהרשימה, ו"✏️ ערוך פרטי הגבייה" מתוך הפרטים — ממשיכים לעבוד נכון).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
