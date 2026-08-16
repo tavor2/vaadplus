@@ -1374,10 +1374,18 @@
     </div>
     <div class="form-group">
       <label class="form-label">ממי גובים *</label>
-      <select class="form-select" id="sp-payer-scope">
+      <select class="form-select" id="sp-payer-scope" onchange="onSpecialPayerScopeChange()">
         <option value="owners">בעלי הדירות</option>
         <option value="residents">בעלים ושוכרים (דיירים שגרים בפועל בבניין)</option>
       </select>
+    </div>
+    <div class="form-group" id="sp-merge-split-group" style="display:none;">
+      <label class="form-label">מיזוג דירות מפוצלות</label>
+      <select class="form-select" id="sp-merge-split" onchange="updateSpecialTotalNote()">
+        <option value="no">הצג כל יחידה מפוצלת בנפרד</option>
+        <option value="yes">מזג דירות מפוצלות (5א+5ב יחד, כדירה אחת עם בעלים אחד)</option>
+      </select>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:4px;">רלוונטי רק לדירות שפוצלו בפועל ליחידות נפרדות (למשל 5א, 5ב) שיש להן אותו בעלים. אם ליחידות מפוצלות יש בעלים שונים — לא ניתן למזג אותן; הן תמיד יוצגו בנפרד עם אזהרה, ללא קשר לבחירה כאן.</div>
     </div>
     <div class="form-group">
       <label class="form-label">סכום לגבייה מכל דייר (₪) *</label>
@@ -2203,7 +2211,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.20'; // גבייה מיוחדת עם "ממי גובים: בעלי הדירות": דירה מושכרת בלי שם בעלים רשום מוצגת עכשיו באדום עם אזהרה ("⚠️ ... — לא הוזן שם בעלים") בפרטי הגבייה, וmarkSpecialPaid() חוסמת רישום תשלום עבורה עד שהשם יושלם בכרטיס הדייר — תואם לבדיקה המקבילה שכבר קיימת בטופס "הוסף תשלום" עבור גבייה חריגה - בעלים. גם תוקן: השם המוצג לדירה ששולמה בפרטי הגבייה מבוסס מעכשיו על השם שנשמר בפועל על התשלום (לא שם הדייר הנוכחי), עקבי עם דוח ה-PDF.
+const APP_VERSION = '2.15.21'; // גבייה מיוחדת עם "ממי גובים: בעלי הדירות" — נוסף שדה "מיזוג דירות מפוצלות" (sp-merge-split, נשמר כ-sc.mergeSplitApartments, מוצג רק כשנבחר "בעלי הדירות"). כשמופעל, דירות מפוצלות (למשל 5א+5ב) עם אותו בעלים ממוזגות ליחידת חיוב אחת (פעם אחת בלבד, לא כפול מספר היחידות) המזוהה לפי המספר הבסיסי; אם ליחידות המפוצלות בעלים שונים (או שאחת חסרת שם בעלים), לא ניתן למזג בבטחה — הן חוזרות אוטומטית להיספר בנפרד עם אזהרה מפורשת (⚠️) בפרטי הגבייה ובדוח ה-PDF, ללא קשר לבחירת המיזוג. תשתית חדשה: computeSpecialBillingUnits() מחליפה את המעבר הישיר על allResidents בכל מקום שמציג/סופר יחידות גבייה מיוחדת (רשימה/פרטים/דוח PDF/יעד לתצוגה בטופס), ו-markSpecialPaidUnit() (מבוסס מטמון _specialUnitsCache, במקום markSpecialPaid() הישן) מחליפה את פעולת "סמן כשולם" כך שתתמוך גם ביחידה ממוזגת שאין לה resident.apt תואם ישירות, וגם לא תישבר משם בעלים עם גרש/גרשיים המוטמע ב-onclick.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4700,12 +4708,77 @@ let currentSpecialId = null; // which campaign is open in modal-special-detail
 // מושכרת זה ownerName, לא שם הדייר/שוכר הגר בה בפועל), כמו ב"גבייה חריגה
 // - בעלים". 'residents' (גם ברירת המחדל עבור גביות ישנות מלפני הוספת
 // השדה, לשמירת ההתנהגות ההיסטורית) — שם הדייר הרשום כרגע בדירה, בין אם
-// הוא הבעלים הגר בה ובין אם הוא שוכר. מספר הדירות/יחידות לגבייה תמיד
-// allResidents.length בשני המצבים — רק השם המוצג לכל דירה משתנה.
+// הוא הבעלים הגר בה ובין אם הוא שוכר. מספר יחידות החיוב בפועל נקבע על ידי
+// computeSpecialBillingUnits() למטה (allResidents.length רק כשלא מבוצע
+// מיזוג של דירות מפוצלות — ראה שם).
 function specialPayerName(sc, resident) {
   if (!resident) return '';
   if (sc?.payerScope === 'owners') return paymentOwnerName(resident) || resident.name || '';
   return resident.name || '';
+}
+
+// מרכיבה את רשימת "יחידות החיוב" בפועל של גבייה מיוחדת — כל יחידה מייצגת
+// שורה אחת בפרטי הגבייה/ברשימה/בדוח PDF, עם מפתח (unitKey) המשמש גם
+// לשמירה/חיפוש ב-specialPayments (שדה apt). ברוב המקרים כל דייר = יחידת
+// חיוב אחת (כמו קודם), אך כאשר sc.payerScope==='owners' וגם
+// sc.mergeSplitApartments===true, דירות מפוצלות (למשל 5א+5ב — אותו מספר
+// דירה בסיסי, נוצרו דרך "דירה מפוצלת" בכרטיס הדייר) עם אותו בעלים ממוזגות
+// ליחידת חיוב אחת (unitKey=מספר הדירה הבסיסי, למשל "5"), כך שהבעלים נגבה
+// ממנו רק פעם אחת עבור הדירה הפיזית כולה, לא פעם לכל תת-יחידה — לפי בקשת
+// הועד. אם ליחידות המפוצלות יש בעלים שונים (או שאחת מהן חסרת שם בעלים —
+// אי אפשר לאמת שמדובר באותו בעלים), לא ניתן למזג בבטחה: הן חוזרות
+// להיספר כיחידות נפרדות כרגיל, עם mismatchWarning=true כדי שהמנהל יראה
+// אזהרה מפורשת בפרטי הגבייה/בדוח, ללא קשר לבחירת המיזוג בטופס.
+function computeSpecialBillingUnits(sc, residentsList) {
+  const scope = sc?.payerScope === 'owners' ? 'owners' : 'residents';
+  const merge = scope === 'owners' && sc?.mergeSplitApartments === true;
+
+  const asIndividualUnit = (r) => ({
+    unitKey: String(r.apt), displayApt: String(r.apt), mergedFromLabel: null,
+    name: specialPayerName(sc, r), residentsIncluded: [r],
+    missingOwner: specialPayerMissingOwner(sc, r), mismatchWarning: false
+  });
+
+  if (scope === 'residents' || !merge) {
+    return residentsList.map(asIndividualUnit);
+  }
+
+  // מיזוג מבוקש — קבץ לפי המספר הבסיסי (parseAptId) של הדירה, כדי לאתר
+  // דירות מפוצלות (כמה יחידות עם אותו בסיס, למשל 5א ו-5ב תחת בסיס 5).
+  const groups = {};
+  residentsList.forEach(r => {
+    const { num } = parseAptId(r.apt);
+    (groups[num] = groups[num] || []).push(r);
+  });
+
+  const units = [];
+  Object.keys(groups).forEach(numKey => {
+    const group = groups[numKey];
+    if (group.length === 1) { units.push(asIndividualUnit(group[0])); return; }
+
+    // דירה מפוצלת בפועל (כמה תת-יחידות עם אותו בסיס) — נסה למזג. חוסר שם
+    // בעלים בכל אחת מהתת-יחידות נחשב אי-התאמה לצורך זה (אי אפשר לאמת
+    // שמדובר באותו בעלים אם לא ידוע מי הבעלים בכלל).
+    const anyMissing = group.some(r => specialPayerMissingOwner(sc, r));
+    const ownerNames = group.map(r => specialPayerName(sc, r));
+    const allSame = !anyMissing && ownerNames.every(n => n && n === ownerNames[0]);
+
+    if (allSame) {
+      units.push({
+        unitKey: String(numKey), displayApt: String(numKey),
+        mergedFromLabel: group.map(r => r.apt).join('+'),
+        name: ownerNames[0], residentsIncluded: group,
+        missingOwner: false, mismatchWarning: false
+      });
+    } else {
+      group.forEach(r => {
+        const u = asIndividualUnit(r);
+        u.mismatchWarning = true;
+        units.push(u);
+      });
+    }
+  });
+  return units;
 }
 
 function ensureSpecialCollectionsListener() {
@@ -4753,7 +4826,10 @@ function renderSpecialCollectionsList() {
   }
   container.innerHTML = allSpecialCollections.map(sc => {
     const scPayments = allSpecialPayments.filter(p => p.collectionId === sc.id);
-    const totalTarget = (sc.amountPerApt || 0) * allResidents.length;
+    const units = computeSpecialBillingUnits(sc, allResidents);
+    const paidKeys = new Set(scPayments.map(p => p.apt));
+    const paidUnitsCount = units.filter(u => paidKeys.has(u.unitKey)).length;
+    const totalTarget = (sc.amountPerApt || 0) * units.length;
     const collected = scPayments.reduce((s,p) => s + (p.amount||0), 0);
     const remaining = Math.max(0, totalTarget - collected);
     const contractorLine = sc.contractorName
@@ -4763,9 +4839,9 @@ function renderSpecialCollectionsList() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
         <div style="flex:1;">
           <div style="font-weight:700;font-size:15px;">${sc.title}</div>
-          <div style="font-size:11px;color:var(--gray-400);margin-top:1px;">ממי גובים: ${sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים'}</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:1px;">ממי גובים: ${sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים'}${sc.payerScope === 'owners' && sc.mergeSplitApartments ? ' (עם מיזוג דירות מפוצלות)' : ''}</div>
           ${contractorLine}
-          <div style="font-size:12px;color:var(--gray-400);margin-top:4px;">${scPayments.length} מתוך ${allResidents.length} דירות שילמו</div>
+          <div style="font-size:12px;color:var(--gray-400);margin-top:4px;">${paidUnitsCount} מתוך ${units.length} דירות שילמו</div>
         </div>
         <div style="text-align:left;white-space:nowrap;">
           <div style="font-size:11px;color:var(--gray-400);">נגבה</div>
@@ -4778,13 +4854,32 @@ function renderSpecialCollectionsList() {
   }).join('');
 }
 
-// Live preview of the total target (סכום לדירה × מספר דירות) while filling
-// in the creation/edit form — helps the admin sanity-check the amount
-// before saving.
+// Live preview of the total target (סכום לדירה × מספר יחידות חיוב) while
+// filling in the creation/edit form — משתמש ב-computeSpecialBillingUnits()
+// עם ערכי הטופס הנוכחיים (payerScope/mergeSplitApartments), כדי שהתצוגה
+// תשקף נכון גם מיזוג של דירות מפוצלות (יחידה אחת פחות מ-allResidents.length
+// לכל דירה שמוזגה בהצלחה), ותתריע אם יש יחידות מפוצלות שלא ניתן היה למזג
+// בגלל בעלים שונים.
 window.updateSpecialTotalNote = () => {
   const amt = parseFloat(document.getElementById('sp-amount-per-apt').value) || 0;
   const note = document.getElementById('sp-total-target-note');
-  note.textContent = amt ? `סה"כ יעד גבייה: ${fmtCurrency(amt * allResidents.length)} (${allResidents.length} דירות)` : '';
+  const scopeVal = document.getElementById('sp-payer-scope')?.value === 'owners' ? 'owners' : 'residents';
+  const mergeVal = document.getElementById('sp-merge-split')?.value === 'yes';
+  const units = computeSpecialBillingUnits({ payerScope: scopeVal, mergeSplitApartments: mergeVal }, allResidents);
+  const mismatchCount = units.filter(u => u.mismatchWarning).length;
+  if (!amt) { note.innerHTML = ''; return; }
+  note.innerHTML = `סה"כ יעד גבייה: ${fmtCurrency(amt * units.length)} (${units.length} יח' חיוב)`
+    + (mismatchCount ? `<br/><span style="color:var(--red);">⚠️ ${mismatchCount} יחידות מפוצלות עם בעלים שונים לא מוזגו ונספרות בנפרד</span>` : '');
+};
+
+// מציג/מסתיר את שדה "מיזוג דירות מפוצלות" — רלוונטי רק כש"ממי גובים"
+// מוגדר ל"בעלי הדירות" (במצב "בעלים ושוכרים" אין צורך למזג, כי כל תת-יחידה
+// מפוצלת כבר מוצגת עם שם הדייר שלה בעצמה — מנגנון קיים שעובד כרגיל).
+// גם מרענן את תצוגת יעד הגבייה בהתאם.
+window.onSpecialPayerScopeChange = () => {
+  const scope = document.getElementById('sp-payer-scope').value;
+  document.getElementById('sp-merge-split-group').style.display = scope === 'owners' ? '' : 'none';
+  updateSpecialTotalNote();
 };
 
 window.openAddSpecialCollection = () => {
@@ -4795,9 +4890,10 @@ window.openAddSpecialCollection = () => {
   // ההתנהגות ההיסטורית מלפני הוספת השדה, כדי לא להפתיע מנהלים רגילים
   // לפיצ'ר החדש עם ברירת מחדל שונה ממה שהכירו.
   document.getElementById('sp-payer-scope').value = 'residents';
+  document.getElementById('sp-merge-split').value = 'no';
   document.getElementById('sp-amount-per-apt').value = '';
   document.getElementById('btn-delete-special').style.display = 'none';
-  updateSpecialTotalNote();
+  onSpecialPayerScopeChange();
   openModal('modal-special-new');
 };
 
@@ -4808,9 +4904,10 @@ window.editSpecialCollection = (id) => {
   document.getElementById('edit-special-id').value = id;
   document.getElementById('sp-title').value = sc.title || '';
   document.getElementById('sp-payer-scope').value = sc.payerScope === 'owners' ? 'owners' : 'residents';
+  document.getElementById('sp-merge-split').value = sc.mergeSplitApartments ? 'yes' : 'no';
   document.getElementById('sp-amount-per-apt').value = sc.amountPerApt || '';
   document.getElementById('btn-delete-special').style.display = '';
-  updateSpecialTotalNote();
+  onSpecialPayerScopeChange();
   openModal('modal-special-new');
 };
 
@@ -4819,6 +4916,10 @@ window.saveSpecialCollection = async () => {
   const id = document.getElementById('edit-special-id').value;
   const title = document.getElementById('sp-title').value.trim();
   const payerScope = document.getElementById('sp-payer-scope').value === 'owners' ? 'owners' : 'residents';
+  // mergeSplitApartments רלוונטי רק כש-payerScope==='owners' (השדה מוסתר
+  // בטופס במצב 'residents') — נשמר בכל זאת גם אז לפשטות, אך אינו נקרא
+  // בשום מקום כש-payerScope!=='owners' (ראה computeSpecialBillingUnits).
+  const mergeSplitApartments = document.getElementById('sp-merge-split').value === 'yes';
   const amountPerApt = parseFloat(document.getElementById('sp-amount-per-apt').value);
   if (!title || !amountPerApt || amountPerApt <= 0) { showToast('חובה למלא תיאור סיבת הגבייה וסכום תקין לגבייה מכל דייר'); return; }
   // שדות contractorName/contractorPhone הוסרו מהטופס (מ-v2.15.18) — לא
@@ -4828,7 +4929,7 @@ window.saveSpecialCollection = async () => {
   // createSpecialCollectionPDFReport עדיין מציגים אותם אם קיימים, לתאימות
   // לאחור עם גביות ישנות.
   const data = {
-    title, amountPerApt, payerScope,
+    title, amountPerApt, payerScope, mergeSplitApartments,
     updatedAt: serverTimestamp()
   };
   try {
@@ -4872,43 +4973,59 @@ window.openSpecialDetail = (id) => {
   openModal('modal-special-detail');
 };
 
+// מטמון של יחידות החיוב האחרונות שחושבו ב-renderSpecialDetail() עבור
+// הגבייה הפתוחה כרגע — מפתח: unitKey, ערך: אובייקט היחידה המלא (כולל
+// residentsIncluded, name, missingOwner, mismatchWarning). markSpecialPaidUnit()
+// קורא מכאן במקום לקבל name/amount כפרמטרים גולמיים דרך מחרוזת ה-onclick,
+// כדי לא להישבר משמות עם גרש/גרשיים (בעיה קיימת שכבר טופלה עבור שמות
+// דיירים ב-saveResident, אך שם בעלים (ownerName) אינו עובר אותה ולידציה).
+let _specialUnitsCache = {};
+
 function renderSpecialDetail() {
   const sc = allSpecialCollections.find(x => x.id === currentSpecialId);
   const container = document.getElementById('special-detail-content');
   if (!sc || !container) return;
   document.getElementById('modal-special-detail-title').textContent = '🔧 ' + sc.title;
 
+  const units = computeSpecialBillingUnits(sc, allResidents);
+  _specialUnitsCache = {};
+  units.forEach(u => { _specialUnitsCache[u.unitKey] = u; });
+
   const payMap = {};
   allSpecialPayments.filter(p => p.collectionId === currentSpecialId).forEach(p => { payMap[p.apt] = p; });
-  const totalTarget = (sc.amountPerApt || 0) * allResidents.length;
+  const totalTarget = (sc.amountPerApt || 0) * units.length;
   const collected = Object.values(payMap).reduce((s,p) => s + (p.amount||0), 0);
   const remaining = Math.max(0, totalTarget - collected);
-  const paidCount = Object.keys(payMap).length;
+  const paidCount = units.filter(u => payMap[u.unitKey]).length;
+  const mismatchCount = units.filter(u => u.mismatchWarning).length;
 
   let html = '<div class="card" style="margin-bottom:14px;">'
     + (sc.contractorName ? '<div style="font-size:13px;color:var(--gray-600);">🔧 '+sc.contractorName+(sc.contractorPhone ? ' • <a href="tel:'+sc.contractorPhone+'" style="color:var(--blue);text-decoration:none;">'+sc.contractorPhone+'</a>' : '')+'</div>' : '')
-    + '<div style="font-size:12px;color:var(--gray-500);">ממי גובים: <strong>'+(sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים (דיירים שגרים בפועל)')+'</strong></div>'
+    + '<div style="font-size:12px;color:var(--gray-500);">ממי גובים: <strong>'+(sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים (דיירים שגרים בפועל)')+'</strong>'+(sc.payerScope === 'owners' && sc.mergeSplitApartments ? ' <span style="color:var(--gray-400);">(עם מיזוג דירות מפוצלות)</span>' : '')+'</div>'
+    + (mismatchCount ? '<div style="font-size:12px;color:var(--red);margin-top:4px;">⚠️ '+mismatchCount+' יחידות מפוצלות עם בעלים שונים לא מוזגו — מוצגות בנפרד למטה</div>' : '')
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">'
     + '<div class="stat-card"><div class="stat-value green">'+fmtCurrency(collected)+'</div><div class="stat-label">נגבה</div></div>'
     + '<div class="stat-card"><div class="stat-value orange">'+fmtCurrency(remaining)+'</div><div class="stat-label">נותר לגבייה</div></div>'
     + '</div>'
-    + '<div style="font-size:12px;color:var(--gray-500);margin-top:8px;text-align:center;">'+paidCount+' מתוך '+allResidents.length+' דירות שילמו • '+fmtCurrency(sc.amountPerApt)+' לדירה</div>'
+    + '<div style="font-size:12px;color:var(--gray-500);margin-top:8px;text-align:center;">'+paidCount+' מתוך '+units.length+' דירות שילמו • '+fmtCurrency(sc.amountPerApt)+' ליחידה</div>'
     + '<div style="font-size:11px;color:var(--gray-400);margin-top:6px;text-align:center;">💡 גבייה זו נכללת בסה"כ הגבייה וביתרת הבנק/מזומן בלשונית "מאזן"</div>'
     + '<button class="btn-icon" style="width:100%;margin-top:10px;" onclick="editSpecialCollection(\''+sc.id+'\')">✏️ ערוך פרטי הגבייה</button>'
     + '<button class="btn-icon" style="width:100%;margin-top:8px;" onclick="generateSpecialCollectionPDF(\''+sc.id+'\')">📄 הפק דוח PDF לדיירים</button>'
     + '</div>';
 
-  const sortedResidents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
-  html += sortedResidents.map(r => {
-    const p = payMap[r.apt];
+  const sortedUnits = [...units].sort((a,b) => aptCompare(a.displayApt, b.displayApt));
+  html += sortedUnits.map(u => {
+    const p = payMap[u.unitKey];
+    const aptLabel = u.mergedFromLabel ? u.displayApt + ' (מוזג מ-' + u.mergedFromLabel + ')' : u.displayApt;
     if (p) {
-      // שם המשלם ששולם בפועל — כפי שנקבע ונשמר על התשלום עצמו ב-markSpecialPaid()
-      // (לפי specialPayerName() בזמן הסימון), לא r.name הנוכחי, כדי שלא ישתנה
-      // רטרואקטיבית אם sc.payerScope או פרטי הדייר עודכנו אחרי שהתשלום נרשם.
+      // שם המשלם ששולם בפועל — כפי שנקבע ונשמר על התשלום עצמו ב-markSpecialPaidUnit()
+      // (לפי היחידה בזמן הסימון), לא u.name הנוכחי, כדי שלא ישתנה רטרואקטיבית
+      // אם sc.payerScope/מיזוג או פרטי הדייר עודכנו אחרי שהתשלום נרשם.
+      const paidAptLabel = p.mergedApts && p.mergedApts.length > 1 ? u.displayApt + ' (מוזג מ-' + p.mergedApts.join('+') + ')' : u.displayApt;
       return '<div class="payment-item">'
         + '<div class="payment-item-info">'
-        + '<div class="payment-item-name">'+(p.name||r.name||'')+'</div>'
-        + '<div class="payment-item-sub">דירה '+r.apt+' • '+(p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '')+'</div>'
+        + '<div class="payment-item-name">'+(p.name||u.name||'')+'</div>'
+        + '<div class="payment-item-sub">דירה '+paidAptLabel+' • '+(p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '')+'</div>'
         + '</div>'
         + '<div class="payment-item-amount" style="color:var(--green)">'+fmtCurrency(p.amount)+' '+(PAYMENT_METHOD_ICONS[p.method]||'')+'</div>'
         + '<button class="btn-danger" style="margin-right:8px;" onclick="cancelSpecialPayment(\''+p.id+'\')">חזור</button>'
@@ -4916,26 +5033,39 @@ function renderSpecialDetail() {
     }
     // דירה מושכרת בלי שם בעלים רשום, כשהגבייה מוגדרת "ממי גובים: בעלי
     // הדירות" — אין למי לייחס את הגבייה בפועל. מוצג באדום עם הנחיה
-    // להשלמה בכרטיס הדייר, וכפתור "סמן כשולם" עדיין קיים אך markSpecialPaid()
+    // להשלמה בכרטיס הדייר, וכפתור "סמן כשולם" עדיין קיים אך markSpecialPaidUnit()
     // עצמה חוסמת ומציגה טוסט מקביל (הגנה כפולה, כמו savePayment עבור
     // exceptional_owner).
-    if (specialPayerMissingOwner(sc, r)) {
+    if (u.missingOwner) {
       return '<div class="payment-item">'
         + '<div class="payment-item-info">'
-        + '<div class="payment-item-name" style="color:var(--red);">⚠️ '+(r.name||'')+' — לא הוזן שם בעלים</div>'
-        + '<div class="payment-item-sub">דירה '+r.apt+' • יש להשלים בכרטיס הדייר</div>'
+        + '<div class="payment-item-name" style="color:var(--red);">⚠️ '+(u.name||'')+' — לא הוזן שם בעלים</div>'
+        + '<div class="payment-item-sub">דירה '+aptLabel+' • יש להשלים בכרטיס הדייר</div>'
         + '</div>'
         + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
-        + '<button class="btn-success" style="margin-right:8px;opacity:0.5;" onclick="markSpecialPaid(\''+sc.id+'\',\''+r.apt+'\',\''+specialPayerName(sc, r)+'\','+sc.amountPerApt+')">✓ סמן כשולם</button>'
+        + '<button class="btn-success" style="margin-right:8px;opacity:0.5;" onclick="markSpecialPaidUnit(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
+        + '</div>';
+    }
+    // דירה מפוצלת (יחידות עם אותו בסיס) עם בעלים שונים ליחידות — לא ניתן
+    // היה למזג בבטחה גם אם המנהל ביקש מיזוג. מוצגת בנפרד עם אזהרה כתובה,
+    // אך פעולת "סמן כשולם" רגילה ותקינה עבור התת-יחידה הזו בלבד.
+    if (u.mismatchWarning) {
+      return '<div class="payment-item">'
+        + '<div class="payment-item-info">'
+        + '<div class="payment-item-name" style="color:var(--orange);">⚠️ '+u.name+'</div>'
+        + '<div class="payment-item-sub">דירה '+aptLabel+' • יחידה מפוצלת עם בעלים שונה מיחידה אחות — לא מוזגה</div>'
+        + '</div>'
+        + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
+        + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaidUnit(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
         + '</div>';
     }
     return '<div class="payment-item">'
       + '<div class="payment-item-info">'
-      + '<div class="payment-item-name">'+specialPayerName(sc, r)+'</div>'
-      + '<div class="payment-item-sub">דירה '+r.apt+'</div>'
+      + '<div class="payment-item-name">'+u.name+'</div>'
+      + '<div class="payment-item-sub">דירה '+aptLabel+'</div>'
       + '</div>'
       + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
-      + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaid(\''+sc.id+'\',\''+r.apt+'\',\''+specialPayerName(sc, r)+'\','+sc.amountPerApt+')">✓ סמן כשולם</button>'
+      + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaidUnit(\''+sc.id+'\',\''+u.unitKey+'\')">✓ סמן כשולם</button>'
       + '</div>';
   }).join('');
 
@@ -4951,21 +5081,35 @@ function specialPayerMissingOwner(sc, resident) {
   return sc?.payerScope === 'owners' && resident?.ownershipType === 'renter' && !resident?.ownerName;
 }
 
-window.markSpecialPaid = async (collectionId, apt, name, amount) => {
+// מסמנת יחידת חיוב (רגילה, ממוזגת, או תת-יחידה מפוצלת עם אי-התאמה) כשולמה,
+// לפי unitKey שמזהה אותה במטמון _specialUnitsCache (מחושב מחדש בכל
+// renderSpecialDetail()). מחליפה את markSpecialPaid() הישן (שקיבל apt/name/
+// amount גולמיים כפרמטרים דרך מחרוזת ה-onclick) כדי: (1) לתמוך ביחידה
+// ממוזגת שאין לה resident.apt תואם ישירות (unitKey הוא מספר הדירה הבסיסי,
+// למשל "5", לא "5א"/"5ב" בפני עצמם), ו-(2) לא להישבר משם בעלים עם גרש/
+// גרשיים שמוטמע ישירות במחרוזת onclick (ownerName, בשונה משם דייר, לא עובר
+// ולידציה נגד תווים כאלה ב-saveResident).
+window.markSpecialPaidUnit = async (collectionId, unitKey) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
-  const resident = allResidents.find(r => aptEquals(r.apt, apt));
   const sc = allSpecialCollections.find(x => x.id === collectionId);
-  if (specialPayerMissingOwner(sc, resident)) {
-    showToast('⚠️ לדירה ' + apt + ' לא הוזן שם בעלים (מוגדרת כדירה בשכירות, והגבייה הזו מוגדרת "ממי גובים: בעלי הדירות") — יש להשלים בכרטיס הדייר לפני רישום הגבייה', 6500);
+  const unit = _specialUnitsCache[unitKey];
+  if (!sc || !unit) { showToast('שגיאה: הפריט לא נמצא, נסה/י לפתוח את הגבייה מחדש'); return; }
+  if (unit.missingOwner) {
+    showToast('⚠️ לדירה ' + unit.displayApt + ' לא הוזן שם בעלים (מוגדרת כדירה בשכירות, והגבייה הזו מוגדרת "ממי גובים: בעלי הדירות") — יש להשלים בכרטיס הדייר לפני רישום הגבייה', 6500);
     return;
   }
-  const method = resident?.paymentMethod || 'transfer';
+  const primaryResident = unit.residentsIncluded[0];
+  const method = primaryResident?.paymentMethod || 'transfer';
+  // mergedApts נשמר רק ליחידה ממוזגת בפועל (יותר מתת-יחידה אחת) — משמש
+  // לתצוגה בלבד (renderSpecialDetail/createSpecialCollectionPDFReport
+  // מציגים "5 (מוזג מ-5א+5ב)"); null עבור יחידה רגילה/לא ממוזגת.
+  const mergedApts = unit.residentsIncluded.length > 1 ? unit.residentsIncluded.map(r => r.apt) : null;
   try {
     await addDoc(collection(db, 'buildings', buildingId, 'specialPayments'), {
-      collectionId, apt, name, amount, method,
+      collectionId, apt: unitKey, name: unit.name, amount: sc.amountPerApt, method, mergedApts,
       paidAt: serverTimestamp(), recordedBy: currentUser.uid
     });
-    showToast(`✅ ${name} - תשלום נרשם עבור הגבייה המיוחדת`);
+    showToast(`✅ ${unit.name} - תשלום נרשם עבור הגבייה המיוחדת`);
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
@@ -5024,12 +5168,12 @@ async function createSpecialCollectionPDFReport(id) {
 
   const payMap = {};
   allSpecialPayments.filter(p => p.collectionId === id).forEach(p => { payMap[p.apt] = p; });
-  const residents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
-  const totalTarget = (sc.amountPerApt || 0) * residents.length;
+  const units = [...computeSpecialBillingUnits(sc, allResidents)].sort((a,b) => aptCompare(a.displayApt, b.displayApt));
+  const totalTarget = (sc.amountPerApt || 0) * units.length;
 
   let totalCollected = 0, paidCount = 0;
-  const rows = residents.map(r => {
-    const p = payMap[r.apt];
+  const rows = units.map(u => {
+    const p = payMap[u.unitKey];
     const amount = p ? (p.amount || sc.amountPerApt) : sc.amountPerApt;
     if (p) { totalCollected += amount; paidCount++; }
     const statusHtml = p
@@ -5037,22 +5181,24 @@ async function createSpecialCollectionPDFReport(id) {
       : '<span style="color:#E02424;font-weight:bold;">✗ לא שולם</span>';
     const paidDate = p?.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '-';
     // בשורה ששולמה, שם המשלם הוא זה שכבר נשמר על התשלום עצמו (p.name),
-    // כפי שנקבע ב-markSpecialPaid() לפי specialPayerName() בזמן הסימון —
-    // לא ר.name הנוכחי, כדי שלא ישתנה רטרואקטיבית אם sc.payerScope עודכן
-    // אחרי שהתשלום כבר נרשם. בשורה שטרם שולמה משתמשים ב-specialPayerName()
-    // החי, לפי ההגדרה הנוכחית של הגבייה.
-    const displayName = p ? (p.name || r.name || '') : specialPayerName(sc, r);
+    // כפי שנקבע ב-markSpecialPaidUnit() בזמן הסימון — לא u.name הנוכחי,
+    // כדי שלא ישתנה רטרואקטיבית אם sc.payerScope/מיזוג עודכן אחרי שהתשלום
+    // כבר נרשם. בשורה שטרם שולמה משתמשים ב-u.name החי, לפי ההגדרה הנוכחית.
+    const displayName = p ? (p.name || u.name || '') : u.name;
+    const mergedLabel = p?.mergedApts?.length > 1 ? p.mergedApts.join('+') : u.mergedFromLabel;
+    const aptCell = mergedLabel ? aptDisplay(u.displayApt) + '<br/><span style="font-size:10px;color:#888;">('+mergedLabel+')</span>' : aptDisplay(u.displayApt);
+    const floorVal = u.residentsIncluded[0]?.floor;
     return `<tr>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptDisplay(r.apt)}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptCell}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${displayName}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${r.floor !== undefined ? r.floor : '-'}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${floorVal !== undefined ? floorVal : '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${statusHtml}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${amount.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${paidDate}</td>
     </tr>`;
   }).join('');
   const remaining = Math.max(0, totalTarget - totalCollected);
-  const payerScopeLabel = sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים (דיירים שגרים בפועל בבניין)';
+  const payerScopeLabel = sc.payerScope === 'owners' ? 'בעלי הדירות' + (sc.mergeSplitApartments ? ' (עם מיזוג דירות מפוצלות)' : '') : 'בעלים ושוכרים (דיירים שגרים בפועל בבניין)';
   const contractorLine = sc.contractorName
     ? `<div style="text-align:center;font-size:13px;color:#555;margin-bottom:10px;">🔧&nbsp;${sc.contractorName.replace(/ /g,'\u00A0')}${sc.contractorPhone ? '&nbsp;•&nbsp;'+sc.contractorPhone : ''}</div>`
     : '';
@@ -5085,7 +5231,7 @@ async function createSpecialCollectionPDFReport(id) {
         <div class="summary-line"><span class="total">יעד גבייה כולל:</span><span dir="ltr">₪${totalTarget.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total" style="color:#0E9F6E;">סה"כ נגבה:</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total" style="color:#FF8C00;">נותר לגבייה:</span><span dir="ltr">₪${remaining.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div style="font-size:12px;color:#999;margin-top:4px;">${paidCount}&nbsp;מתוך&nbsp;${residents.length}&nbsp;דירות&nbsp;שילמו</div>
+        <div style="font-size:12px;color:#999;margin-top:4px;">${paidCount}&nbsp;מתוך&nbsp;${units.length}&nbsp;דירות&nbsp;שילמו</div>
       </div>
       <div style="font-size:11px;color:#999;margin-top:16px;text-align:center;">גבייה זו נכללת בסה"כ הגבייה וביתרת הבנק/מזומן של הבניין (ראה דוח מאזן)</div>
     </body></html>
