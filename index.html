@@ -1228,7 +1228,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
       <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת לתיקונים</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 חריגים וטעינה חשמלית</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
@@ -1353,7 +1353,7 @@
 <!-- Special Collections (repair-specific levies) — List Modal -->
 <div class="modal-overlay" id="modal-special-list">
   <div class="modal">
-    <div class="modal-title">🔧 גבייה מיוחדת לתיקונים</div>
+    <div class="modal-title">🔧 גבייה מיוחדת</div>
     <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
       גבייה חד-פעמית מהדיירים עבור תיקון ספציפי (למשל שיפוץ מעלית, תיקון גג) — נפרדת מהגבייה השוטפת ברשימה כאן, אך נכללת בסה"כ הגבייה וביתרת הבנק/מזומן בלשונית "מאזן" ובדוחות (הכסף עובר בפועל דרך אותו חשבון בנק/קופה ומשולם ממנו לתיקון).
     </div>
@@ -1369,16 +1369,15 @@
     <div class="modal-title" id="modal-special-new-title">גבייה מיוחדת חדשה</div>
     <input type="hidden" id="edit-special-id"/>
     <div class="form-group">
-      <label class="form-label">מה התיקון *</label>
+      <label class="form-label">תיאור סיבת הגבייה *</label>
       <input class="form-input" id="sp-title" placeholder="לדוגמה: תיקון גג / שיפוץ מעלית"/>
     </div>
     <div class="form-group">
-      <label class="form-label">שם העסק המתקן</label>
-      <input class="form-input" id="sp-contractor-name" placeholder="שם בעל המקצוע / העסק"/>
-    </div>
-    <div class="form-group">
-      <label class="form-label">טלפון העסק המתקן</label>
-      <input class="form-input" id="sp-contractor-phone" type="tel" placeholder="050-0000000"/>
+      <label class="form-label">ממי גובים *</label>
+      <select class="form-select" id="sp-payer-scope">
+        <option value="owners">בעלי הדירות</option>
+        <option value="residents">בעלים ושוכרים (דיירים שגרים בפועל בבניין)</option>
+      </select>
     </div>
     <div class="form-group">
       <label class="form-label">סכום לגבייה מכל דייר (₪) *</label>
@@ -2204,7 +2203,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.15'; // וולידציית טלפון הבעלים בכרטיס דייר (רלוונטי רק כשסטטוס מגורים="שכירות") הוקלה מ"בדיוק 10 ספרות" ל-7-15 ספרות, כדי לאפשר מספר בינלאומי (תקן E.164) למקרה שהבעלים גר בחו"ל. שאר שדות הטלפון באפליקציה (r-phone של הדייר עצמו, אנשי קשר לתיקונים וכו') נשארו דורשים בדיוק 10 ספרות ישראליות — ללא שינוי.
+const APP_VERSION = '2.15.20'; // גבייה מיוחדת עם "ממי גובים: בעלי הדירות": דירה מושכרת בלי שם בעלים רשום מוצגת עכשיו באדום עם אזהרה ("⚠️ ... — לא הוזן שם בעלים") בפרטי הגבייה, וmarkSpecialPaid() חוסמת רישום תשלום עבורה עד שהשם יושלם בכרטיס הדייר — תואם לבדיקה המקבילה שכבר קיימת בטופס "הוסף תשלום" עבור גבייה חריגה - בעלים. גם תוקן: השם המוצג לדירה ששולמה בפרטי הגבייה מבוסס מעכשיו על השם שנשמר בפועל על התשלום (לא שם הדייר הנוכחי), עקבי עם דוח ה-PDF.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3536,8 +3535,8 @@ window.saveResident = async () => {
     if (!ownerName) { showToast('⚠️ חובה למלא שם בעלים כאשר נבחר "שכירות"'); return; }
     if (ownerPhone) {
       // בדיירים עם דירה מושכרת, הבעלים לעיתים גר בחו"ל — לכן כאן (ורק כאן,
-      // בשונה מכל שאר שדות הטלפון באפליקציה: r-phone, exp-contractor-phone,
-      // sp-contractor-phone וכו', שנשארים דורשים בדיוק 10 ספרות ישראליות)
+      // בשונה מכל שאר שדות הטלפון באפליקציה: r-phone, exp-contractor-phone
+      // וכו', שנשארים דורשים בדיוק 10 ספרות ישראליות)
       // הוולידציה מקלה ומאפשרת גם מספרים בינלאומיים ארוכים יותר — טווח
       // 7-15 ספרות, לפי תקן E.164 הבינלאומי (עד 15 ספרות כולל קידומת מדינה),
       // עם רצפה סבירה של 7 כדי עדיין לתפוס הקלדות שגויות/מקריות.
@@ -4397,7 +4396,8 @@ function residentEligibleForPaymentCategory(resident, category) {
 
 // שם הבעלים בפועל של דירה: אם היא בשכירות — השם הרשום ב-ownerName (הדייר
 // עצמו הוא השוכר, לא הבעלים); אחרת — שם הדייר הרשום עצמו (הוא הבעלים הגר
-// בדירה). משמש רק עבור category==='exceptional_owner'.
+// בדירה). משמש עבור category==='exceptional_owner' וגם עבור גבייה מיוחדת
+// שהוגדרה עם payerScope==='owners' (ראה specialPayerName למטה).
 function paymentOwnerName(resident) {
   if (!resident) return '';
   if (resident.ownershipType === 'renter') return resident.ownerName || '';
@@ -4694,6 +4694,20 @@ let unsubSpecialPayments = null;
 let specialPaymentsListenerBuildingId = null;
 let currentSpecialId = null; // which campaign is open in modal-special-detail
 
+// שם מי שבאמת נדרש לשלם עבור גבייה מיוחדת נתונה, לפי הבחירה "ממי גובים"
+// (sp-payer-scope) שנקבעה ביצירת הגבייה ונשמרת ב-sc.payerScope:
+// 'owners' — תמיד שם הבעלים בפועל של הדירה (paymentOwnerName — לדירה
+// מושכרת זה ownerName, לא שם הדייר/שוכר הגר בה בפועל), כמו ב"גבייה חריגה
+// - בעלים". 'residents' (גם ברירת המחדל עבור גביות ישנות מלפני הוספת
+// השדה, לשמירת ההתנהגות ההיסטורית) — שם הדייר הרשום כרגע בדירה, בין אם
+// הוא הבעלים הגר בה ובין אם הוא שוכר. מספר הדירות/יחידות לגבייה תמיד
+// allResidents.length בשני המצבים — רק השם המוצג לכל דירה משתנה.
+function specialPayerName(sc, resident) {
+  if (!resident) return '';
+  if (sc?.payerScope === 'owners') return paymentOwnerName(resident) || resident.name || '';
+  return resident.name || '';
+}
+
 function ensureSpecialCollectionsListener() {
   if (specialCollectionsListenerBuildingId === buildingId && unsubSpecialCollections) return;
   if (unsubSpecialCollections) unsubSpecialCollections();
@@ -4749,6 +4763,7 @@ function renderSpecialCollectionsList() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
         <div style="flex:1;">
           <div style="font-weight:700;font-size:15px;">${sc.title}</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:1px;">ממי גובים: ${sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים'}</div>
           ${contractorLine}
           <div style="font-size:12px;color:var(--gray-400);margin-top:4px;">${scPayments.length} מתוך ${allResidents.length} דירות שילמו</div>
         </div>
@@ -4776,8 +4791,10 @@ window.openAddSpecialCollection = () => {
   document.getElementById('modal-special-new-title').textContent = 'גבייה מיוחדת חדשה';
   document.getElementById('edit-special-id').value = '';
   document.getElementById('sp-title').value = '';
-  document.getElementById('sp-contractor-name').value = '';
-  document.getElementById('sp-contractor-phone').value = '';
+  // ברירת מחדל "residents" (בעלים ושוכרים — דיירים שגרים בפועל) — זו
+  // ההתנהגות ההיסטורית מלפני הוספת השדה, כדי לא להפתיע מנהלים רגילים
+  // לפיצ'ר החדש עם ברירת מחדל שונה ממה שהכירו.
+  document.getElementById('sp-payer-scope').value = 'residents';
   document.getElementById('sp-amount-per-apt').value = '';
   document.getElementById('btn-delete-special').style.display = 'none';
   updateSpecialTotalNote();
@@ -4790,8 +4807,7 @@ window.editSpecialCollection = (id) => {
   document.getElementById('modal-special-new-title').textContent = 'ערוך גבייה מיוחדת';
   document.getElementById('edit-special-id').value = id;
   document.getElementById('sp-title').value = sc.title || '';
-  document.getElementById('sp-contractor-name').value = sc.contractorName || '';
-  document.getElementById('sp-contractor-phone').value = sc.contractorPhone || '';
+  document.getElementById('sp-payer-scope').value = sc.payerScope === 'owners' ? 'owners' : 'residents';
   document.getElementById('sp-amount-per-apt').value = sc.amountPerApt || '';
   document.getElementById('btn-delete-special').style.display = '';
   updateSpecialTotalNote();
@@ -4802,18 +4818,17 @@ window.saveSpecialCollection = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const id = document.getElementById('edit-special-id').value;
   const title = document.getElementById('sp-title').value.trim();
-  const contractorName = document.getElementById('sp-contractor-name').value.trim();
-  const contractorPhone = document.getElementById('sp-contractor-phone').value.trim();
+  const payerScope = document.getElementById('sp-payer-scope').value === 'owners' ? 'owners' : 'residents';
   const amountPerApt = parseFloat(document.getElementById('sp-amount-per-apt').value);
-  if (!title || !amountPerApt || amountPerApt <= 0) { showToast('חובה למלא תיאור התיקון וסכום תקין לגבייה מכל דייר'); return; }
-  if (contractorPhone) {
-    const digits = contractorPhone.replace(/\D/g, '');
-    if (digits.length !== 10) { showToast('⚠️ טלפון העסק המתקן חייב להכיל בדיוק 10 ספרות (לדוגמה: 050-1234567)'); return; }
-  }
+  if (!title || !amountPerApt || amountPerApt <= 0) { showToast('חובה למלא תיאור סיבת הגבייה וסכום תקין לגבייה מכל דייר'); return; }
+  // שדות contractorName/contractorPhone הוסרו מהטופס (מ-v2.15.18) — לא
+  // נכללים ב-data בכוונה, כדי ש-updateDoc לא ימחק ערכים שכבר נשמרו על
+  // גבייה קיימת מלפני ההסרה (updateDoc נוגע רק בשדות שמופיעים במפורש
+  // באובייקט). renderSpecialCollectionsList/renderSpecialDetail/
+  // createSpecialCollectionPDFReport עדיין מציגים אותם אם קיימים, לתאימות
+  // לאחור עם גביות ישנות.
   const data = {
-    title, amountPerApt,
-    contractorName: contractorName || null,
-    contractorPhone: contractorPhone || null,
+    title, amountPerApt, payerScope,
     updatedAt: serverTimestamp()
   };
   try {
@@ -4872,6 +4887,7 @@ function renderSpecialDetail() {
 
   let html = '<div class="card" style="margin-bottom:14px;">'
     + (sc.contractorName ? '<div style="font-size:13px;color:var(--gray-600);">🔧 '+sc.contractorName+(sc.contractorPhone ? ' • <a href="tel:'+sc.contractorPhone+'" style="color:var(--blue);text-decoration:none;">'+sc.contractorPhone+'</a>' : '')+'</div>' : '')
+    + '<div style="font-size:12px;color:var(--gray-500);">ממי גובים: <strong>'+(sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים (דיירים שגרים בפועל)')+'</strong></div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">'
     + '<div class="stat-card"><div class="stat-value green">'+fmtCurrency(collected)+'</div><div class="stat-label">נגבה</div></div>'
     + '<div class="stat-card"><div class="stat-value orange">'+fmtCurrency(remaining)+'</div><div class="stat-label">נותר לגבייה</div></div>'
@@ -4886,31 +4902,63 @@ function renderSpecialDetail() {
   html += sortedResidents.map(r => {
     const p = payMap[r.apt];
     if (p) {
+      // שם המשלם ששולם בפועל — כפי שנקבע ונשמר על התשלום עצמו ב-markSpecialPaid()
+      // (לפי specialPayerName() בזמן הסימון), לא r.name הנוכחי, כדי שלא ישתנה
+      // רטרואקטיבית אם sc.payerScope או פרטי הדייר עודכנו אחרי שהתשלום נרשם.
       return '<div class="payment-item">'
         + '<div class="payment-item-info">'
-        + '<div class="payment-item-name">'+r.name+'</div>'
+        + '<div class="payment-item-name">'+(p.name||r.name||'')+'</div>'
         + '<div class="payment-item-sub">דירה '+r.apt+' • '+(p.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '')+'</div>'
         + '</div>'
         + '<div class="payment-item-amount" style="color:var(--green)">'+fmtCurrency(p.amount)+' '+(PAYMENT_METHOD_ICONS[p.method]||'')+'</div>'
         + '<button class="btn-danger" style="margin-right:8px;" onclick="cancelSpecialPayment(\''+p.id+'\')">חזור</button>'
         + '</div>';
     }
+    // דירה מושכרת בלי שם בעלים רשום, כשהגבייה מוגדרת "ממי גובים: בעלי
+    // הדירות" — אין למי לייחס את הגבייה בפועל. מוצג באדום עם הנחיה
+    // להשלמה בכרטיס הדייר, וכפתור "סמן כשולם" עדיין קיים אך markSpecialPaid()
+    // עצמה חוסמת ומציגה טוסט מקביל (הגנה כפולה, כמו savePayment עבור
+    // exceptional_owner).
+    if (specialPayerMissingOwner(sc, r)) {
+      return '<div class="payment-item">'
+        + '<div class="payment-item-info">'
+        + '<div class="payment-item-name" style="color:var(--red);">⚠️ '+(r.name||'')+' — לא הוזן שם בעלים</div>'
+        + '<div class="payment-item-sub">דירה '+r.apt+' • יש להשלים בכרטיס הדייר</div>'
+        + '</div>'
+        + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
+        + '<button class="btn-success" style="margin-right:8px;opacity:0.5;" onclick="markSpecialPaid(\''+sc.id+'\',\''+r.apt+'\',\''+specialPayerName(sc, r)+'\','+sc.amountPerApt+')">✓ סמן כשולם</button>'
+        + '</div>';
+    }
     return '<div class="payment-item">'
       + '<div class="payment-item-info">'
-      + '<div class="payment-item-name">'+r.name+'</div>'
+      + '<div class="payment-item-name">'+specialPayerName(sc, r)+'</div>'
       + '<div class="payment-item-sub">דירה '+r.apt+'</div>'
       + '</div>'
       + '<div class="payment-item-amount orange">'+fmtCurrency(sc.amountPerApt)+'</div>'
-      + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaid(\''+sc.id+'\',\''+r.apt+'\',\''+r.name+'\','+sc.amountPerApt+')">✓ סמן כשולם</button>'
+      + '<button class="btn-success" style="margin-right:8px;" onclick="markSpecialPaid(\''+sc.id+'\',\''+r.apt+'\',\''+specialPayerName(sc, r)+'\','+sc.amountPerApt+')">✓ סמן כשולם</button>'
       + '</div>';
   }).join('');
 
   container.innerHTML = html;
 }
 
+// True כאשר הגבייה המיוחדת מוגדרת "ממי גובים: בעלי הדירות" (sc.payerScope
+// === 'owners') והדירה הנוכחית מושכרת (ownershipType==='renter') בלי ששם
+// הבעלים הוזן בכרטיס הדייר — כלומר אין למי בפועל לייחס את הגבייה. אזהרה
+// זו מקבילה לבדיקה הקיימת בטופס "הוסף תשלום" עבור category==='exceptional_owner'
+// (ראה savePayment).
+function specialPayerMissingOwner(sc, resident) {
+  return sc?.payerScope === 'owners' && resident?.ownershipType === 'renter' && !resident?.ownerName;
+}
+
 window.markSpecialPaid = async (collectionId, apt, name, amount) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const resident = allResidents.find(r => aptEquals(r.apt, apt));
+  const sc = allSpecialCollections.find(x => x.id === collectionId);
+  if (specialPayerMissingOwner(sc, resident)) {
+    showToast('⚠️ לדירה ' + apt + ' לא הוזן שם בעלים (מוגדרת כדירה בשכירות, והגבייה הזו מוגדרת "ממי גובים: בעלי הדירות") — יש להשלים בכרטיס הדייר לפני רישום הגבייה', 6500);
+    return;
+  }
   const method = resident?.paymentMethod || 'transfer';
   try {
     await addDoc(collection(db, 'buildings', buildingId, 'specialPayments'), {
@@ -4988,9 +5036,15 @@ async function createSpecialCollectionPDFReport(id) {
       ? '<span style="color:#0E9F6E;font-weight:bold;">✓ שולם</span>'
       : '<span style="color:#E02424;font-weight:bold;">✗ לא שולם</span>';
     const paidDate = p?.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '-';
+    // בשורה ששולמה, שם המשלם הוא זה שכבר נשמר על התשלום עצמו (p.name),
+    // כפי שנקבע ב-markSpecialPaid() לפי specialPayerName() בזמן הסימון —
+    // לא ר.name הנוכחי, כדי שלא ישתנה רטרואקטיבית אם sc.payerScope עודכן
+    // אחרי שהתשלום כבר נרשם. בשורה שטרם שולמה משתמשים ב-specialPayerName()
+    // החי, לפי ההגדרה הנוכחית של הגבייה.
+    const displayName = p ? (p.name || r.name || '') : specialPayerName(sc, r);
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptDisplay(r.apt)}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${r.name||''}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${displayName}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${r.floor !== undefined ? r.floor : '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${statusHtml}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${amount.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
@@ -4998,6 +5052,7 @@ async function createSpecialCollectionPDFReport(id) {
     </tr>`;
   }).join('');
   const remaining = Math.max(0, totalTarget - totalCollected);
+  const payerScopeLabel = sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים (דיירים שגרים בפועל בבניין)';
   const contractorLine = sc.contractorName
     ? `<div style="text-align:center;font-size:13px;color:#555;margin-bottom:10px;">🔧&nbsp;${sc.contractorName.replace(/ /g,'\u00A0')}${sc.contractorPhone ? '&nbsp;•&nbsp;'+sc.contractorPhone : ''}</div>`
     : '';
@@ -5019,6 +5074,7 @@ async function createSpecialCollectionPDFReport(id) {
       <h1>דוח&nbsp;גבייה&nbsp;מיוחדת&nbsp;לתיקון</h1>
       <h2>${(buildingData?.address||'').replace(/ /g,'\u00A0')}</h2>
       <h2>${(sc.title||'').replace(/ /g,'\u00A0')}</h2>
+      <div style="text-align:center;font-size:12px;color:#777;margin-bottom:6px;">ממי&nbsp;גובים:&nbsp;${payerScopeLabel.replace(/ /g,'\u00A0')}</div>
       ${contractorLine}
       <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:16px;">${(() => { const now=new Date(); return '<span>הופק</span><span dir="ltr">'+now.toLocaleDateString('he-IL')+'</span><span>בשעה</span><span dir="ltr">'+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})+'</span>'; })()}</div>
 
@@ -6027,10 +6083,10 @@ function renderBalance() {
     + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(טעינה חשמלית)</span></span><span style="font-weight:700;color:var(--blue);">₪'+chargingCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
-    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(גבייה מיוחדת לתיקונים)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(גבייה מיוחדת)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
-    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(גבייה מיוחדת לתיקונים)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(גבייה מיוחדת)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:4px;border-top:2px solid var(--gray-200);">'
     + '<span style="font-size:13px;font-weight:700;">סה"כ</span><span style="font-weight:800;">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
