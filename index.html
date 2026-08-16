@@ -1433,6 +1433,10 @@
     <input type="hidden" id="spm-payment-id"/>
     <div id="spm-context" style="font-size:13px;color:var(--gray-600);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
     <div class="form-group">
+      <label class="form-label">תאריך התשלום *</label>
+      <input class="form-input" id="spm-date" type="date"/>
+    </div>
+    <div class="form-group">
       <label class="form-label">אמצעי תשלום *</label>
       <select class="form-select" id="spm-method">
         <option value="transfer">💳 העברה לבנק</option>
@@ -2246,7 +2250,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.25'; // בלשונית "מאזן", כרטיס חדש "🏦 הפקדות מזומן לבנק" נוסף מיד מתחת ל"יתרות פתיחה" (מוצג רק כשקיימת הפקדה אחת לפחות) — מציג את סה"כ הכסף שהופקד מהקופה לחשבון הבנק (totalDeposits, שכבר נכלל בחישוב cashBalance/bankBalance ב-computeBalanceFigures אך לא היה גלוי בתצוגה עד כה) עם הסבר קצר, כדי להבהיר את הפער הנפוץ והמבלבל שבו יתרת המזומן נמוכה מ"סה"כ מזומן שנגבה" גם כשאין הוצאות במזומן כלל — הכסף פשוט עבר לבנק.
+const APP_VERSION = '2.15.26'; // גבייה מיוחדת: מודל modal-special-mark-paid קיבל שדה "תאריך התשלום *" (spm-date, ברירת מחדל היום) — ניתן לבחור תאריך תשלום לכל דייר בזמן "סמן כשולם", וגם לערוך אותו בדיעבד דרך "✏️ ערוך" (יחד עם אמצעי התשלום, שכבר נתמך מ-v2.15.22). התאריך הנבחר נשמר בשדה paidAt הרגיל (Timestamp), ולכן משתקף אוטומטית בכל מקום שכבר קורא ממנו: תצוגת פרטי הגבייה, ודוח ה-PDF הייעודי (createSpecialCollectionPDFReport) — וגם קובע לאיזו שנה/חודש התשלום משויך בדוחות התקופתיים (createPDFReport/createMonthlyPDFReport/createSemiAnnualPDFReport/exportExcel), בדיוק כמו "תאריך ההעברה בפועל" הקיים כבר בגבייה חריגה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5124,11 +5128,17 @@ function specialPayerMissingOwner(sc, resident) {
 // ממוזגת שאין לה resident.apt תואם ישירות (unitKey הוא מספר הדירה הבסיסי,
 // למשל "5", לא "5א"/"5ב" בפני עצמם), ו-(2) לא להישבר משם בעלים עם גרש/
 // גרשיים שמוטמע ישירות במחרוזת onclick (ownerName, בשונה משם דייר, לא עובר
-// ולידציה נגד תווים כאלה ב-saveResident). method הוא פרמטר מפורש שנבחר על
-// ידי המנהל במודל modal-special-mark-paid (openSpecialMarkPaidModal) — אם
-// לא סופק (למשל קריאה ישנה), נופלים בחזרה לאמצעי התשלום המוגדר בכרטיס
-// הדייר, כברירת מחדל היסטורית.
-window.markSpecialPaidUnit = async (collectionId, unitKey, method) => {
+// ולידציה נגד תווים כאלה ב-saveResident). method ו-paidAtDate הם פרמטרים
+// מפורשים שנבחרו על ידי המנהל במודל modal-special-mark-paid
+// (openSpecialMarkPaidModal) — אם לא סופקו (למשל קריאה ישנה), נופלים
+// בחזרה לאמצעי התשלום המוגדר בכרטיס הדייר ולתאריך/שעת השמירה בפועל
+// (serverTimestamp), כברירת המחדל ההיסטורית. paidAtDate (אם סופק) הוא
+// אובייקט Timestamp מוכן (ראה בניית ה-Timestamp ב-confirmSpecialPaymentMethod) —
+// לא מחרוזת yyyy-mm-dd גולמית — כדי שדוחות התקופה (createSpecialCollectionPDFReport,
+// וגם computeBalanceFigures/exportExcel/createPDFReport וכו' שמשייכים
+// "גבייה מיוחדת" לתקופה לפי paidAt) ישייכו את התשלום לשנה/חודש הנכונים
+// לפי התאריך שהמנהל בחר בפועל, לא לפי תאריך היצירה של הרשומה.
+window.markSpecialPaidUnit = async (collectionId, unitKey, method, paidAtDate) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const sc = allSpecialCollections.find(x => x.id === collectionId);
   const unit = _specialUnitsCache[unitKey];
@@ -5146,16 +5156,16 @@ window.markSpecialPaidUnit = async (collectionId, unitKey, method) => {
   try {
     await addDoc(collection(db, 'buildings', buildingId, 'specialPayments'), {
       collectionId, apt: unitKey, name: unit.name, amount: sc.amountPerApt, method: finalMethod, mergedApts,
-      paidAt: serverTimestamp(), recordedBy: currentUser.uid
+      paidAt: paidAtDate || serverTimestamp(), recordedBy: currentUser.uid
     });
     showToast(`✅ ${unit.name} - תשלום נרשם עבור הגבייה המיוחדת`);
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
-// פותח את מודל בחירת אמצעי התשלום כדי לסמן יחידת חיוב כשולמה — צעד ביניים
-// לפני markSpecialPaidUnit() בפועל (שנקרא רק לאחר אישור המודל, ראה
-// confirmSpecialPaymentMethod). בודק את חסימת "חסר שם בעלים" כאן גם כן,
-// כדי לתת משוב מיידי בלי לפתוח מודל שממילא ייחסם בשמירה.
+// פותח את מודל בחירת תאריך ואמצעי התשלום כדי לסמן יחידת חיוב כשולמה —
+// צעד ביניים לפני markSpecialPaidUnit() בפועל (שנקרא רק לאחר אישור המודל,
+// ראה confirmSpecialPaymentMethod). בודק את חסימת "חסר שם בעלים" כאן גם
+// כן, כדי לתת משוב מיידי בלי לפתוח מודל שממילא ייחסם בשמירה.
 window.openSpecialMarkPaidModal = (collectionId, unitKey) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const unit = _specialUnitsCache[unitKey];
@@ -5170,14 +5180,15 @@ window.openSpecialMarkPaidModal = (collectionId, unitKey) => {
   document.getElementById('modal-special-mark-paid-title').textContent = 'רישום תשלום';
   const aptLabel = unit.mergedFromLabel ? unit.displayApt + ' (מוזג מ-' + unit.mergedFromLabel + ')' : unit.displayApt;
   document.getElementById('spm-context').innerHTML = '<strong>'+(unit.name||'')+'</strong> • דירה '+aptLabel;
+  document.getElementById('spm-date').value = new Date().toISOString().split('T')[0];
   const primaryResident = unit.residentsIncluded[0];
   document.getElementById('spm-method').value = primaryResident?.paymentMethod === 'cash' ? 'cash' : 'transfer';
   document.getElementById('btn-spm-confirm').textContent = '💾 שמור';
   openModal('modal-special-mark-paid');
 };
 
-// פותח את אותו מודל, אך לעריכת אמצעי התשלום של תשלום שכבר נרשם (לא ליצירת
-// תשלום חדש) — מזוהה לפי spm-payment-id שאינו ריק (ראה confirmSpecialPaymentMethod).
+// פותח את אותו מודל, אך לעריכת תאריך/אמצעי התשלום של תשלום שכבר נרשם (לא
+// ליצירת תשלום חדש) — מזוהה לפי spm-payment-id שאינו ריק (ראה confirmSpecialPaymentMethod).
 window.openSpecialEditPaymentMethod = (paymentId) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const p = allSpecialPayments.find(x => x.id === paymentId);
@@ -5185,45 +5196,54 @@ window.openSpecialEditPaymentMethod = (paymentId) => {
   document.getElementById('spm-collection-id').value = p.collectionId;
   document.getElementById('spm-unit-key').value = p.apt;
   document.getElementById('spm-payment-id').value = paymentId;
-  document.getElementById('modal-special-mark-paid-title').textContent = 'עריכת אמצעי תשלום';
+  document.getElementById('modal-special-mark-paid-title').textContent = 'עריכת תשלום';
   const aptLabel = p.mergedApts && p.mergedApts.length > 1 ? p.apt + ' (מוזג מ-' + p.mergedApts.join('+') + ')' : p.apt;
   document.getElementById('spm-context').innerHTML = '<strong>'+(p.name||'')+'</strong> • דירה '+aptLabel;
+  document.getElementById('spm-date').value = p.paidAt?.toDate ? p.paidAt.toDate().toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
   document.getElementById('spm-method').value = p.method === 'cash' ? 'cash' : 'transfer';
   document.getElementById('btn-spm-confirm').textContent = '💾 עדכן';
   openModal('modal-special-mark-paid');
 };
 
 // מטפלת בשני המקרים דרך אותו מודל: spm-payment-id ריק = רישום תשלום חדש
-// (קורא ל-markSpecialPaidUnit עם האמצעי שנבחר); לא ריק = עריכת אמצעי תשלום
-// על תשלום קיים (updateDoc + רישום ביומן הפעולות, בדומה ל-saveEditCategoryGroup).
+// (קורא ל-markSpecialPaidUnit עם האמצעי והתאריך שנבחרו); לא ריק = עריכת
+// תאריך/אמצעי תשלום על תשלום קיים (updateDoc + רישום ביומן הפעולות, בדומה
+// ל-saveEditCategoryGroup). התאריך הנבחר (yyyy-mm-dd, מקומי) מומר ל-Timestamp
+// דרך new Date(dateStr) — אותו דפוס בדיוק כמו p-actual-date בטופס "הוסף
+// תשלום" עבור גבייה חריגה.
 window.confirmSpecialPaymentMethod = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const collectionId = document.getElementById('spm-collection-id').value;
   const unitKey = document.getElementById('spm-unit-key').value;
   const paymentId = document.getElementById('spm-payment-id').value;
+  const dateStr = document.getElementById('spm-date').value;
   const method = document.getElementById('spm-method').value === 'cash' ? 'cash' : 'transfer';
+  if (!dateStr) { showToast('חובה לבחור תאריך תשלום'); return; }
+  const paidAtTimestamp = Timestamp.fromDate(new Date(dateStr));
 
   if (paymentId) {
     try {
       const paymentRef = doc(db, 'buildings', buildingId, 'specialPayments', paymentId);
       const snap = await getDoc(paymentRef);
       const prev = snap.exists() ? snap.data() : {};
-      if (prev.method === method) { closeModal('modal-special-mark-paid'); return; } // אין שינוי בפועל
-      await updateDoc(paymentRef, { method });
+      const prevDateStr = prev.paidAt?.toDate ? prev.paidAt.toDate().toISOString().split('T')[0] : null;
+      if (prev.method === method && prevDateStr === dateStr) { closeModal('modal-special-mark-paid'); return; } // אין שינוי בפועל
+      await updateDoc(paymentRef, { method, paidAt: paidAtTimestamp });
       const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
       await setDoc(logRef, {
         type: 'specialPayment', action: 'special_payment_method_updated',
         apt: prev.apt || null, name: prev.name || null, amount: prev.amount || 0,
         previousMethod: prev.method || null, method,
+        previousDate: prevDateStr, date: dateStr,
         at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
       });
-      showToast('✅ אמצעי התשלום עודכן');
+      showToast('✅ התשלום עודכן');
       closeModal('modal-special-mark-paid');
     } catch(e) { showToast('שגיאה: ' + e.message); }
     return;
   }
 
-  await markSpecialPaidUnit(collectionId, unitKey, method);
+  await markSpecialPaidUnit(collectionId, unitKey, method, paidAtTimestamp);
   closeModal('modal-special-mark-paid');
 };
 
