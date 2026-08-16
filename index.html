@@ -2250,7 +2250,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.26'; // גבייה מיוחדת: מודל modal-special-mark-paid קיבל שדה "תאריך התשלום *" (spm-date, ברירת מחדל היום) — ניתן לבחור תאריך תשלום לכל דייר בזמן "סמן כשולם", וגם לערוך אותו בדיעבד דרך "✏️ ערוך" (יחד עם אמצעי התשלום, שכבר נתמך מ-v2.15.22). התאריך הנבחר נשמר בשדה paidAt הרגיל (Timestamp), ולכן משתקף אוטומטית בכל מקום שכבר קורא ממנו: תצוגת פרטי הגבייה, ודוח ה-PDF הייעודי (createSpecialCollectionPDFReport) — וגם קובע לאיזו שנה/חודש התשלום משויך בדוחות התקופתיים (createPDFReport/createMonthlyPDFReport/createSemiAnnualPDFReport/exportExcel), בדיוק כמו "תאריך ההעברה בפועל" הקיים כבר בגבייה חריגה.
+const APP_VERSION = '2.15.27'; // סרגל הסינון המשותף להוצאות (buildExpenseFilterBarHtml, בשימוש גם בלשונית "הוצאות" וגם בטבלת "פירוט הוצאות" בלשונית "מאזן") קיבל שדה סינון נוסף — "אמצעי תשלום" (🏦 בנק / 💵 מזומן / 🧾 שיק, לפי exp-method) — לצד הסינון הקיים לפי קטגוריה/שוטף-חריג/טווח תאריכים. expenseMatchesFilters() בודק את e.method (עם 'bank' כברירת מחדל להוצאות ישנות ללא method כלל, תואם לברירת המחדל הקיימת בטופס עצמו).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5755,8 +5755,8 @@ function endOfCurrentMonthStr() {
 // Jan 1st of the current year through the end of the current month —
 // "נקה סינון" clears everything, including the dates, to show the full
 // all-time history as an explicit opt-out of the default.
-let expListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
-let balListFilters = { category: '', type: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
+let expListFilters = { category: '', type: '', method: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
+let balListFilters = { category: '', type: '', method: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
 
 function expenseMatchesFilters(e, filters) {
   if (filters.category && e.category !== filters.category) return false;
@@ -5764,6 +5764,12 @@ function expenseMatchesFilters(e, filters) {
     const isRecurring = e.expenseType ? e.expenseType === 'recurring' : RECURRING_EXPENSE_CATEGORIES.includes(e.category);
     if ((isRecurring ? 'recurring' : 'oneoff') !== filters.type) return false;
   }
+  // אמצעי תשלום — 'bank' (כולל הוצאות ישנות ללא method כלל, ראה ברירת
+  // המחדל 'bank' ב-modal-expense), 'cash' או 'check'. שלושתם ערכים ממשיים
+  // בשדה exp-method (בשונה מ"בנק/מזומן" הכוללני יותר שבו computeBalanceFigures
+  // מקבץ check יחד עם bank לצורך יתרת הבנק) — כאן הסינון מדויק לפי האמצעי
+  // שנבחר בפועל בטופס ההוצאה, כדי לאפשר גם לבודד שיקים בנפרד אם צריך.
+  if (filters.method && (e.method || 'bank') !== filters.method) return false;
   if (filters.from && (e.date||'') < filters.from) return false;
   if (filters.to && (e.date||'') > filters.to) return false;
   return true;
@@ -5799,12 +5805,12 @@ function computeFilteredExpenseSummary(filtered, filters) {
   return { total, avgPerMonth: total / monthsCount, monthsCount };
 }
 
-// Builds the filter-bar markup (category / שוטף-חריג / date range). Shared
-// between the two tabs via setFnName/clearFnName so each keeps its own
-// independent state — see expListFilters/balListFilters above. Rebuilt from
-// scratch on every render (like the rest of these screens); acceptable
-// since these are discrete select/date inputs, not free-text typing that
-// would lose focus/cursor position on re-render.
+// Builds the filter-bar markup (category / שוטף-חריג / אמצעי תשלום / טווח
+// תאריכים). Shared between the two tabs via setFnName/clearFnName so each
+// keeps its own independent state — see expListFilters/balListFilters
+// above. Rebuilt from scratch on every render (like the rest of these
+// screens); acceptable since these are discrete select/date inputs, not
+// free-text typing that would lose focus/cursor position on re-render.
 function buildExpenseFilterBarHtml(filters, setFnName, clearFnName) {
   const catOptions = '<option value="">כל הקטגוריות</option>'
     + Object.keys(EXPENSE_CATEGORY_ICONS).map(c => `<option value="${c}" ${filters.category===c?'selected':''}>${EXPENSE_CATEGORY_ICONS[c]}\u00A0${c}</option>`).join('');
@@ -5813,10 +5819,17 @@ function buildExpenseFilterBarHtml(filters, setFnName, clearFnName) {
     <option value="recurring" ${filters.type==='recurring'?'selected':''}>🔁 שוטף</option>
     <option value="oneoff" ${filters.type==='oneoff'?'selected':''}>⚡ חריג</option>
   `;
-  const hasActive = !!(filters.category || filters.type || filters.from || filters.to);
+  const methodOptions = `
+    <option value="" ${filters.method===''?'selected':''}>כל אמצעי התשלום</option>
+    <option value="bank" ${filters.method==='bank'?'selected':''}>🏦 בנק</option>
+    <option value="cash" ${filters.method==='cash'?'selected':''}>💵 מזומן</option>
+    <option value="check" ${filters.method==='check'?'selected':''}>🧾 שיק</option>
+  `;
+  const hasActive = !!(filters.category || filters.type || filters.method || filters.from || filters.to);
   return '<div style="padding:10px 16px 2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">'
     + '<select class="form-select" style="flex:1;min-width:130px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'category\', this.value)">'+catOptions+'</select>'
     + '<select class="form-select" style="flex:1;min-width:110px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'type\', this.value)">'+typeOptions+'</select>'
+    + '<select class="form-select" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'method\', this.value)">'+methodOptions+'</select>'
     + '<input class="form-input" type="date" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" value="'+(filters.from||'')+'" onchange="'+setFnName+'(\'from\', this.value)"/>'
     + '<span style="font-size:12px;color:var(--gray-400);">עד</span>'
     + '<input class="form-input" type="date" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" value="'+(filters.to||'')+'" onchange="'+setFnName+'(\'to\', this.value)"/>'
@@ -5825,9 +5838,9 @@ function buildExpenseFilterBarHtml(filters, setFnName, clearFnName) {
 }
 
 window.setExpListFilter = (field, value) => { expListFilters[field] = value; renderExpenses(); };
-window.clearExpListFilters = () => { expListFilters = { category:'', type:'', from:'', to:'' }; renderExpenses(); };
+window.clearExpListFilters = () => { expListFilters = { category:'', type:'', method:'', from:'', to:'' }; renderExpenses(); };
 window.setBalListFilter = (field, value) => { balListFilters[field] = value; renderBalance(); };
-window.clearBalListFilters = () => { balListFilters = { category:'', type:'', from:'', to:'' }; renderBalance(); };
+window.clearBalListFilters = () => { balListFilters = { category:'', type:'', method:'', from:'', to:'' }; renderBalance(); };
 
 // Receipt-photo upload state for the currently-open modal-expense form.
 // _expReceiptPendingFile: a newly-selected+compressed image (Blob) waiting to be
@@ -5875,7 +5888,7 @@ function renderExpenses() {
   if (!container) return;
   const filterBarHtml = buildExpenseFilterBarHtml(expListFilters, 'setExpListFilter', 'clearExpListFilters');
   const filtered = allExpenses.filter(e => expenseMatchesFilters(e, expListFilters));
-  const filtersActive = !!(expListFilters.category || expListFilters.type || expListFilters.from || expListFilters.to);
+  const filtersActive = !!(expListFilters.category || expListFilters.type || expListFilters.method || expListFilters.from || expListFilters.to);
 
   if (!allExpenses.length) {
     container.innerHTML = filterBarHtml + '<div class="card-empty" style="margin:16px;">אין הוצאות רשומות</div>';
@@ -6481,7 +6494,7 @@ function renderBalance() {
     // Expenses detail table — filterable independently from the category
     // breakdown above (which always reflects the true, unfiltered totals).
     const balFiltered = allExpenses.filter(e => expenseMatchesFilters(e, balListFilters));
-    const balFiltersActive = !!(balListFilters.category || balListFilters.type || balListFilters.from || balListFilters.to);
+    const balFiltersActive = !!(balListFilters.category || balListFilters.type || balListFilters.method || balListFilters.from || balListFilters.to);
     html += '<div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:6px;">פירוט הוצאות</div>';
     html += buildExpenseFilterBarHtml(balListFilters, 'setBalListFilter', 'clearBalListFilters').replace('padding:10px 16px 2px;', 'padding:0 0 10px;');
     if (!balFiltered.length) {
