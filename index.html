@@ -2246,7 +2246,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.23'; // תוקן באג: "✏️ ערוך פרטי הגבייה" בתוך פרטי גבייה מיוחדת נראה כלא-מגיב עד לסגירת מודל הפרטים. הסיבה: כל ה-.modal-overlay חולקים אותו z-index, ולכן סדר הציור בין שני מודלים פתוחים בו-זמנית נקבע לפי סדר ה-DOM (siblings מאוחרים יותר מצוירים מעל) ולא לפי מי נפתח אחרון — ו-modal-special-new הופיע לפני modal-special-detail בקוד, כך שנפתח בפועל, רק מתחת למודל הפרטים שכבר פתוח. תוקן ע"י העברת modal-special-new למקומו החדש, אחרי modal-special-detail (וגם עדיין אחרי modal-special-list, כך ששני מסלולי הפתיחה — "➕ גבייה מיוחדת חדשה" מהרשימה, ו"✏️ ערוך פרטי הגבייה" מתוך הפרטים — ממשיכים לעבוד נכון).
+const APP_VERSION = '2.15.25'; // בלשונית "מאזן", כרטיס חדש "🏦 הפקדות מזומן לבנק" נוסף מיד מתחת ל"יתרות פתיחה" (מוצג רק כשקיימת הפקדה אחת לפחות) — מציג את סה"כ הכסף שהופקד מהקופה לחשבון הבנק (totalDeposits, שכבר נכלל בחישוב cashBalance/bankBalance ב-computeBalanceFigures אך לא היה גלוי בתצוגה עד כה) עם הסבר קצר, כדי להבהיר את הפער הנפוץ והמבלבל שבו יתרת המזומן נמוכה מ"סה"כ מזומן שנגבה" גם כשאין הוצאות במזומן כלל — הכסף פשוט עבר לבנק.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6105,6 +6105,59 @@ window.saveExpense = async () => {
     updatedAt: serverTimestamp()
   };
 
+  // בדיקת יתרה זמינה (בנק/מזומן, בהתאם לאמצעי התשלום שנבחר) — קריאה עדכנית
+  // ישירות מ-Firestore (לא מהמערכים הגלובליים allExpenses/balPaymentsAll
+  // וכו', שעשויים עוד לא להיות טעונים אם מודל ההוצאה נפתח ישירות בלי
+  // לבקר קודם בלשונית "מאזן"), כדי למנוע רישום הוצאה שתדחוף את יתרת הבנק
+  // או המזומן למינוס — אותו עיקרון בדיוק כמו הבדיקה הקיימת ב-saveCashDeposit.
+  // בעריכת הוצאה קיימת, "מחזירים" תחילה את הסכום/אמצעי הישנים של ההוצאה
+  // הזו עצמה אל היתרה הזמינה לפני ההשוואה — אחרת ההוצאה הקיימת (שעדיין לא
+  // עודכנה ב-Firestore בשלב הזה) הייתה "נחשבת פעמיים" ומצמצמת בטעות את
+  // היתרה הזמינה לעריכה של עצמה (למשל: אי אפשר להעלות סכום של הוצאת בנק
+  // קיימת אפילו בלי שום שינוי אמיתי ביתרה).
+  try {
+    const [paySnapChk, expSnapChk, depSnapChk, specialPaySnapChk] = await Promise.all([
+      getDocs(collection(db, 'buildings', buildingId, 'payments')),
+      getDocs(collection(db, 'buildings', buildingId, 'expenses')),
+      getDocs(collection(db, 'buildings', buildingId, 'cashDeposits')),
+      getDocs(collection(db, 'buildings', buildingId, 'specialPayments'))
+    ]);
+    const { cashBalance, bankBalance } = computeBalanceFigures(
+      paySnapChk.docs.map(d => d.data()),
+      expSnapChk.docs.map(d => d.data()),
+      depSnapChk.docs.map(d => d.data()),
+      buildingData?.openingBalance || 0,
+      buildingData?.cashOpeningBalance || 0,
+      specialPaySnapChk.docs.map(d => d.data())
+    );
+    let cashAvailable = cashBalance, bankAvailable = bankBalance;
+    if (id) {
+      const oldDoc = expSnapChk.docs.find(d => d.id === id);
+      const oldData = oldDoc ? oldDoc.data() : null;
+      if (oldData) {
+        if (oldData.method === 'cash') cashAvailable += (oldData.amount || 0);
+        else bankAvailable += (oldData.amount || 0);
+      }
+    }
+    if (method === 'cash') {
+      if (amount > cashAvailable + 0.01) {
+        showToast(`⚠️ הסכום גבוה מיתרת המזומן הזמינה כרגע (${fmtCurrency(cashAvailable)}) — לא ניתן לרשום הוצאת מזומן שתעביר את קופת המזומן למינוס`, 6500);
+        return;
+      }
+    } else {
+      // 'bank' ו-'check' שניהם נספרים כהוצאת בנק ב-computeBalanceFigures
+      // (bankExpenses = totalExpenses - cashExpenses), לכן הבדיקה כאן חלה
+      // על כל אמצעי תשלום שאינו 'cash', לא רק על method==='bank' במפורש.
+      if (amount > bankAvailable + 0.01) {
+        showToast(`⚠️ הסכום גבוה מיתרת הבנק הזמינה כרגע (${fmtCurrency(bankAvailable)}) — לא ניתן לרשום הוצאה שתעביר את חשבון הבנק למינוס`, 6500);
+        return;
+      }
+    }
+  } catch(e) {
+    // לא חוסמים שמירה במקרה של שגיאת רשת בבדיקה עצמה — עדיף לאפשר הוצאה
+    // לגיטימית מאשר לחסום אותה עקב תקלה זמנית בבדיקה.
+  }
+
   // מבצע התיקון (שם + טלפון) רלוונטי רק לקטגוריית "תיקון" — בכל קטגוריה
   // אחרת מנקים את השדות (למשל אם ההוצאה נערכה ושונתה הקטגוריה בדיעבד).
   // שדה ההערה עצמו (note) כבר רלוונטי לכל הקטגוריות ונשמר תמיד למעלה —
@@ -6362,6 +6415,23 @@ function renderBalance() {
       + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
       + '<span>💵 מזומן: ₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+fmtDateDMY(buildingData.cashOpeningBalanceDate)+')' : '')+'</span>'
       + '</div>'
+      + '</div>';
+  }
+
+  // הפקדות מזומן לבנק — מוצג רק כשיש בפועל הפקדה אחת לפחות. קיים כדי
+  // להסביר בצורה מפורשת פער נפוץ שמבלבל: יתרת המזומן יכולה להיות נמוכה
+  // בהרבה מ"סה"כ מזומן שנגבה" גם כשאין כלל הוצאות במזומן — כי חלק מהכסף
+  // עבר מהקופה לחשבון הבנק דרך "🏦 הפקד מזומן לבנק" (ראה openCashDeposit/
+  // saveCashDeposit), לא נעלם ולא הוצא. cashBalance מחשב זאת נכון כבר
+  // (מפחית totalDeposits מקופת המזומן ומוסיף אותו לבנק — ראה
+  // computeBalanceFigures), אבל עד לכרטיס הזה זה לא היה גלוי בתצוגה עצמה.
+  if (totalDeposits > 0) {
+    html += '<div class="card" style="margin-bottom:16px;font-size:13px;color:var(--gray-600);">'
+      + '<div style="font-weight:700;margin-bottom:6px;">🏦 הפקדות מזומן לבנק</div>'
+      + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
+      + '<span>סה"כ הופקד מהקופה לחשבון הבנק</span><span style="font-weight:700;color:var(--gray-800);">₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--gray-400);margin-top:6px;line-height:1.6;">💡 זו הסיבה השכיחה ביותר שיתרת המזומן נמוכה מ"סה"כ מזומן שנגבה" גם כשאין הוצאות במזומן — הכסף לא נעלם, הוא פשוט עבר לחשבון הבנק.</div>'
       + '</div>';
   }
 
