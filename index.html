@@ -2250,7 +2250,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.27'; // סרגל הסינון המשותף להוצאות (buildExpenseFilterBarHtml, בשימוש גם בלשונית "הוצאות" וגם בטבלת "פירוט הוצאות" בלשונית "מאזן") קיבל שדה סינון נוסף — "אמצעי תשלום" (🏦 בנק / 💵 מזומן / 🧾 שיק, לפי exp-method) — לצד הסינון הקיים לפי קטגוריה/שוטף-חריג/טווח תאריכים. expenseMatchesFilters() בודק את e.method (עם 'bank' כברירת מחדל להוצאות ישנות ללא method כלל, תואם לברירת המחדל הקיימת בטופס עצמו).
+const APP_VERSION = '2.15.28'; // סרגל הסינון של ההוצאות (buildExpenseFilterBarHtml) בנוי מחדש כשלוש שורות מפורשות במקום שורה אחת עם flex-wrap חופשי, כדי שהקיבוץ הרצוי יישמר בכל רוחב מסך: שורה 1 = קטגוריה+סוג (ללא שינוי), שורה 2 = טווח התאריכים (מתאריך + "עד" + עד תאריך) תמיד ביחד, שורה 3 = אמצעי תשלום צמוד לכפתור "נקה סינון". קודם לכן הקיבוץ בין האלמנטים היה תלוי ברוחב המסך בפועל, ולעיתים "עד תאריך" נפרד מ"מתאריך" לשורה נפרדת בעוד אמצעי התשלום הצטרף לשורת התאריכים במקום לשורת הכפתור.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5805,12 +5805,20 @@ function computeFilteredExpenseSummary(filtered, filters) {
   return { total, avgPerMonth: total / monthsCount, monthsCount };
 }
 
-// Builds the filter-bar markup (category / שוטף-חריג / אמצעי תשלום / טווח
-// תאריכים). Shared between the two tabs via setFnName/clearFnName so each
-// keeps its own independent state — see expListFilters/balListFilters
-// above. Rebuilt from scratch on every render (like the rest of these
-// screens); acceptable since these are discrete select/date inputs, not
-// free-text typing that would lose focus/cursor position on re-render.
+// Builds the filter-bar markup (category / שוטף-חריג / טווח תאריכים /
+// אמצעי תשלום + נקה סינון). Shared between the two tabs via setFnName/
+// clearFnName so each keeps its own independent state — see
+// expListFilters/balListFilters above. Rebuilt from scratch on every
+// render (like the rest of these screens); acceptable since these are
+// discrete select/date inputs, not free-text typing that would lose
+// focus/cursor position on re-render.
+//
+// בנוי כשלוש שורות מפורשות (ולא שורה אחת עם flex-wrap חופשי) כדי שהקיבוץ
+// הרצוי יישמר תמיד, בכל רוחב מסך: שורה 1 = קטגוריה+סוג, שורה 2 = טווח
+// התאריכים (מתאריך + "עד" + עד תאריך) ביחד תמיד, שורה 3 = אמצעי תשלום
+// צמוד לכפתור "נקה סינון". עם flex-wrap חופשי (כפי שהיה קודם) הקיבוץ בין
+// האלמנטים היה תלוי ברוחב המסך בפועל ולעיתים "עד תאריך" נפרד מ"מתאריך"
+// לשורה אחרת — כאן זה מובטח מבנית.
 function buildExpenseFilterBarHtml(filters, setFnName, clearFnName) {
   const catOptions = '<option value="">כל הקטגוריות</option>'
     + Object.keys(EXPENSE_CATEGORY_ICONS).map(c => `<option value="${c}" ${filters.category===c?'selected':''}>${EXPENSE_CATEGORY_ICONS[c]}\u00A0${c}</option>`).join('');
@@ -5826,14 +5834,20 @@ function buildExpenseFilterBarHtml(filters, setFnName, clearFnName) {
     <option value="check" ${filters.method==='check'?'selected':''}>🧾 שיק</option>
   `;
   const hasActive = !!(filters.category || filters.type || filters.method || filters.from || filters.to);
-  return '<div style="padding:10px 16px 2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">'
-    + '<select class="form-select" style="flex:1;min-width:130px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'category\', this.value)">'+catOptions+'</select>'
-    + '<select class="form-select" style="flex:1;min-width:110px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'type\', this.value)">'+typeOptions+'</select>'
-    + '<select class="form-select" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'method\', this.value)">'+methodOptions+'</select>'
-    + '<input class="form-input" type="date" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" value="'+(filters.from||'')+'" onchange="'+setFnName+'(\'from\', this.value)"/>'
-    + '<span style="font-size:12px;color:var(--gray-400);">עד</span>'
-    + '<input class="form-input" type="date" style="flex:1;min-width:120px;font-size:13px;padding:8px 10px;" value="'+(filters.to||'')+'" onchange="'+setFnName+'(\'to\', this.value)"/>'
-    + (hasActive ? '<button class="btn-icon" style="padding:8px 12px;font-size:12px;white-space:nowrap;" onclick="'+clearFnName+'()">✖ נקה סינון</button>' : '')
+  return '<div style="padding:10px 16px 2px;display:flex;flex-direction:column;gap:8px;">'
+    + '<div style="display:flex;gap:8px;">'
+      + '<select class="form-select" style="flex:1;min-width:0;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'category\', this.value)">'+catOptions+'</select>'
+      + '<select class="form-select" style="flex:1;min-width:0;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'type\', this.value)">'+typeOptions+'</select>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;">'
+      + '<input class="form-input" type="date" style="flex:1;min-width:0;font-size:13px;padding:8px 10px;" value="'+(filters.from||'')+'" onchange="'+setFnName+'(\'from\', this.value)"/>'
+      + '<span style="font-size:12px;color:var(--gray-400);flex-shrink:0;">עד</span>'
+      + '<input class="form-input" type="date" style="flex:1;min-width:0;font-size:13px;padding:8px 10px;" value="'+(filters.to||'')+'" onchange="'+setFnName+'(\'to\', this.value)"/>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;">'
+      + '<select class="form-select" style="flex:1;min-width:0;font-size:13px;padding:8px 10px;" onchange="'+setFnName+'(\'method\', this.value)">'+methodOptions+'</select>'
+      + (hasActive ? '<button class="btn-icon" style="padding:8px 12px;font-size:12px;white-space:nowrap;flex-shrink:0;" onclick="'+clearFnName+'()">✖ נקה סינון</button>' : '')
+    + '</div>'
     + '</div>';
 }
 
