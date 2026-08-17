@@ -2250,7 +2250,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.28'; // סרגל הסינון של ההוצאות (buildExpenseFilterBarHtml) בנוי מחדש כשלוש שורות מפורשות במקום שורה אחת עם flex-wrap חופשי, כדי שהקיבוץ הרצוי יישמר בכל רוחב מסך: שורה 1 = קטגוריה+סוג (ללא שינוי), שורה 2 = טווח התאריכים (מתאריך + "עד" + עד תאריך) תמיד ביחד, שורה 3 = אמצעי תשלום צמוד לכפתור "נקה סינון". קודם לכן הקיבוץ בין האלמנטים היה תלוי ברוחב המסך בפועל, ולעיתים "עד תאריך" נפרד מ"מתאריך" לשורה נפרדת בעוד אמצעי התשלום הצטרף לשורת התאריכים במקום לשורת הכפתור.
+const APP_VERSION = '2.15.31'; // בלשונית "מאזן", מתחת למספר הראשי בכל אחד מכרטיסי "💳 סה"כ הועבר לבנק"/"💵 סה"כ מזומן שנגבה" (החלק הירוק העליון), נוספה שורת חישוב מפורטת: בצד הבנק — יתרת פתיחה בנק, הפקדת מזומן לבנק (+), הוצאות מהבנק (-), ולבסוף יתרת בנק; בצד המזומן — יתרת פתיחה מזומן, הפקדת מזומן לבנק (-), הוצאות במזומן (-), ולבסוף יתרת מזומן. מציגה בעין אחת את הנוסחה המלאה (זהה בדיוק לחישוב ב-computeBalanceFigures) שמובילה מ"סה"כ הועבר/נגבה" ל"יתרת בנק/מזומן" הסופית, בלי לגלול למטה לכרטיסים הנפרדים.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6396,10 +6396,26 @@ function renderBalance() {
   // יחד (לא רק "ועד שוטף"); הפירוט המלא ערוץ-ערוץ מופיע בכרטיס "פירוט
   // גבייה" למטה. אותה סגנון בדיוק כמו כרטיסי "יתרת בנק/יתרת מזומן"
   // שמתחת (grid של שני stat-card), לבקשת הוועד — כדי שהעין תזהה מיד
-  // שמדובר באותו סוג נתון.
+  // שמדובר באותו סוג נתון. מתחת למספר הראשי של כל כרטיס נוספה שורת חישוב
+  // (יתרת פתיחה, הפקדות מזומן לבנק בפלוס/מינוס, הוצאות, ולבסוף היתרה
+  // הסופית) — כדי שיהיה ברור בעין אחת איך "סה"כ הועבר/נגבה" הופך בפועל
+  // ל"יתרת בנק/מזומן" הסופית (המוצגת גם היא בכרטיסים נפרדים למטה, אך כאן
+  // מוצגת ההיסקה/הנוסחה המלאה, לא רק התוצאה).
+  const bankBreakdownHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);text-align:right;">'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה בנק</span><span>₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן לבנק (+)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות מהבנק (-)</span><span>₪'+bankExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:4px;margin-top:2px;border-top:1px solid var(--gray-200);color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';"><span>יתרת בנק</span><span>₪'+bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '</div>';
+  const cashBreakdownHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);text-align:right;">'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה מזומן</span><span>₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן לבנק (-)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות במזומן (-)</span><span>₪'+cashExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:4px;margin-top:2px;border-top:1px solid var(--gray-200);color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';"><span>יתרת מזומן</span><span>₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
-    + '<div class="stat-card"><div class="stat-value" style="color:var(--green);">₪'+transferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💳 סה"כ הועבר לבנק</div></div>'
-    + '<div class="stat-card"><div class="stat-value" style="color:var(--green);">₪'+cashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 סה"כ מזומן שנגבה</div></div>'
+    + '<div class="stat-card"><div class="stat-value" style="color:var(--green);">₪'+transferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💳 סה"כ הועבר לבנק</div>'+bankBreakdownHtml+'</div>'
+    + '<div class="stat-card"><div class="stat-value" style="color:var(--green);">₪'+cashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 סה"כ מזומן שנגבה</div>'+cashBreakdownHtml+'</div>'
     + '</div>';
 
   // יתרת בנק | יתרת מזומן (יתרות אמיתיות — כוללות את כל הכסף בפועל, מכל הקטגוריות)
@@ -6407,6 +6423,33 @@ function renderBalance() {
     + '<div class="stat-card"><div class="stat-value" style="color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';">₪'+bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">🏦 יתרת בנק</div></div>'
     + '<div class="stat-card"><div class="stat-value" style="color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 יתרת מזומן</div></div>'
     + '</div>';
+
+  // הפקדות מזומן לבנק — כרטיס מאוחד אחד (סה"כ + הסבר + רשימת התנועות
+  // עצמן), מוצג רק כשיש בפועל הפקדה אחת לפחות. קיים גם כדי להסביר בצורה
+  // מפורשת פער נפוץ שמבלבל: יתרת המזומן יכולה להיות נמוכה בהרבה מ"סה"כ
+  // מזומן שנגבה" גם כשאין כלל הוצאות במזומן — כי חלק מהכסף עבר מהקופה
+  // לחשבון הבנק דרך "🏦 הפקד מזומן לבנק" (ראה openCashDeposit/
+  // saveCashDeposit), לא נעלם ולא הוצא. cashBalance מחשב זאת נכון כבר
+  // (מפחית totalDeposits מקופת המזומן ומוסיף אותו לבנק — ראה
+  // computeBalanceFigures). מוצג ישירות מתחת ליתרות בנק/מזומן, לפי בקשת
+  // הוועד — כדי לראות בבת אחת גם את התמונה הכוללת וגם בדיוק אילו העברות
+  // בפועל הזיזו כסף מהקופה לבנק (היה בעבר שני כרטיסים נפרדים — אוחדו).
+  if (balDepositsAll.length) {
+    const sortedDeposits = [...balDepositsAll].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    html += '<div class="card" style="margin-bottom:10px;">'
+      + '<div style="font-weight:700;margin-bottom:8px;">🏦 הפקדות מזומן לבנק</div>'
+      + '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;color:var(--gray-600);">'
+      + '<span>סה"כ הופקד מהקופה לחשבון הבנק</span><span style="font-weight:700;color:var(--gray-800);">₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--gray-400);margin:6px 0 10px;line-height:1.6;">💡 זו הסיבה השכיחה ביותר שיתרת המזומן נמוכה מ"סה"כ מזומן שנגבה" גם כשאין הוצאות במזומן — הכסף לא נעלם, הוא פשוט עבר לחשבון הבנק.</div>'
+      + sortedDeposits.map(d => (
+          '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid var(--gray-100);font-size:13px;">'
+          + '<div><span style="font-weight:600;">₪'+(d.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'+(d.note ? ' <span style="color:var(--gray-400);">• '+d.note+'</span>' : '')+'</div>'
+          + '<div style="color:var(--gray-500);">'+fmtDateDMY(d.date)+'</div>'
+          + '</div>'
+        )).join('')
+      + '</div>';
+  }
 
   // פירוט גבייה — 10 השורות (2 לכל אחד מ-5 הערוצים: בנק+מזומן) מרכיבות יחד
   // את "סה"כ גבייה" למעלה. עד לשינוי הזה רק "ועד שוטף" היה מפוצל לבנק/מזומן
@@ -6462,23 +6505,6 @@ function renderBalance() {
       + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
       + '<span>💵 מזומן: ₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+fmtDateDMY(buildingData.cashOpeningBalanceDate)+')' : '')+'</span>'
       + '</div>'
-      + '</div>';
-  }
-
-  // הפקדות מזומן לבנק — מוצג רק כשיש בפועל הפקדה אחת לפחות. קיים כדי
-  // להסביר בצורה מפורשת פער נפוץ שמבלבל: יתרת המזומן יכולה להיות נמוכה
-  // בהרבה מ"סה"כ מזומן שנגבה" גם כשאין כלל הוצאות במזומן — כי חלק מהכסף
-  // עבר מהקופה לחשבון הבנק דרך "🏦 הפקד מזומן לבנק" (ראה openCashDeposit/
-  // saveCashDeposit), לא נעלם ולא הוצא. cashBalance מחשב זאת נכון כבר
-  // (מפחית totalDeposits מקופת המזומן ומוסיף אותו לבנק — ראה
-  // computeBalanceFigures), אבל עד לכרטיס הזה זה לא היה גלוי בתצוגה עצמה.
-  if (totalDeposits > 0) {
-    html += '<div class="card" style="margin-bottom:16px;font-size:13px;color:var(--gray-600);">'
-      + '<div style="font-weight:700;margin-bottom:6px;">🏦 הפקדות מזומן לבנק</div>'
-      + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
-      + '<span>סה"כ הופקד מהקופה לחשבון הבנק</span><span style="font-weight:700;color:var(--gray-800);">₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
-      + '</div>'
-      + '<div style="font-size:11px;color:var(--gray-400);margin-top:6px;line-height:1.6;">💡 זו הסיבה השכיחה ביותר שיתרת המזומן נמוכה מ"סה"כ מזומן שנגבה" גם כשאין הוצאות במזומן — הכסף לא נעלם, הוא פשוט עבר לחשבון הבנק.</div>'
       + '</div>';
   }
 
