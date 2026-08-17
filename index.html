@@ -2255,7 +2255,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.35'; // בתפריט "ניהול כספים": כפתור "🔌 עדכון גבייה חריגה" שונה ל-"🔌 עדכון גבייה חריגה לדייר", וכפתור "🔧 גבייה מיוחדת" שונה ל-"🔧 גבייה מיוחדת לכל הדיירים" — שינוי טקסט בלבד (הפעולה מאחורי כל כפתור לא השתנתה), כדי להבהיר את ההבדל בין השניים: הראשון מעדכן דירה בודדת, השני מנהל גבייה שחלה על כל הדיירים. כותרת המודל modal-special-list ("🔧 גבייה מיוחדת") נשארה כפי שהייתה — לא התבקש שינוי בה.
+const APP_VERSION = '2.15.38'; // בדוח PDF של גבייה מיוחדת (createSpecialCollectionPDFReport בלבד — התצוגה בתוך האפליקציה, renderSpecialDetail/openSpecialMarkPaidModal, לא שונתה), הוסרו לפי בקשת הועד שני סימני המיזוג: כותרת "ממי גובים" כבר לא מוסיפה "(עם מיזוג דירות מפוצלות)", ותא הדירה בטבלה כבר לא מציג "(25א+25ב)" מתחת למספר הדירה הממוזג — כך שדירה ממוזגת מוצגת בדוח בדיוק כמו דירה רגילה, בלי לחשוף לדיירים שמדובר בשתי יחידות מפוצלות עם בעלים משותף.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5324,8 +5324,7 @@ async function createSpecialCollectionPDFReport(id) {
     // כדי שלא ישתנה רטרואקטיבית אם sc.payerScope/מיזוג עודכן אחרי שהתשלום
     // כבר נרשם. בשורה שטרם שולמה משתמשים ב-u.name החי, לפי ההגדרה הנוכחית.
     const displayName = p ? (p.name || u.name || '') : u.name;
-    const mergedLabel = p?.mergedApts?.length > 1 ? p.mergedApts.join('+') : u.mergedFromLabel;
-    const aptCell = mergedLabel ? aptDisplay(u.displayApt) + '<br/><span style="font-size:10px;color:#888;">('+mergedLabel+')</span>' : aptDisplay(u.displayApt);
+    const aptCell = aptDisplay(u.displayApt);
     const floorVal = u.residentsIncluded[0]?.floor;
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptCell}</td>
@@ -5337,7 +5336,12 @@ async function createSpecialCollectionPDFReport(id) {
     </tr>`;
   }).join('');
   const remaining = Math.max(0, totalTarget - totalCollected);
-  const payerScopeLabel = sc.payerScope === 'owners' ? 'בעלי הדירות' + (sc.mergeSplitApartments ? ' (עם מיזוג דירות מפוצלות)' : '') : 'בעלים ושוכרים (דיירים שגרים בפועל בבניין)';
+  // הועד ביקש שדוח ה-PDF (בשונה מהתצוגה בתוך האפליקציה, ראה renderSpecialDetail/
+  // openSpecialMarkPaidModal, שם ה"(מוזג מ-...)" עדיין מוצג) לא יגלה למשפחות
+  // שנגבות כדירה אחת שמדובר בפועל בשתי יחידות מפוצלות עם בעלים משותף — לא
+  // בכותרת ("עם מיזוג דירות מפוצלות") ולא בתא הדירה עצמו ("(25א+25ב)"), כדי
+  // שהדוח ייראה לכל הדיירים כאילו מדובר בדירה רגילה כמו כל האחרות.
+  const payerScopeLabel = sc.payerScope === 'owners' ? 'בעלי הדירות' : 'בעלים ושוכרים (דיירים שגרים בפועל בבניין)';
   const contractorLine = sc.contractorName
     ? `<div style="text-align:center;font-size:13px;color:#555;margin-bottom:10px;">🔧&nbsp;${sc.contractorName.replace(/ /g,'\u00A0')}${sc.contractorPhone ? '&nbsp;•&nbsp;'+sc.contractorPhone : ''}</div>`
     : '';
@@ -7475,7 +7479,7 @@ async function createPDFReport() {
   const allPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
   const allExpSnap = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
   const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-  const { bankBalance, cashBalance } = computeBalanceFigures(
+  const { bankBalance, cashBalance, totalDeposits } = computeBalanceFigures(
     allPaySnap.docs.map(d => d.data()),
     allExpSnap.docs.map(d => d.data()),
     depositSnap.docs.map(d => d.data()),
@@ -7588,6 +7592,7 @@ async function createPDFReport() {
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הוצאות:</span><span dir="ltr">₪${totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות מהבנק:</span><span dir="ltr">₪${bankExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הוצאות במזומן:</span><span dir="ltr">₪${cashExpensesYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ הפקדות מזומן לבנק:</span><span dir="ltr">₪${totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         </div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
           <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">יתרה בחשבון הבנק:</span><span dir="ltr">&#8362;${bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -7768,7 +7773,7 @@ async function createMonthlyPDFReport() {
   // בגרסה המסוננת לפי paidAt <= סוף החודש הנבחר — כדי שהיתרה המצטברת תשקף
   // מתי הכסף באמת נכנס לחשבון, לא אילו חודשים התשלום מכסה.
   const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= monthEndDate);
-  const { bankBalance, cashBalance } = computeBalanceFigures(
+  const { bankBalance, cashBalance, totalDeposits } = computeBalanceFigures(
     cumCombinedPayments,
     cumExpSnap.docs.map(d => d.data()),
     cumDepSnap.docs.map(d => d.data()),
@@ -7833,6 +7838,7 @@ async function createMonthlyPDFReport() {
         <div style="border-top:2px solid #000;margin:14px 0;padding:10px 0;">
           <div class="summary-line"><span class="total">מאזן&nbsp;החודש</span><span dir="ltr" style="color:${monthNet>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${monthNet.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
           <div style="font-size:11px;color:#999;margin:-2px 0 10px;">הכנסות&nbsp;פחות&nbsp;הוצאות&nbsp;לחודש&nbsp;${monthLblNbsp}</div>
+          <div class="summary-line"><span class="total">סה"כ&nbsp;הפקדות&nbsp;מזומן&nbsp;לבנק&nbsp;(מצטבר)</span><span dir="ltr">₪${totalDeposits.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
           <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק&nbsp;לסוף&nbsp;${monthLblNbsp}</span><span dir="ltr">₪${bankBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
           <div class="summary-line"><span class="total">יתרת&nbsp;קופת&nbsp;מזומן&nbsp;לסוף&nbsp;${monthLblNbsp}</span><span dir="ltr">₪${cashBalance.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
           <div class="summary-line"><span class="total">סה"כ&nbsp;יתרה&nbsp;מצטברת</span><span dir="ltr" style="color:${(bankBalance+cashBalance)>=0?'#0E9F6E':'#E02424'};font-weight:bold;">₪${(bankBalance+cashBalance).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
@@ -8036,7 +8042,7 @@ async function createSemiAnnualPDFReport() {
   const cumExpSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<=', toDateLastDay)));
   const cumDepSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<=', toDateLastDay)));
   const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= toDateEndObj);
-  const { bankBalance: bankBalanceEnd, cashBalance: cashBalanceEnd } = computeBalanceFigures(
+  const { bankBalance: bankBalanceEnd, cashBalance: cashBalanceEnd, totalDeposits: totalDepositsEnd } = computeBalanceFigures(
     cumCombinedPayments,
     cumExpSnap.docs.map(d => d.data()),
     cumDepSnap.docs.map(d => d.data()),
@@ -8151,6 +8157,7 @@ async function createSemiAnnualPDFReport() {
           <div class="summary-line"><span class="total">יתרת&nbsp;פתיחה&nbsp;מזומן&nbsp;(תחילת&nbsp;התקופה)</span><span dir="ltr">₪${cashBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         </div>
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
+          <div class="summary-line"><span class="total">סה"כ&nbsp;הפקדות&nbsp;מזומן&nbsp;לבנק&nbsp;(מצטבר&nbsp;עד&nbsp;סוף&nbsp;התקופה)</span><span dir="ltr">₪${totalDepositsEnd.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
           <div class="summary-line"><span class="total">יתרה&nbsp;בחשבון&nbsp;הבנק&nbsp;(סוף&nbsp;התקופה)</span><span dir="ltr">₪${bankBalanceEnd.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
           <div class="summary-line"><span class="total">יתרת&nbsp;מזומן&nbsp;(סוף&nbsp;התקופה)</span><span dir="ltr">₪${cashBalanceEnd.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
           <div class="summary-line"><span class="total">סה"כ&nbsp;יתרה&nbsp;מצטברת</span><span dir="ltr" style="font-weight:bold;color:${(bankBalanceEnd+cashBalanceEnd)>=0?'#0E9F6E':'#E02424'};">₪${(bankBalanceEnd+cashBalanceEnd).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
