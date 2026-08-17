@@ -1224,12 +1224,17 @@
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment('vaad');">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 עדכון גבייה חריגה לדייר</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת לכל הדיירים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
-      <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
+      <!-- כפתור "🔍 איתור תשלומים כפולים" הוסתר (display:none) לפי בקשת
+           המשתמש — לא נמחק, כדי לא לאבד את הפיצ'ר עצמו (openDuplicatePayments
+           והמודל modal-duplicate-payments עדיין קיימים ותקינים בקוד, פשוט
+           אין דרך UI רגילה להגיע אליהם כרגע). ניתן להחזיר בקלות ע"י הסרת
+           ה-display:none אם יידרש בעתיד. -->
+      <button class="btn-primary" style="display:none;background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 חריגים וטעינה חשמלית</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateSemiAnnualPDF();">📆 הפק PDF חצי שנתי</button>
@@ -2250,7 +2255,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.31'; // בלשונית "מאזן", מתחת למספר הראשי בכל אחד מכרטיסי "💳 סה"כ הועבר לבנק"/"💵 סה"כ מזומן שנגבה" (החלק הירוק העליון), נוספה שורת חישוב מפורטת: בצד הבנק — יתרת פתיחה בנק, הפקדת מזומן לבנק (+), הוצאות מהבנק (-), ולבסוף יתרת בנק; בצד המזומן — יתרת פתיחה מזומן, הפקדת מזומן לבנק (-), הוצאות במזומן (-), ולבסוף יתרת מזומן. מציגה בעין אחת את הנוסחה המלאה (זהה בדיוק לחישוב ב-computeBalanceFigures) שמובילה מ"סה"כ הועבר/נגבה" ל"יתרת בנק/מזומן" הסופית, בלי לגלול למטה לכרטיסים הנפרדים.
+const APP_VERSION = '2.15.35'; // בתפריט "ניהול כספים": כפתור "🔌 עדכון גבייה חריגה" שונה ל-"🔌 עדכון גבייה חריגה לדייר", וכפתור "🔧 גבייה מיוחדת" שונה ל-"🔧 גבייה מיוחדת לכל הדיירים" — שינוי טקסט בלבד (הפעולה מאחורי כל כפתור לא השתנתה), כדי להבהיר את ההבדל בין השניים: הראשון מעדכן דירה בודדת, השני מנהל גבייה שחלה על כל הדיירים. כותרת המודל modal-special-list ("🔧 גבייה מיוחדת") נשארה כפי שהייתה — לא התבקש שינוי בה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6402,15 +6407,15 @@ function renderBalance() {
   // ל"יתרת בנק/מזומן" הסופית (המוצגת גם היא בכרטיסים נפרדים למטה, אך כאן
   // מוצגת ההיסקה/הנוסחה המלאה, לא רק התוצאה).
   const bankBreakdownHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);text-align:right;">'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה בנק</span><span>₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן לבנק (+)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות מהבנק (-)</span><span>₪'+bankExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה</span><span>₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן (+)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות מהבנק</span><span>₪'+bankExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:4px;margin-top:2px;border-top:1px solid var(--gray-200);color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';"><span>יתרת בנק</span><span>₪'+bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '</div>';
   const cashBreakdownHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);text-align:right;">'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה מזומן</span><span>₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן לבנק (-)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות במזומן (-)</span><span>₪'+cashExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה</span><span>₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן (-)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות במזומן</span><span>₪'+cashExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:4px;margin-top:2px;border-top:1px solid var(--gray-200);color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';"><span>יתרת מזומן</span><span>₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
