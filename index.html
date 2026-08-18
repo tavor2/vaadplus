@@ -2255,7 +2255,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.39'; // תוקן באג בכל ארבעת מחוללי דוחות ה-PDF (שנתי/חודשי/חצי-שנתי/גבייה מיוחדת): הגדרת pagebreak היתה mode:['css','legacy'] יחד — שילוב ידוע-בעייתי ב-html2pdf.js שגורם לרווחים ריקים מוזרים בין שורות טבלה (בבירור נראה בגבייה המיוחדת: רווח בין דירה 23 ל-24) ולעיתים חיתוך תוכן שלם בסוף הדוח, כולל בלוק הסיכום עצמו, בטבלאות ארוכות. שונה ל-mode:['css'] בלבד (מסתמך על page-break-inside:avoid שכבר מוגדר ב-<style> של כל דוח) — המנגנון היציב היחיד מבין השניים.
+const APP_VERSION = '2.15.40'; // טאב "מאזן" קיבל פילטר תקופה חדש (📅 "טווח תקופה למאזן", מחודש/עד חודש, ברירת מחדל ינואר-דצמבר שנה נוכחית, טווח בחירה 3 שנים אחורה) — balPeriodFilter. "יתרת בנק/מזומן" ממשיכה להיות יתרה מצטברת אמיתית (openingBalance + כל מה שקרה עד סוף "עד חודש", לא רק תנועות התקופה) — בדיוק כמו בדוח החצי-שנתי הקיים. נוסף כרטיס חדש "יתרת פתיחה לתקופה" (מחליף את כרטיס "יתרות פתיחה" הקבוע) שמציג את היתרה המצטברת נכון לתחילת "מחודש" — כך שלמשל בחירת "יולי" כ"מחודש" תציג את היתרה שהצטברה בפועל עד 1/7 (יתרת פתיחה מקורית + גבייה עד 30/6 - הוצאות עד 30/6), לא את יתרת הפתיחה הקבועה של הבניין. שאר הכרטיסים (סה"כ גבייה, פירוט גבייה, סה"כ הוצאות, פירוט הוצאות לפי קטגוריה, הפקדות מזומן לבנק) מוגבלים לתנועות התקופה הנבחרת בלבד. טבלת "פירוט הוצאות" (balListFilters) מסונכרנת אוטומטית לתקופה החדשה בכל שינוי (setBalPeriod), כך שגם היא מציגה כברירת מחדל רק את התקופה שנבחרה — ניתן עדיין לצמצם אותה עוד יותר דרך הפילטר שלה עצמה (קטגוריה/סוג/אמצעי תשלום/תאריכים).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5773,7 +5773,7 @@ function endOfCurrentMonthStr() {
 // "נקה סינון" clears everything, including the dates, to show the full
 // all-time history as an explicit opt-out of the default.
 let expListFilters = { category: '', type: '', method: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
-let balListFilters = { category: '', type: '', method: '', from: jan1CurrentYearStr(), to: endOfCurrentMonthStr() };
+let balListFilters = { category: '', type: '', method: '', from: jan1CurrentYearStr(), to: new Date().getFullYear() + '-12-31' }; // עקבי עם ברירת המחדל של balPeriodFilter (מוגדר למטה, ליד renderBalance) — טווח שנה קלנדרית מלאה, לא רק עד החודש הנוכחי
 
 function expenseMatchesFilters(e, filters) {
   if (filters.category && e.category !== filters.category) return false;
@@ -6374,12 +6374,135 @@ function loadBalance() {
   if (alreadyListening) renderBalance(); // instant re-render from cache, no new server read
 }
 
+// ===== BALANCE TAB — PERIOD FILTER (מחודש עד חודש) =====
+// כברירת מחדל מציג את השנה הקלנדרית הנוכחית (ינואר עד דצמבר), אבל ניתן
+// לבחור כל טווח חודשים אחר, כולל חודשים משנים קודמות — לא רק תצוגה
+// "מצטברת מאז ומעולם" כמו שהיה קודם. state גלובלי (לא מתאפס בכל רינדור),
+// כדי שהבחירה תישאר בין החלפות טאבים.
+let balPeriodFilter = { from: new Date().getFullYear() + '-01', to: new Date().getFullYear() + '-12' };
+
+// yyyy-mm-dd של היום האחרון בחודש ym ("2026-02" → "2026-02-28").
+function lastDayOfMonthStr(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m, 0);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// מחזירה את תת-הקבוצה של payments ששייכת לטווח [fromYm, toYm] (כולל בשני
+// הקצוות). תשלומי "ועד"/"טעינה" משויכים לפי שדה 'month' הרגיל שלהם;
+// תשלומי "גבייה חריגה" (category==='exceptional') משויכים לפי paidAt
+// (תאריך ההעברה בפועל) — עקבי עם איך שדוחות ה-PDF כבר משייכים אותם
+// (ראה splitPaymentsForPeriod למעלה). fromYm/toYm יכולים להיות רחבים מאוד
+// (למשל '0000-01') כדי לקבל את "כל מה שלפני"/"כל מה שעד" תאריך מסוים.
+function paymentsInYmRange(payments, fromYm, toYm) {
+  const fromDateObj = new Date(fromYm + '-01T00:00:00');
+  const toDateObj = new Date(lastDayOfMonthStr(toYm) + 'T23:59:59.999');
+  return payments.filter(p => {
+    if (p.category === 'exceptional') {
+      const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+      return d && d >= fromDateObj && d <= toDateObj;
+    }
+    return p.month >= fromYm && p.month <= toYm;
+  });
+}
+
+// אותו עיקרון עבור specialPayments (גבייה מיוחדת) — תמיד לפי paidAt, אין
+// להם שדה 'month' בכלל.
+function specialPaymentsInYmRange(specialPayments, fromYm, toYm) {
+  const fromDateObj = new Date(fromYm + '-01T00:00:00');
+  const toDateObj = new Date(lastDayOfMonthStr(toYm) + 'T23:59:59.999');
+  return specialPayments.filter(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && d >= fromDateObj && d <= toDateObj;
+  });
+}
+
+// בונה את שורת "טווח תקופה למאזן" (מחודש/עד חודש) שמוצגת בראש הטאב.
+// טווח האפשרויות: 3 שנים קלנדריות אחרונות (כולל הנוכחית) — כדי לאפשר גם
+// צפייה בחודשים משנה קודמת, לא רק בשנה הנוכחית.
+function buildBalancePeriodSelectorHtml() {
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear - 2, currentYear - 1, currentYear];
+  const monthOpts = [];
+  years.forEach(y => {
+    for (let m = 1; m <= 12; m++) monthOpts.push(y + '-' + String(m).padStart(2,'0'));
+  });
+  const buildOptions = (selected) => monthOpts.map(ym =>
+    `<option value="${ym}" ${ym===selected?'selected':''}>${monthLabel(ym)}</option>`
+  ).join('');
+  return '<div class="card" style="margin-bottom:10px;">'
+    + '<div style="font-size:12px;color:var(--gray-500);margin-bottom:8px;font-weight:600;">📅 טווח תקופה למאזן</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;">'
+    + '<select class="form-select" style="flex:1;min-width:0;font-size:13px;padding:8px 10px;" onchange="setBalPeriod(\'from\', this.value)">'+buildOptions(balPeriodFilter.from)+'</select>'
+    + '<span style="font-size:12px;color:var(--gray-400);flex-shrink:0;">עד</span>'
+    + '<select class="form-select" style="flex:1;min-width:0;font-size:13px;padding:8px 10px;" onchange="setBalPeriod(\'to\', this.value)">'+buildOptions(balPeriodFilter.to)+'</select>'
+    + '</div></div>';
+}
+
+// משנה את טווח התקופה של המאזן, ומוודא ש"מחודש" לא נמצא אחרי "עד חודש"
+// (במקרה כזה גוררים את הצד השני יחד איתו, כדי שהטווח תמיד יישאר תקין).
+// מסנכרן גם את טווח התאריכים של טבלת "פירוט הוצאות" (balListFilters) כדי
+// שיתאים בדיוק לתקופה החדשה כברירת מחדל — לפי בקשת הוועד שהטבלה תציג רק
+// את הוצאות התקופה הנבחרת, לא טווח נפרד משלה. המנהל עדיין יכול לצמצם את
+// טבלת ההוצאות עוד יותר (קטגוריה/סוג/אמצעי תשלום/תאריכים) דרך הפילטר
+// שלה עצמה, בלי לשנות את התקופה הכללית של שאר הכרטיסים במאזן.
+window.setBalPeriod = (field, value) => {
+  balPeriodFilter[field] = value;
+  if (balPeriodFilter.from > balPeriodFilter.to) {
+    if (field === 'from') balPeriodFilter.to = value; else balPeriodFilter.from = value;
+  }
+  balListFilters.from = balPeriodFilter.from + '-01';
+  balListFilters.to = lastDayOfMonthStr(balPeriodFilter.to);
+  renderBalance();
+};
+
 function renderBalance() {
   const container = document.getElementById('balance-content');
   if (!container) return;
 
   const openingBalance = buildingData?.openingBalance || 0;
   const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
+
+  // ===== טווח התקופה הנבחרת (balPeriodFilter) =====
+  const periodFrom = balPeriodFilter.from, periodTo = balPeriodFilter.to;
+  const periodFromDateStr = periodFrom + '-01';
+  const periodToDateStr = lastDayOfMonthStr(periodTo);
+  const monthBeforeFrom = (() => {
+    const [y, m] = periodFrom.split('-').map(Number);
+    const d = new Date(y, m - 2, 1); // חודש אחד לפני periodFrom
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  })();
+
+  // יתרת פתיחה לתקופה = כל מה שקרה לפני periodFrom, על גבי יתרת הפתיחה
+  // האמיתית של הבניין (openingBalance/cashOpeningBalance) — בדיוק אותה
+  // שיטה כמו bankBalanceStart/cashBalanceStart בדוח החצי-שנתי.
+  const prePayments = paymentsInYmRange(balPaymentsAll, '0000-01', monthBeforeFrom);
+  const preExpenses = allExpenses.filter(e => (e.date||'') < periodFromDateStr);
+  const preDeposits = balDepositsAll.filter(d => (d.date||'') < periodFromDateStr);
+  const preSpecialPayments = specialPaymentsInYmRange(allSpecialPayments, '0000-01', monthBeforeFrom);
+  const { bankBalance: bankBalanceStart, cashBalance: cashBalanceStart } = computeBalanceFigures(
+    prePayments, preExpenses, preDeposits, openingBalance, cashOpeningBalance, preSpecialPayments
+  );
+
+  // יתרת סגירה (="יתרת בנק/מזומן" המוצגת) = מצטבר מתחילת הבניין עד סוף
+  // periodTo — לא רק תנועות התקופה עצמה, כי יתרה היא מעצם טבעה מצטברת.
+  const cumPayments = paymentsInYmRange(balPaymentsAll, '0000-01', periodTo);
+  const cumExpenses = allExpenses.filter(e => (e.date||'') <= periodToDateStr);
+  const cumDeposits = balDepositsAll.filter(d => (d.date||'') <= periodToDateStr);
+  const cumSpecialPayments = specialPaymentsInYmRange(allSpecialPayments, '0000-01', periodTo);
+  const { bankBalance, cashBalance, balance } = computeBalanceFigures(
+    cumPayments, cumExpenses, cumDeposits, openingBalance, cashOpeningBalance, cumSpecialPayments
+  );
+  const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
+  const balIcon = balance >= 0 ? '📈' : '📉';
+
+  // תנועות התקופה עצמה בלבד (לא מצטבר) — לכל כרטיסי "סה"כ גבייה/הוצאות"
+  // ולפירוט לפי ערוץ/קטגוריה. יתרת פתיחה=0 כאן בכוונה, כי אנחנו רוצים רק
+  // את הזרימה בתוך התקופה, לא יתרה מצטברת (זו כבר חושבה למעלה בנפרד).
+  const periodPayments = paymentsInYmRange(balPaymentsAll, periodFrom, periodTo);
+  const periodExpenses = allExpenses.filter(e => (e.date||'') >= periodFromDateStr && (e.date||'') <= periodToDateStr);
+  const periodDeposits = balDepositsAll.filter(d => (d.date||'') >= periodFromDateStr && (d.date||'') <= periodToDateStr);
+  const periodSpecialPayments = specialPaymentsInYmRange(allSpecialPayments, periodFrom, periodTo);
   const {
     totalCollected, cashCollected, transferCollected,
     vaadCollected, vaadCashCollected, vaadTransferCollected,
@@ -6388,19 +6511,18 @@ function renderBalance() {
     exceptionalRenterCollected, exceptionalRenterCashCollected, exceptionalRenterTransferCollected,
     specialCollected, specialCashCollected, specialTransferCollected,
     totalExpenses, cashExpenses, bankExpenses,
-    totalDeposits, bankBalance, cashBalance, balance
-  } = computeBalanceFigures(balPaymentsAll, allExpenses, balDepositsAll, openingBalance, cashOpeningBalance, allSpecialPayments);
-  const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
-  const balIcon = balance >= 0 ? '📈' : '📉';
+    totalDeposits
+  } = computeBalanceFigures(periodPayments, periodExpenses, periodDeposits, 0, 0, periodSpecialPayments);
 
-  // Group expenses by category
+  // Group expenses by category — מוגבל לתקופה הנבחרת, עקבי עם שאר הכרטיסים
   const byCat = {};
-  allExpenses.forEach(e => {
+  periodExpenses.forEach(e => {
     byCat[e.category] = (byCat[e.category]||0) + (e.amount||0);
   });
   const catIcons = EXPENSE_CATEGORY_ICONS;
 
   let html = '<div style="padding:16px;">';
+  html += buildBalancePeriodSelectorHtml();
   // כותרת ראשית — סה"כ גבייה (כולל את יתרת הבנק ויתרת המזומן שמפורטות מתחתיה).
   // מורכב מ-5 רכיבים המפורטים בכרטיס "פירוט גבייה" למטה: הועבר לבנק/מזומן
   // שנגבה (ועד בית שוטף בלבד) + גבייה חריגה בעלים/שוכרים + גבייה טעינה.
@@ -6419,13 +6541,13 @@ function renderBalance() {
   // ל"יתרת בנק/מזומן" הסופית (המוצגת גם היא בכרטיסים נפרדים למטה, אך כאן
   // מוצגת ההיסקה/הנוסחה המלאה, לא רק התוצאה).
   const bankBreakdownHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);text-align:right;">'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה</span><span>₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה</span><span>₪'+bankBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן (+)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות מהבנק</span><span>₪'+bankExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:4px;margin-top:2px;border-top:1px solid var(--gray-200);color:'+(bankBalance>=0?'var(--green)':'var(--red)')+';"><span>יתרת בנק</span><span>₪'+bankBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '</div>';
   const cashBreakdownHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);text-align:right;">'
-    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה</span><span>₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>יתרת פתיחה</span><span>₪'+cashBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הפקדת מזומן (-)</span><span>₪'+totalDeposits.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);padding:2px 0;"><span>הוצאות במזומן</span><span>₪'+cashExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:4px;margin-top:2px;border-top:1px solid var(--gray-200);color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';"><span>יתרת מזומן</span><span>₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span></div>'
@@ -6451,8 +6573,8 @@ function renderBalance() {
   // computeBalanceFigures). מוצג ישירות מתחת ליתרות בנק/מזומן, לפי בקשת
   // הוועד — כדי לראות בבת אחת גם את התמונה הכוללת וגם בדיוק אילו העברות
   // בפועל הזיזו כסף מהקופה לבנק (היה בעבר שני כרטיסים נפרדים — אוחדו).
-  if (balDepositsAll.length) {
-    const sortedDeposits = [...balDepositsAll].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  if (periodDeposits.length) {
+    const sortedDeposits = [...periodDeposits].sort((a,b) => (b.date||'').localeCompare(a.date||''));
     html += '<div class="card" style="margin-bottom:10px;">'
       + '<div style="font-weight:700;margin-bottom:8px;">🏦 הפקדות מזומן לבנק</div>'
       + '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;color:var(--gray-600);">'
@@ -6513,17 +6635,19 @@ function renderBalance() {
     + '</div>'
     + '</div>';
 
-  if (openingBalance || cashOpeningBalance) {
-    html += '<div class="card" style="margin-bottom:16px;font-size:13px;color:var(--gray-600);">'
-      + '<div style="font-weight:700;margin-bottom:6px;">יתרות פתיחה</div>'
-      + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
-      + '<span>🏦 בנק: ₪'+openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.openingBalanceDate ? ' (נכון ל-'+fmtDateDMY(buildingData.openingBalanceDate)+')' : '')+'</span>'
-      + '</div>'
-      + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
-      + '<span>💵 מזומן: ₪'+cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+(buildingData?.cashOpeningBalanceDate ? ' (נכון ל-'+fmtDateDMY(buildingData.cashOpeningBalanceDate)+')' : '')+'</span>'
-      + '</div>'
-      + '</div>';
-  }
+  // "יתרת פתיחה לתקופה" — היתרה המצטברת נכון לתחילת periodFrom (לא בהכרח
+  // זהה ליתרת הפתיחה הקבועה של הבניין שמוגדרת בניהול כספים; אם periodFrom
+  // מוקדם יותר או שווה לתאריך יתרת הפתיחה המקורית, הערכים יהיו זהים —
+  // אחרת (למשל בחירת "יולי" כ"מחודש") זו היתרה שהצטברה בפועל עד אז).
+  html += '<div class="card" style="margin-bottom:16px;font-size:13px;color:var(--gray-600);">'
+    + '<div style="font-weight:700;margin-bottom:6px;">יתרת פתיחה לתקופה (נכון ל-'+fmtDateDMY(periodFromDateStr)+')</div>'
+    + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
+    + '<span>🏦 בנק: ₪'+bankBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;padding:3px 0;">'
+    + '<span>💵 מזומן: ₪'+cashBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '</div>';
 
   // סה"כ הוצאות — כותרת בפני עצמה, ומתחתיה הפילוח בנק/מזומן
   html += '<div class="card" style="margin-bottom:10px;text-align:center;">'
