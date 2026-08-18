@@ -2255,7 +2255,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.38'; // בדוח PDF של גבייה מיוחדת (createSpecialCollectionPDFReport בלבד — התצוגה בתוך האפליקציה, renderSpecialDetail/openSpecialMarkPaidModal, לא שונתה), הוסרו לפי בקשת הועד שני סימני המיזוג: כותרת "ממי גובים" כבר לא מוסיפה "(עם מיזוג דירות מפוצלות)", ותא הדירה בטבלה כבר לא מציג "(25א+25ב)" מתחת למספר הדירה הממוזג — כך שדירה ממוזגת מוצגת בדוח בדיוק כמו דירה רגילה, בלי לחשוף לדיירים שמדובר בשתי יחידות מפוצלות עם בעלים משותף.
+const APP_VERSION = '2.15.39'; // תוקן באג בכל ארבעת מחוללי דוחות ה-PDF (שנתי/חודשי/חצי-שנתי/גבייה מיוחדת): הגדרת pagebreak היתה mode:['css','legacy'] יחד — שילוב ידוע-בעייתי ב-html2pdf.js שגורם לרווחים ריקים מוזרים בין שורות טבלה (בבירור נראה בגבייה המיוחדת: רווח בין דירה 23 ל-24) ולעיתים חיתוך תוכן שלם בסוף הדוח, כולל בלוק הסיכום עצמו, בטבלאות ארוכות. שונה ל-mode:['css'] בלבד (מסתמך על page-break-inside:avoid שכבר מוגדר ב-<style> של כל דוח) — המנגנון היציב היחיד מבין השניים.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5389,13 +5389,21 @@ async function createSpecialCollectionPDFReport(id) {
 
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
+  // pagebreak mode הוא רק 'css' (לא 'css'+'legacy' יחד) — שילוב שני
+  // האלגוריתמים גרם לבאג ידוע ב-html2pdf.js: עם טבלה ארוכה (הרבה שורות tr
+  // עם page-break-inside:avoid), שני מנגנוני חלוקת העמודים "מתנגשים" זה בזה
+  // ומייצרים רווחים ריקים מוזרים בין שורות, ולעיתים אף חותכים תוכן בסוף
+  // הדוח (כולל בלוק ה-summary עצמו) לגמרי. 'css' בלבד — שמסתמך על כללי ה-
+  // page-break-inside שכבר מוגדרים ב-<style> למעלה — הוא המנגנון היציב
+  // והנתמך יותר, ותוקן בכל ארבעת מחוללי הדוחות (שנתי/חודשי/חצי-שנתי/גבייה
+  // מיוחדת) שחולקים בדיוק אותה קונפיגורציה.
   const opt = {
     margin: 10,
     filename: `גביה_מיוחדת_${(sc.title||'תיקון').replace(/\s+/g,'_')}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
     jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
-    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
+    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
@@ -7614,13 +7622,16 @@ async function createPDFReport() {
   // off-screen content is actually painted before html2canvas snapshots it.
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
+  // pagebreak mode 'css' בלבד (לא 'css'+'legacy') — ראה הסבר מלא ב-
+  // createSpecialCollectionPDFReport, אותו תיקון לאותו באג ידוע ב-html2pdf.js
+  // (רווחים מוזרים בין שורות טבלה + תוכן חתוך בסוף הדוח עם טבלה ארוכה).
   const opt = {
     margin: 10,
     filename: `vaad_bait_${year}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
     jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
-    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
+    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
@@ -7855,13 +7866,14 @@ async function createMonthlyPDFReport() {
 
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
+  // pagebreak mode 'css' בלבד — ראה הסבר מלא ב-createSpecialCollectionPDFReport.
   const opt = {
     margin: 10,
     filename: `vaad_bait_${ym}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
     jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
-    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
+    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
@@ -8176,13 +8188,14 @@ async function createSemiAnnualPDFReport() {
 
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
+  // pagebreak mode 'css' בלבד — ראה הסבר מלא ב-createSpecialCollectionPDFReport.
   const opt = {
     margin: 10,
     filename: `vaad_bait_${fromYm}_${toYm}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2 },
     jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
-    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.summary-line', 'h2'] }
+    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
   };
 
   await html2pdf().set(opt).from(element).save();
