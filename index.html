@@ -1228,13 +1228,13 @@
       <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת לכל הדיירים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
-      <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
-      <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateSemiAnnualPDF();">📆 הפק PDF חצי שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
       <div class="form-group" style="margin:0;">
         <label class="form-label">💰 דמי ועד חודשיים (ברירת מחדל לכל הדירות)</label>
@@ -2263,7 +2263,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.42'; // הוספת כלי חדש "🔍 איתור תשלומים יתומים (דירה לא קיימת)" בתפריט ניהול כספים (openOrphanPayments/modal-orphan-payments) — מאתר תשלומים ב-payments ששדה ה-apt שלהם לא תואם אף דייר קיים כרגע (aptEquals). מקרה נפוץ: דירה הופכת ל"מפוצלת" (למשל "25" -> "25א"/"25ב") ותשלום ישן שנרשם על המספר הבסיסי "נתקע" בלי להיות משויך לאף דייר — הוא מפסיק להיספר כ"שולם" במסך הסקירה (paidMap מבוסס על דיירים קיימים) אך ממשיך להיספר בסה"כ הגבייה/מאזן/דוחות (computeBalanceFigures סוכם את כל מסמכי payments ללא תלות בשיוך לדייר), מה שיוצר פער כמו זה שירון דיווח עליו (גבייה עודפת של 235 ₪ בחודשים עתידיים אחרי פיצול דירה 25).
+const APP_VERSION = '2.15.43'; // כפתורי "🔍 איתור תשלומים כפולים" ו"🔍 איתור תשלומים יתומים" הועברו מסוף רשימת הכפתורים העליונה (לפני "🔔 תזכורות תשלום") לסוף התפריט, אחרי "📊 ייצוא לאקסל שנתי" — ועברו מעיצוב אדום בולט (background:red-light/color:red) לעיצוב הכחול הרגיל (btn-primary סטנדרטי) כמו שאר כפתורי הפעולה, לבקשת ירון: הכלים חשובים לתמיכה טכנית ונשארים גלויים (לא מוסתרים), רק פחות "צועקים" ופחות תופסים את החלק העליון של התפריט שנפתח ראשון.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
