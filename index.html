@@ -1528,12 +1528,13 @@
 <!-- Cash Deposit Modal -->
 <div class="modal-overlay" id="modal-cash-deposit">
   <div class="modal">
-    <div class="modal-title">🏦 הפקדת מזומן לבנק</div>
+    <div class="modal-title" id="modal-cash-deposit-title">🏦 הפקדת מזומן לבנק</div>
     <div style="font-size:13px;color:var(--gray-600);margin-bottom:4px;">הפקד סכום מקופת המזומן לחשבון הבנק</div>
     <div id="deposit-available-note" style="font-size:12px;color:var(--gray-500);margin-bottom:12px;"></div>
+    <input type="hidden" id="edit-deposit-id"/>
     <div class="form-group">
       <label class="form-label">סכום להפקדה (₪) *</label>
-      <input class="form-input" id="deposit-amount" type="number" step="0.01" placeholder="0"/>
+      <input class="form-input" id="deposit-amount" type="text" inputmode="decimal" placeholder="0" oninput="formatThousandsInput(this)"/>
     </div>
     <div class="form-group">
       <label class="form-label">תאריך</label>
@@ -1543,10 +1544,17 @@
       <label class="form-label">הערה</label>
       <input class="form-input" id="deposit-note" placeholder="אופציונלי"/>
     </div>
-    <button class="btn-primary" onclick="saveCashDeposit()">💾 שמור הפקדה</button>
-    <button class="btn-secondary" style="margin-top:8px;" onclick="closeModal('modal-cash-deposit')">ביטול</button>
+    <button class="btn-primary" id="btn-deposit-save" onclick="saveCashDeposit()">💾 שמור הפקדה</button>
+    <button class="btn-secondary" id="btn-deposit-cancel-edit" style="display:none;margin-top:8px;" onclick="cancelEditCashDeposit()">✖ בטל עריכה, הוסף הפקדה חדשה</button>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 12px;"/>
+    <div style="font-weight:700;margin-bottom:10px;">📋 הפקדות שבוצעו</div>
+    <div id="deposit-list-content"></div>
+
+    <button class="btn-secondary" style="margin-top:12px;" onclick="closeModal('modal-cash-deposit')">סגור</button>
   </div>
 </div>
+
 
 <!-- Privacy Policy Modal -->
 <div class="modal-overlay" id="modal-privacy">
@@ -1795,6 +1803,33 @@ function getGreeting() {
 
 function fmtCurrency(n) {
   return '₪' + Number(n).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+// Live thousand-separator formatting for plain <input type="text"> amount
+// fields (regular type="number" inputs can't show commas — that's a
+// browser-level limitation, not something CSS/JS can override on a native
+// number input). Called on oninput. Strips everything except digits and a
+// single decimal point, formats the integer part with commas via
+// toLocaleString, and reassembles with up to 2 decimal digits (matching the
+// step="0.01" precision used elsewhere for money fields). Always places the
+// cursor at the end — acceptable for short amount entry where the person is
+// typing left-to-right and rarely needs to edit in the middle.
+// parseThousandsInput() is the inverse: strips commas before parseFloat(),
+// used wherever the value of such a field is read for saving/validation.
+function formatThousandsInput(el) {
+  let raw = el.value.replace(/[^\d.]/g, '');
+  const firstDot = raw.indexOf('.');
+  if (firstDot !== -1) {
+    raw = raw.slice(0, firstDot + 1) + raw.slice(firstDot + 1).replace(/\./g, '');
+  }
+  let [intPart, decPart] = raw.split('.');
+  intPart = intPart ? String(parseInt(intPart, 10)) : '';
+  let formatted = intPart ? Number(intPart).toLocaleString('en-US') : '';
+  if (decPart !== undefined) formatted += '.' + decPart.slice(0, 2);
+  el.value = formatted;
+}
+function parseThousandsInput(val) {
+  return parseFloat(String(val || '').replace(/,/g, ''));
 }
 
 // Converts a yyyy-mm-dd date-input value (as stored for openingBalanceDate /
@@ -2263,7 +2298,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.43'; // כפתורי "🔍 איתור תשלומים כפולים" ו"🔍 איתור תשלומים יתומים" הועברו מסוף רשימת הכפתורים העליונה (לפני "🔔 תזכורות תשלום") לסוף התפריט, אחרי "📊 ייצוא לאקסל שנתי" — ועברו מעיצוב אדום בולט (background:red-light/color:red) לעיצוב הכחול הרגיל (btn-primary סטנדרטי) כמו שאר כפתורי הפעולה, לבקשת ירון: הכלים חשובים לתמיכה טכנית ונשארים גלויים (לא מוסתרים), רק פחות "צועקים" ופחות תופסים את החלק העליון של התפריט שנפתח ראשון.
+const APP_VERSION = '2.15.45'; // מודל "🏦 הפקדת מזומן לבנק" (modal-cash-deposit) עודכן להציג גם רשימה של כל ההפקדות שכבר בוצעו (renderDepositList, מתחת לטופס הקיים) עם כפתורי ✏️ ערוך ו-🗑 מחק לכל הפקדה — לצד האפשרות הקיימת להוסיף הפקדה חדשה, בדיוק כמו קודם. עריכה (editCashDeposit) טוענת את הערכים הקיימים לאותו טופס במצב "עריכה" (עם כפתור "✖ בטל עריכה" לחזרה למצב הוספה); saveCashDeposit() עודכן לתמוך גם בעדכון הפקדה קיימת (updateDoc) וגם ביצירת חדשה (addDoc) לפי אם edit-deposit-id מאוכלס, כולל התאמת בדיקת יתרת המזומן הזמינה כך שבעריכה "מחזירים" קודם את הסכום הישן של אותה הפקדה עצמה לפני ההשוואה (אותו עיקרון כמו התיקון הקיים ב-saveExpense). deleteCashDeposit() מוחקת עם אישור ורישום ביומן הפעולות, בדומה למחיקת הוצאה/תשלום.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3296,10 +3331,14 @@ window.deleteResident = async () => {
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
+// Cache of the deposit docs most recently rendered in modal-cash-deposit's
+// list (keyed by id) — used by editCashDeposit() to populate the form
+// without a second Firestore read, same pattern as _specialUnitsCache /
+// _categoryGroupsCache elsewhere in the file.
+let _cashDepositsListCache = {};
+
 window.openCashDeposit = async () => {
-  document.getElementById('deposit-amount').value = '';
-  document.getElementById('deposit-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('deposit-note').value = '';
+  resetCashDepositForm();
   const note = document.getElementById('deposit-available-note');
   note.textContent = 'טוען יתרת מזומן זמינה...';
   openModal('modal-cash-deposit');
@@ -3322,11 +3361,111 @@ window.openCashDeposit = async () => {
   } catch(e) {
     note.textContent = '';
   }
+  await renderDepositList();
+};
+
+// Resets the form fields back to "add a new deposit" mode — clears the
+// hidden edit-deposit-id, restores the default title/button labels, and
+// hides the "בטל עריכה" button. Shared by openCashDeposit() (fresh open)
+// and cancelEditCashDeposit() (bail out of editing an existing one).
+function resetCashDepositForm() {
+  document.getElementById('edit-deposit-id').value = '';
+  document.getElementById('modal-cash-deposit-title').textContent = '🏦 הפקדת מזומן לבנק';
+  document.getElementById('btn-deposit-save').textContent = '💾 שמור הפקדה';
+  document.getElementById('btn-deposit-cancel-edit').style.display = 'none';
+  document.getElementById('deposit-amount').value = '';
+  document.getElementById('deposit-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('deposit-note').value = '';
+}
+
+// Fetches every cashDeposits doc for the building and renders them as a
+// list (newest first) inside the same modal used to add a new deposit —
+// each row has ✏️ ערוך (loads it into the form above, in edit mode) and
+// 🗑 מחק (deletes it after confirmation). Read-only scan on open/refresh,
+// no live listener — mirrors openDuplicatePayments()/openOrphanPayments().
+async function renderDepositList() {
+  const container = document.getElementById('deposit-list-content');
+  container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    const snap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
+    const deposits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _cashDepositsListCache = {};
+    deposits.forEach(d => { _cashDepositsListCache[d.id] = d; });
+
+    if (!deposits.length) {
+      container.innerHTML = '<div class="card-empty">אין עדיין הפקדות רשומות</div>';
+      return;
+    }
+
+    deposits.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    container.innerHTML = deposits.map(d => (
+      '<div class="card" style="margin-bottom:8px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+      + '<div>'
+      + '<div style="font-weight:700;">₪'+(d.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})+'</div>'
+      + '<div style="font-size:12px;color:var(--gray-500);margin-top:2px;">'+fmtDateDMY(d.date)+(d.note ? ' • '+d.note : '')+'</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;flex-shrink:0;">'
+      + '<button class="btn-icon" style="padding:6px 10px;font-size:12px;" onclick="editCashDeposit(\''+d.id+'\')">✏️ ערוך</button>'
+      + '<button class="btn-danger" style="padding:6px 10px;font-size:12px;" onclick="deleteCashDeposit(\''+d.id+'\')">🗑 מחק</button>'
+      + '</div>'
+      + '</div></div>'
+    )).join('');
+  } catch(e) {
+    container.innerHTML = '<div class="card-empty">שגיאה בטעינת ההפקדות: ' + e.message + '</div>';
+  }
+}
+
+// Loads an existing deposit into the form above the list, switches the
+// modal into "edit" mode (title/button text change, cancel-edit button
+// appears) — saveCashDeposit() checks edit-deposit-id to decide whether to
+// update this doc instead of creating a new one.
+window.editCashDeposit = (id) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const d = _cashDepositsListCache[id];
+  if (!d) { showToast('שגיאה: ההפקדה לא נמצאה, נסה/י לפתוח את המסך מחדש'); return; }
+  document.getElementById('edit-deposit-id').value = id;
+  document.getElementById('modal-cash-deposit-title').textContent = '✏️ עריכת הפקדה';
+  document.getElementById('btn-deposit-save').textContent = '💾 עדכן הפקדה';
+  document.getElementById('btn-deposit-cancel-edit').style.display = '';
+  const amountInput = document.getElementById('deposit-amount');
+  amountInput.value = String(d.amount ?? '');
+  formatThousandsInput(amountInput);
+  document.getElementById('deposit-date').value = d.date || '';
+  document.getElementById('deposit-note').value = d.note || '';
+};
+
+window.cancelEditCashDeposit = () => {
+  resetCashDepositForm();
+};
+
+window.deleteCashDeposit = async (id) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const d = _cashDepositsListCache[id];
+  const ok = await customConfirm('למחוק הפקדה זו' + (d ? ' (₪' + (d.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2}) + ')' : '') + '? פעולה זו אינה הפיכה.');
+  if (!ok) return;
+  try {
+    const depositRef = doc(db, 'buildings', buildingId, 'cashDeposits', id);
+    const batch = writeBatch(db);
+    batch.delete(depositRef);
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      type: 'deposit', action: 'deposit_deleted', amount: d?.amount || 0, note: d?.note || null, previousDate: d?.date || null,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    showToast('🗑 ההפקדה נמחקה');
+    // אם ההפקדה שנמחקה היא זו שהייתה כרגע בעריכה בטופס — נחזור למצב "הוסף חדש"
+    if (document.getElementById('edit-deposit-id').value === id) resetCashDepositForm();
+    await renderDepositList();
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
 window.saveCashDeposit = async () => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
-  const amount = parseFloat(document.getElementById('deposit-amount').value);
+  const editId = document.getElementById('edit-deposit-id').value;
+  const amount = parseThousandsInput(document.getElementById('deposit-amount').value);
   const date = document.getElementById('deposit-date').value;
   const note = document.getElementById('deposit-note').value.trim();
   if (!amount || !date) { showToast('חובה למלא סכום ותאריך'); return; }
@@ -3350,25 +3489,65 @@ window.saveCashDeposit = async () => {
       buildingData?.cashOpeningBalance || 0,
       specialPaySnap.docs.map(d => d.data())
     );
-    if (amount > cashBalance + 0.01) {
-      showToast(`⚠️ הסכום גבוה מיתרת המזומן הזמינה כרגע (${fmtCurrency(cashBalance)}) — לא ניתן להפקיד יותר ממה שיש בקופה`, 5500);
+    // בעריכת הפקדה קיימת: "מחזירים" תחילה את הסכום הישן שלה עצמה אל היתרה
+    // הזמינה לפני ההשוואה — אחרת ההפקדה הקיימת (שעדיין לא עודכנה ב-Firestore
+    // בשלב הזה) "נחשבת פעמיים" ומצמצמת בטעות את היתרה הזמינה לעריכה של
+    // עצמה. אותו עיקרון בדיוק כמו התיקון הקיים ב-saveExpense() לעריכת הוצאה.
+    let cashAvailable = cashBalance;
+    const oldDoc = editId ? depSnap.docs.find(d => d.id === editId) : null;
+    if (oldDoc) cashAvailable += (oldDoc.data().amount || 0);
+    if (amount > cashAvailable + 0.01) {
+      showToast(`⚠️ הסכום גבוה מיתרת המזומן הזמינה כרגע (${fmtCurrency(cashAvailable)}) — לא ניתן להפקיד יותר ממה שיש בקופה`, 5500);
       return;
     }
 
     const batch = writeBatch(db);
-    const depositRef = doc(collection(db, 'buildings', buildingId, 'cashDeposits'));
-    batch.set(depositRef, {
-      amount, date, note,
-      createdAt: serverTimestamp(), createdBy: currentUser.uid
-    });
-    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
-    batch.set(logRef, {
-      type: 'deposit', action: 'deposit', amount, note,
-      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-    });
-    await batch.commit();
-    showToast('✅ הפקדה נשמרה');
-    closeModal('modal-cash-deposit');
+    if (editId) {
+      const depositRef = doc(db, 'buildings', buildingId, 'cashDeposits', editId);
+      const oldData = oldDoc ? oldDoc.data() : {};
+      batch.update(depositRef, { amount, date, note });
+      const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+      batch.set(logRef, {
+        type: 'deposit', action: 'deposit_updated', amount, note, previousAmount: oldData.amount || 0, previousDate: oldData.date || null,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
+      showToast('✅ ההפקדה עודכנה');
+    } else {
+      const depositRef = doc(collection(db, 'buildings', buildingId, 'cashDeposits'));
+      batch.set(depositRef, {
+        amount, date, note,
+        createdAt: serverTimestamp(), createdBy: currentUser.uid
+      });
+      const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+      batch.set(logRef, {
+        type: 'deposit', action: 'deposit', amount, note,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
+      showToast('✅ הפקדה נשמרה');
+    }
+
+    resetCashDepositForm();
+    await renderDepositList();
+    // רענן גם את הערת יתרת המזומן הזמינה בראש המודל, שעדיין פתוח
+    try {
+      const [paySnap2, expSnap2, depSnap2, specialPaySnap2] = await Promise.all([
+        getDocs(collection(db, 'buildings', buildingId, 'payments')),
+        getDocs(collection(db, 'buildings', buildingId, 'expenses')),
+        getDocs(collection(db, 'buildings', buildingId, 'cashDeposits')),
+        getDocs(collection(db, 'buildings', buildingId, 'specialPayments'))
+      ]);
+      const { cashBalance: freshCashBalance } = computeBalanceFigures(
+        paySnap2.docs.map(d => d.data()),
+        expSnap2.docs.map(d => d.data()),
+        depSnap2.docs.map(d => d.data()),
+        buildingData?.openingBalance || 0,
+        buildingData?.cashOpeningBalance || 0,
+        specialPaySnap2.docs.map(d => d.data())
+      );
+      document.getElementById('deposit-available-note').textContent = `💵 יתרת מזומן זמינה כרגע: ${fmtCurrency(freshCashBalance)}`;
+    } catch(e) { /* לא קריטי */ }
     loadBalance();
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
