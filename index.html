@@ -1486,6 +1486,20 @@
     <div class="modal-title">✏️ עריכת תשלום</div>
     <input type="hidden" id="ecp-key"/>
     <div id="ecp-context" style="font-size:13px;color:var(--gray-600);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
+    <div class="form-group" id="ecp-month-single-group" style="display:none;">
+      <label class="form-label">חודש *</label>
+      <select class="form-select" id="ecp-month-single"></select>
+    </div>
+    <div class="form-group" id="ecp-month-range-group" style="display:none;">
+      <label class="form-label">מחודש *</label>
+      <select class="form-select" id="ecp-month-from"></select>
+      <label class="form-label" style="margin-top:10px;">עד חודש (כולל) *</label>
+      <select class="form-select" id="ecp-month-to"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">תאריך ההעברה בפועל *</label>
+      <input class="form-input" id="ecp-actual-date" type="date"/>
+    </div>
     <div class="form-group">
       <label class="form-label" id="ecp-amount-label">סכום כולל (₪) *</label>
       <input class="form-input" id="ecp-amount" type="number" step="0.01" min="0"/>
@@ -2298,7 +2312,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.45'; // מודל "🏦 הפקדת מזומן לבנק" (modal-cash-deposit) עודכן להציג גם רשימה של כל ההפקדות שכבר בוצעו (renderDepositList, מתחת לטופס הקיים) עם כפתורי ✏️ ערוך ו-🗑 מחק לכל הפקדה — לצד האפשרות הקיימת להוסיף הפקדה חדשה, בדיוק כמו קודם. עריכה (editCashDeposit) טוענת את הערכים הקיימים לאותו טופס במצב "עריכה" (עם כפתור "✖ בטל עריכה" לחזרה למצב הוספה); saveCashDeposit() עודכן לתמוך גם בעדכון הפקדה קיימת (updateDoc) וגם ביצירת חדשה (addDoc) לפי אם edit-deposit-id מאוכלס, כולל התאמת בדיקת יתרת המזומן הזמינה כך שבעריכה "מחזירים" קודם את הסכום הישן של אותה הפקדה עצמה לפני ההשוואה (אותו עיקרון כמו התיקון הקיים ב-saveExpense). deleteCashDeposit() מוחקת עם אישור ורישום ביומן הפעולות, בדומה למחיקת הוצאה/תשלום.
+const APP_VERSION = '2.15.46'; // מודל "✏️ עריכת תשלום" עבור טעינה חשמלית/גבייה חריגה (modal-edit-category-payment, openEditCategoryGroup/saveEditCategoryGroup) עודכן: בעבר ניתן היה לערוך רק סכום/אופן תשלום/הערה — כעת ניתן לערוך גם את החודש (טעינה חשמלית: בורר "חודש" בודד, ecp-month-single) או טווח החודשים (גבייה חריגה בעלים/שוכרים: "מחודש"/"עד חודש", ecp-month-from/ecp-month-to) וגם את "תאריך ההעברה בפועל" (ecp-actual-date, שקובע לאיזו שנה התשלום משויך בדוחות/מאזן — עם אותה הגבלת "לא לפני השנה הנוכחית" שכבר קיימת ביצירת גבייה חריגה חדשה). saveEditCategoryGroup() בנוי כעת כמחיקה+יצירה מחדש של כל מסמכי התשלום בקבוצה לפי הטווח/חודש שנבחר (לא רק עדכון שדה בודד), כדי לתמוך גם בשינוי מספר החודשים עצמו, באותה חלוקת-סכום-עם-עיגול שכבר קיימת ביצירה מקורית. buildWideMonthOptionsHtml() חדש בונה רשימת חודשים רחבה (60 אחורה/6 קדימה, כולל הבטחת נוכחות החודשים הקיימים גם אם ישנים יותר) לשלושת בוררי החודש.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5825,22 +5839,60 @@ window.cancelCategoryGroup = async (key) => {
   } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
+// בונה HTML של <option> לרשימה רחבה של חודשים (yyyy-mm), ברירת מחדל 60
+// חודשים אחורה ו-6 חודשים קדימה מהיום, מהחדש לישן — משמש את מודל עריכת
+// תשלום קטגוריה (ecp-month-single/ecp-month-from/ecp-month-to), שזקוק
+// לטווח רחב יותר מ-24 החודשים שאחורה ש-openAddPayment() בונה, כי תשלום
+// ישן שנערך עכשיו עשוי להתייחס לחודש רחוק יותר מהטווח הזה. extraYms
+// (אופציונלי) הם ערכי yyyy-mm נוספים שמובטח שייכללו גם אם הם מחוץ לטווח
+// אחורה/קדימה (למשל תשלום ישן יותר מהטווח) — ממוזגים ומסודרים (מהחדש לישן).
+function buildWideMonthOptionsHtml(monthsBack = 60, monthsForward = 6, extraYms = []) {
+  const now = new Date();
+  const yms = new Set();
+  for (let i = -monthsForward; i <= monthsBack; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    yms.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+  }
+  extraYms.forEach(ym => { if (ym) yms.add(ym); });
+  const sorted = [...yms].sort().reverse();
+  return sorted.map(ym => `<option value="${ym}">${monthLabel(ym)}</option>`).join('');
+}
+
 // פותח את טופס עריכת תשלום קטגוריה (טעינה/גבייה חריגה) עבור קבוצה קיימת.
-// ניתן לערוך רק סכום כולל + אופן תשלום + הערה — לא דירה/חודשים/תאריך
-// ההעברה, כדי לא לפתוח מחדש את כל שאלות הזכאות/הכפילות שכבר טופלו
-// ב-savePayment() בזמן היצירה. לקבוצה מרובת-חודשים (גבייה חריגה) הסכום
-// מוצג כסכום כולל ומחולק מחדש בשמירה — בדיוק כמו ביצירה המקורית.
+// ניתן לערוך: סכום כולל, אופן תשלום, הערה — וכעת גם את החודש/טווח החודשים
+// (ecp-month-single לטעינה החשמלית, שהיא תמיד תשלום לחודש בודד; ecp-month-from/
+// ecp-month-to לגבייה חריגה, שיכולה לכסות כמה חודשים) ואת תאריך ההעברה
+// בפועל (ecp-actual-date). לא ניתן לערוך דירה/סוג גבייה (בעלים מול שוכרים),
+// כדי לא לפתוח מחדש את כל שאלות הזכאות/הכפילות שכבר טופלו ב-savePayment()
+// בזמן היצירה. לקבוצה מרובת-חודשים (גבייה חריגה) הסכום מוצג כסכום כולל
+// ומחולק מחדש בשמירה — בדיוק כמו ביצירה המקורית.
 window.openEditCategoryGroup = (key) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
   const g = _categoryGroupsCache[key];
   if (!g) return;
   document.getElementById('ecp-key').value = key;
+  const isCharging = g.category === 'charging';
   const catLabel = g.category === 'charging' ? '🔌 טעינה חשמלית' : (g.payerType === 'renter' ? '🔑 גבייה חריגה - שוכרים' : '👑 גבייה חריגה - בעלים');
-  const monthsLabel = g.months.length > 1 ? formatMonthRanges(g.months) : (g.months[0] ? monthLabel(g.months[0]) : '');
   document.getElementById('ecp-context').innerHTML = '<strong>' + (g.name||'') + '</strong> • דירה ' + g.apt
-    + '<br/>' + catLabel + ' • ' + monthsLabel;
+    + '<br/>' + catLabel;
+
+  const optsHtml = buildWideMonthOptionsHtml(60, 6, g.months);
+  document.getElementById('ecp-month-single-group').style.display = isCharging ? '' : 'none';
+  document.getElementById('ecp-month-range-group').style.display = isCharging ? 'none' : '';
+  if (isCharging) {
+    document.getElementById('ecp-month-single').innerHTML = optsHtml;
+    document.getElementById('ecp-month-single').value = g.months[0];
+  } else {
+    document.getElementById('ecp-month-from').innerHTML = optsHtml;
+    document.getElementById('ecp-month-to').innerHTML = optsHtml;
+    document.getElementById('ecp-month-from').value = g.months[0];
+    document.getElementById('ecp-month-to').value = g.months[g.months.length - 1];
+  }
+
+  document.getElementById('ecp-actual-date').value = g.paidAtMs ? new Date(g.paidAtMs).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
   document.getElementById('ecp-amount-label').textContent = g.months.length > 1 ? 'סכום כולל (₪) *' : 'סכום (₪) *';
-  document.getElementById('ecp-amount-note').textContent = g.months.length > 1 ? 'הסכום יחולק מחדש שווה בשווה בין ' + g.months.length + ' החודשים.' : '';
+  document.getElementById('ecp-amount-note').textContent = g.months.length > 1 ? 'הסכום יחולק מחדש שווה בשווה בין החודשים שנבחרו.' : '';
   document.getElementById('ecp-amount').value = g.totalAmount;
   document.getElementById('ecp-method').value = g.method || 'transfer';
   document.getElementById('ecp-note').value = g.note || '';
@@ -5855,29 +5907,67 @@ window.saveEditCategoryGroup = async () => {
   const amount = parseFloat(document.getElementById('ecp-amount').value);
   const method = document.getElementById('ecp-method').value;
   const note = document.getElementById('ecp-note').value.trim();
+  const actualDateStr = document.getElementById('ecp-actual-date').value;
   if (!amount || amount <= 0) { showToast('הכנס סכום תקין'); return; }
+  if (!actualDateStr) { showToast('חובה לבחור תאריך העברה בפועל'); return; }
+
+  const isCharging = g.category === 'charging';
+  let newMonths;
+  if (isCharging) {
+    const m = document.getElementById('ecp-month-single').value;
+    if (!m) { showToast('חובה לבחור חודש'); return; }
+    newMonths = [m];
+  } else {
+    const fromMonth = document.getElementById('ecp-month-from').value;
+    const toMonth = document.getElementById('ecp-month-to').value;
+    if (!fromMonth || !toMonth) { showToast('חובה לבחור טווח חודשים'); return; }
+    newMonths = enumerateMonths(fromMonth, toMonth);
+    if (!newMonths.length) { showToast('טווח החודשים לא תקין'); return; }
+    // אותה הגבלה כמו ביצירת גבייה חריגה חדשה (savePayment) — תאריך ההעברה
+    // בפועל הוא הקובע לאיזו שנה התשלום ייחשב שייך (לצורך דוחות/מאזן),
+    // ולכן לא ניתן לבחור תאריך משנה שקדמה לנוכחית.
+    if (parseInt(actualDateStr.split('-')[0], 10) < new Date().getFullYear()) {
+      showToast('⚠️ תאריך ההעברה בפועל חייב להיות בשנה הנוכחית ואילך — לא ניתן לרשום תאריך משנה קודמת', 5500);
+      return;
+    }
+  }
+
+  const actualDate = Timestamp.fromDate(new Date(actualDateStr));
 
   // חלוקה מחדש בין החודשים באותו אופן שבו savePayment() חילק ביצירה
-  // המקורית — חודש אחרון סופג את שארית העיגול. עבור קבוצה של חודש בודד
-  // (כל תשלומי הטעינה, וגבייה חריגה שכוסתה בחודש אחד בלבד) זה פשוט מציב
-  // את הסכום המלא באותו תשלום יחיד.
-  const n = g.items.length;
+  // המקורית — חודש אחרון סופג את שארית העיגול. עבור חודש בודד (כל תשלומי
+  // הטעינה, וגבייה חריגה שכוסתה בחודש אחד בלבד) זה פשוט מציב את הסכום
+  // המלא באותו תשלום יחיד.
+  const n = newMonths.length;
   const perItem = Math.round((amount / n) * 100) / 100;
   const roundedRest = Math.round(perItem * (n - 1) * 100) / 100;
   const lastItemAmount = Math.round((amount - roundedRest) * 100) / 100;
 
   try {
     const batch = writeBatch(db);
-    g.items.forEach((p, i) => {
+    // מוחקים את כל מסמכי התשלום הישנים של הקבוצה ויוצרים חדשים לפי החודש/
+    // הטווח שנבחר כעת — נדרש כי מספר החודשים עצמו עשוי להשתנות בעריכה
+    // (למשל טווח שהתקצר/התארך), לא רק ערך שדה בודד; הבנייה מחדש כאן
+    // מדויקת לאותה לוגיקה בדיוק שבה savePayment() יוצר את הקבוצה מלכתחילה.
+    g.items.forEach(p => batch.delete(doc(db, 'buildings', buildingId, 'payments', p.id)));
+    newMonths.forEach((ym, i) => {
       const itemAmount = (i === n - 1) ? lastItemAmount : perItem;
-      batch.update(doc(db, 'buildings', buildingId, 'payments', p.id), {
-        amount: itemAmount, method,
-        note: note || (n > 1 ? `גבייה חריגה עבור ${n} חודשים` : null)
-      });
+      const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+      const data = {
+        apt: g.apt, name: g.name, amount: itemAmount, month: ym,
+        note: note || (n > 1 ? `גבייה חריגה עבור ${n} חודשים` : null),
+        method, category: g.category, paidAt: actualDate, recordedBy: currentUser.uid
+      };
+      if (!isCharging) {
+        data.payerType = g.payerType;
+        data.exceptionalTransfer = true;
+      }
+      batch.set(paymentRef, data);
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
-      apt: g.apt, name: g.name, amount, previousAmount: g.totalAmount, month: g.months.join(', '),
+      apt: g.apt, name: g.name, amount, previousAmount: g.totalAmount,
+      month: newMonths.join(', '), previousMonth: g.months.join(', '),
       action: 'category_payment_updated', category: g.category, payerType: g.payerType || null,
       at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
     });
