@@ -1229,6 +1229,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
       <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
+      <button class="btn-primary" style="background:var(--red-light);color:var(--red);" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
@@ -1338,6 +1339,18 @@
     </div>
     <div id="duplicate-payments-content"></div>
     <button class="btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-duplicate-payments')">סגור</button>
+  </div>
+</div>
+
+<!-- Orphan Payments Finder Modal -->
+<div class="modal-overlay" id="modal-orphan-payments">
+  <div class="modal">
+    <div class="modal-title">🔍 איתור תשלומים יתומים</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
+      סריקת כל התשלומים בבניין וזיהוי מקרים שבהם מספר הדירה הרשום על התשלום לא תואם אף דייר קיים כרגע (למשל: תשלום שנרשם לדירה "25" ואז הדירה פוצלה ל-"25א"/"25ב" — התשלום הישן נשאר "תלוי באוויר"). תשלומים כאלה עדיין נספרים בסה"כ הגבייה, במאזן ובדוחות, אך לא מוצגים כ"שולם" בשום מקום אחר באפליקציה.
+    </div>
+    <div id="orphan-payments-content"></div>
+    <button class="btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-orphan-payments')">סגור</button>
   </div>
 </div>
 
@@ -2250,7 +2263,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.41'; // כפתור "🔍 איתור תשלומים כפולים" בתפריט ניהול כספים הוצג מחדש (הוסר display:none שנוסף ב-2.15.34) — הפיצ'ר עצמו (openDuplicatePayments, modal-duplicate-payments) לא השתנה מעולם, רק ההסתרה מהתפריט בוטלה, כדי לאפשר בדיקה ידנית מהירה של חשד לגבייה כפולה.
+const APP_VERSION = '2.15.42'; // הוספת כלי חדש "🔍 איתור תשלומים יתומים (דירה לא קיימת)" בתפריט ניהול כספים (openOrphanPayments/modal-orphan-payments) — מאתר תשלומים ב-payments ששדה ה-apt שלהם לא תואם אף דייר קיים כרגע (aptEquals). מקרה נפוץ: דירה הופכת ל"מפוצלת" (למשל "25" -> "25א"/"25ב") ותשלום ישן שנרשם על המספר הבסיסי "נתקע" בלי להיות משויך לאף דייר — הוא מפסיק להיספר כ"שולם" במסך הסקירה (paidMap מבוסס על דיירים קיימים) אך ממשיך להיספר בסה"כ הגבייה/מאזן/דוחות (computeBalanceFigures סוכם את כל מסמכי payments ללא תלות בשיוך לדייר), מה שיוצר פער כמו זה שירון דיווח עליו (גבייה עודפת של 235 ₪ בחודשים עתידיים אחרי פיצול דירה 25).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4234,6 +4247,87 @@ window.deleteDuplicatePayment = async (id) => {
     await batch.commit();
     showToast('🗑 נמחק');
     await renderDuplicatePayments();
+    loadPayments();
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// ===== ORPHAN PAYMENTS FINDER =====
+// Scans every payment doc in the building and flags any whose apt doesn't
+// match aptEquals() against any currently-existing resident. This happens
+// most often when an apartment is converted to split units (e.g. "25" ->
+// "25א"/"25ב") — payments already recorded against the old plain apt number
+// no longer match any resident, so renderPayments()/paidMap silently stop
+// showing them as "paid" anywhere in the UI (paidMap is keyed off current
+// residents), yet computeBalanceFigures()/PDF/Excel still sum every payment
+// doc regardless of resident match — inflating "סה"כ גבייה"/יתרת בנק without
+// any visible trace. Also flags a resident being deleted outright while
+// their payment history remains. Read-only scan (no listener) — opened on
+// demand from ניהול כספים, mirrors openDuplicatePayments()'s structure.
+window.openOrphanPayments = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  document.getElementById('orphan-payments-content').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  openModal('modal-orphan-payments');
+  await renderOrphanPayments();
+};
+
+async function renderOrphanPayments() {
+  const container = document.getElementById('orphan-payments-content');
+  try {
+    const snap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const orphans = all.filter(p => !allResidents.some(r => aptEquals(r.apt, p.apt)));
+
+    if (!orphans.length) {
+      container.innerHTML = '<div class="card-empty">✅ לא נמצאו תשלומים יתומים — כל התשלומים משויכים לדירה קיימת</div>';
+      return;
+    }
+
+    // מיון: קודם לפי מספר דירה (טבעי, aptCompare), אח"כ לפי חודש
+    orphans.sort((a,b) => aptCompare(a.apt, b.apt) || (a.month||'').localeCompare(b.month||''));
+    const totalOrphanAmount = orphans.reduce((s,p) => s + (p.amount||0), 0);
+
+    let html = '<div style="font-size:13px;color:var(--red);margin-bottom:12px;font-weight:600;">'
+      + '⚠️ נמצאו ' + orphans.length + ' תשלומים יתומים (סה"כ ₪' + totalOrphanAmount.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2}) + ' שעדיין נספרים בסה"כ הגבייה ובמאזן)</div>';
+
+    html += orphans.map(p => {
+      const catLabel = p.category === 'charging' ? ' • 🔌 טעינה חשמלית' : p.category === 'exceptional' ? ' • 👑 גבייה חריגה' : ' • 🏠 ועד בית';
+      const dateStr = p.paidAt?.toDate ? p.paidAt.toDate().toLocaleString('he-IL') : '-';
+      const monthStr = p.month ? monthLabel(p.month) : '-';
+      return '<div class="card" style="margin-bottom:10px;">'
+        + '<div style="font-weight:700;margin-bottom:6px;">🏠 דירה\u00A0<span style="color:var(--red);">'+(p.apt ?? '-')+'</span> (לא\u00A0קיימת) • '+(p.name||'')+'</div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--gray-100);">'
+        + '<div style="font-size:11px;color:var(--gray-500);flex:1;">'+monthStr+catLabel+'<br/>נרשם: '+dateStr+(p.note ? '<br/>📝 '+p.note : '')+'</div>'
+        + '<div style="font-weight:700;white-space:nowrap;">₪'+(p.amount||0)+' '+(PAYMENT_METHOD_ICONS[p.method]||'')+'</div>'
+        + '<button class="btn-danger" style="padding:6px 10px;font-size:11px;white-space:nowrap;" onclick="deleteOrphanPayment(\'' + p.id + '\')">🗑 מחק</button>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div class="card-empty">שגיאה בסריקה: ' + e.message + '</div>';
+  }
+}
+
+window.deleteOrphanPayment = async (id) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const ok = await customConfirm('למחוק את התשלום היתום הזה? פעולה זו אינה הפיכה.');
+  if (!ok) return;
+  try {
+    const paymentRef = doc(db, 'buildings', buildingId, 'payments', id);
+    const snap = await getDoc(paymentRef);
+    const p = snap.exists() ? snap.data() : {};
+    const batch = writeBatch(db);
+    batch.delete(paymentRef);
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: p.apt, name: p.name, amount: p.amount, month: p.month, action: 'cancelled',
+      at: serverTimestamp(), by: currentUser.uid, byName: (currentUser.name || currentUser.email) + ' (ניקוי תשלום יתום)'
+    });
+    await batch.commit();
+    showToast('🗑 נמחק');
+    await renderOrphanPayments();
     loadPayments();
     loadBalance();
   } catch(e) { showToast('שגיאה: ' + e.message); }
