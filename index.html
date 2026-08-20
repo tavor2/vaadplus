@@ -1523,17 +1523,6 @@
   </div>
 </div>
 
-<!-- Custom Confirm Modal (avoids native browser confirm() showing the site URL) -->
-<div class="modal-overlay" id="modal-confirm">
-  <div class="modal" style="max-width:340px;">
-    <div class="modal-title" id="confirm-message" style="font-size:16px;white-space:pre-line;"></div>
-    <div style="display:flex;gap:10px;">
-      <button class="btn-secondary" style="flex:1;margin-top:0;" onclick="resolveConfirm(false)">ביטול</button>
-      <button class="btn-danger" style="flex:1;padding:13px;" onclick="resolveConfirm(true)">אישור</button>
-    </div>
-  </div>
-</div>
-
 <!-- PDF generation (hidden) -->
 <div id="pdf-container" style="position:fixed; left:-99999px; top:0;"></div>
 
@@ -1726,6 +1715,31 @@
   </div>
 </div>
 
+<!-- Custom Confirm Modal (avoids native browser confirm() showing the site URL) —
+     placed LAST among all .modal-overlay elements in the document, on purpose:
+     every .modal-overlay shares the same z-index (see CSS), so with no other
+     stacking context involved, paint order between simultaneously-open
+     overlays follows DOM/source order (later sibling renders on top) — not
+     which one called openModal() more recently. customConfirm() is called
+     from inside several other modals while they're still open (e.g.
+     deleteCashDeposit() inside modal-cash-deposit) — if modal-confirm sat
+     earlier in the DOM than the modal calling it (as it used to, positioned
+     right after modal-edit-category-payment), the confirm dialog would open
+     but render invisibly BEHIND the still-open calling modal: this was the
+     bug ("מחיקת הפקדת מזומן לא מגיבה") — the tap silently did nothing because
+     the confirm buttons were there, just hidden underneath. Being last in the
+     DOM guarantees modal-confirm always paints above every other modal that
+     might invoke it, regardless of which one is currently open. -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal" style="max-width:340px;">
+    <div class="modal-title" id="confirm-message" style="font-size:16px;white-space:pre-line;"></div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn-secondary" style="flex:1;margin-top:0;" onclick="resolveConfirm(false)">ביטול</button>
+      <button class="btn-danger" style="flex:1;padding:13px;" onclick="resolveConfirm(true)">אישור</button>
+    </div>
+  </div>
+</div>
+
 <!-- כפתור איפוס נסתר - פינה שמאלית תחתונה -->
 
 
@@ -1830,7 +1844,7 @@ function fmtCurrency(n) {
 // typing left-to-right and rarely needs to edit in the middle.
 // parseThousandsInput() is the inverse: strips commas before parseFloat(),
 // used wherever the value of such a field is read for saving/validation.
-function formatThousandsInput(el) {
+window.formatThousandsInput = function formatThousandsInput(el) {
   let raw = el.value.replace(/[^\d.]/g, '');
   const firstDot = raw.indexOf('.');
   if (firstDot !== -1) {
@@ -2312,7 +2326,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.46'; // מודל "✏️ עריכת תשלום" עבור טעינה חשמלית/גבייה חריגה (modal-edit-category-payment, openEditCategoryGroup/saveEditCategoryGroup) עודכן: בעבר ניתן היה לערוך רק סכום/אופן תשלום/הערה — כעת ניתן לערוך גם את החודש (טעינה חשמלית: בורר "חודש" בודד, ecp-month-single) או טווח החודשים (גבייה חריגה בעלים/שוכרים: "מחודש"/"עד חודש", ecp-month-from/ecp-month-to) וגם את "תאריך ההעברה בפועל" (ecp-actual-date, שקובע לאיזו שנה התשלום משויך בדוחות/מאזן — עם אותה הגבלת "לא לפני השנה הנוכחית" שכבר קיימת ביצירת גבייה חריגה חדשה). saveEditCategoryGroup() בנוי כעת כמחיקה+יצירה מחדש של כל מסמכי התשלום בקבוצה לפי הטווח/חודש שנבחר (לא רק עדכון שדה בודד), כדי לתמוך גם בשינוי מספר החודשים עצמו, באותה חלוקת-סכום-עם-עיגול שכבר קיימת ביצירה מקורית. buildWideMonthOptionsHtml() חדש בונה רשימת חודשים רחבה (60 אחורה/6 קדימה, כולל הבטחת נוכחות החודשים הקיימים גם אם ישנים יותר) לשלושת בוררי החודש.
+const APP_VERSION = '2.15.50'; // תוקן באג: במודל "הוסף תשלום" (openAddPayment, פתוח מתפריט "ניהול"), רשימת "חודש" (וגם "מחודש"/"עד חודש" לגבייה חריגה) כללה רק את החודש הנוכחי ו-23 חודשים אחורה — ללא אף חודש עתידי בכלל. כתוצאה מכך לא ניתן היה לגבות מראש דמי ועד (או כל קטגוריית תשלום אחרת) עבור חודשים עתידיים של השנה הנוכחית (למשל ספטמבר-דצמבר כשעדיין אוגוסט) דרך המסך הזה — למרות שהאפליקציה כבר תומכת בגבייה מראש במקומות אחרים (תא "חודש עתידי" בהיסטוריית דייר, ובורר החודש העליון במסך "כספים" שכבר מכסה את כל השנה הנוכחית). הלולאה שבונה את רשימת האפשרויות עודכנה לכלול גם 6 חודשים קדימה (לא רק 24 אחורה), עם ברירת מחדל מפורשת לחודש הנוכחי (כי הרשימה כעת מתחילה מהחודש העתידי ביותר, לא מהנוכחי כמו קודם).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4053,7 +4067,7 @@ function renderPayments(ym) {
     <div style="overflow-x:auto;">
       <table class="po-table">
         <thead><tr>
-          <th>דירה</th><th>קומה</th><th>סכום</th><th>סטטוס</th><th>פעולה</th>
+          <th>דירה</th><th>שם</th><th>קומה</th><th>סכום</th><th>סטטוס</th><th>פעולה</th>
         </tr></thead>
         <tbody>
           ${fullList.map(({ resident: r, payment: p, paid }) => `
@@ -4863,17 +4877,32 @@ window.openAddPayment = (category) => {
   category = category || 'vaad';
   document.getElementById('p-category').value = category;
 
-  // Fill month dropdown(s) — offer a wider range (24 months back) since
-  // exceptional transfers often cover months from a previous year.
+  // Fill month dropdown(s) — offer a wide range: 24 months back (exceptional
+  // transfers often cover months from a previous year) AND 6 months forward
+  // (residents/vaadim sometimes pay several months ahead — e.g. a resident
+  // pre-paying through December while it's only August). Previously this
+  // only went backward, so advance payments for future months (like "ועד
+  // בית" for the rest of the current year) had no month to select at all —
+  // even though the app already supports advance payment elsewhere (the
+  // top payment-month-select nav dropdown, and the resident-history grid's
+  // "future month" cells, both already reach forward within the current
+  // year — see the comment in initUI()). i starts negative (future) and
+  // counts up through positive (past), so the list stays newest/future-first,
+  // consistent with every other month dropdown in the app.
   const monthOptionsHtml = [];
   const now = new Date();
-  for (let i = 0; i < 24; i++) {
+  for (let i = -6; i < 24; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
     monthOptionsHtml.push(`<option value="${ym}">${monthLabel(ym)}</option>`);
   }
   document.getElementById('p-month').innerHTML = monthOptionsHtml.join('');
   document.getElementById('p-month-to').innerHTML = monthOptionsHtml.join('');
+  // ברירת המחדל היא החודש הנוכחי — לא הראשון ברשימה, כי הרשימה כעת מתחילה
+  // מהחודש העתידי ביותר (6 חודשים קדימה) ולא מהחודש הנוכחי כמו קודם.
+  const currentYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('p-month').value = currentYm;
+  document.getElementById('p-month-to').value = currentYm;
   document.getElementById('p-note').value = '';
   document.getElementById('p-actual-date').value = '';
 
