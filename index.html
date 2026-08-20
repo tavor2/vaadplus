@@ -1696,7 +1696,8 @@
         💰 כל התשלומים<br/>
         📋 כל ההוצאות<br/>
         🔧 כל התקלות<br/>
-        📢 כל ההודעות
+        📢 כל ההודעות<br/>
+        🏦 כל הפקדות המזומן ויתרות הפתיחה (בנק ומזומן)
       </div>
       <div style="font-weight:700;color:#d33;margin-top:10px;">לא ניתן לבטל פעולה זו!</div>
     </div>
@@ -2326,7 +2327,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.50'; // תוקן באג: במודל "הוסף תשלום" (openAddPayment, פתוח מתפריט "ניהול"), רשימת "חודש" (וגם "מחודש"/"עד חודש" לגבייה חריגה) כללה רק את החודש הנוכחי ו-23 חודשים אחורה — ללא אף חודש עתידי בכלל. כתוצאה מכך לא ניתן היה לגבות מראש דמי ועד (או כל קטגוריית תשלום אחרת) עבור חודשים עתידיים של השנה הנוכחית (למשל ספטמבר-דצמבר כשעדיין אוגוסט) דרך המסך הזה — למרות שהאפליקציה כבר תומכת בגבייה מראש במקומות אחרים (תא "חודש עתידי" בהיסטוריית דייר, ובורר החודש העליון במסך "כספים" שכבר מכסה את כל השנה הנוכחית). הלולאה שבונה את רשימת האפשרויות עודכנה לכלול גם 6 חודשים קדימה (לא רק 24 אחורה), עם ברירת מחדל מפורשת לחודש הנוכחי (כי הרשימה כעת מתחילה מהחודש העתידי ביותר, לא מהנוכחי כמו קודם).
+const APP_VERSION = '2.15.52'; // כפתור "✏️ ערוך פרטי הגבייה" בפרטי גבייה מיוחדת (renderSpecialDetail) שונה ל-"✏️ עריכת/מחיקת הגבייה" — מדויק יותר, כי הכפתור פותח מודל שכולל גם אפשרות מחיקה (btn-delete-special), לא רק עריכה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3605,10 +3606,27 @@ window.executeResetData = async () => {
   closeModal('modal-reset-data');
   showToast('מוחק נתונים...');
   try {
-    const collections = ['residents','payments','expenses','issues','announcements','specialCollections','specialPayments'];
+    // cashDeposits נוסף לרשימה — לפני התיקון הזה איפוס נתונים לא ניקה את
+    // הפקדות המזומן שכבר נרשמו, כך שהן המשיכו להשפיע על יתרת הבנק/מזומן
+    // המחושבת (computeBalanceFigures) גם אחרי "איפוס מלא" של הבניין.
+    const collections = ['residents','payments','expenses','issues','announcements','specialCollections','specialPayments','cashDeposits'];
     for (const colName of collections) {
       const snap = await getDocs(collection(db, 'buildings', buildingId, colName));
       for (const d of snap.docs) await deleteDoc(d.ref);
+    }
+    // יתרות הפתיחה (openingBalance/cashOpeningBalance ותאריכיהן) שמורות
+    // כשדות על מסמך הבניין עצמו, לא כאוסף תת-מסמכים — לכן לא נמחקו על ידי
+    // הלולאה למעלה, ונשארו בתוקף גם אחרי איפוס "מלא" לכאורה של הבניין, מה
+    // שהטעה את יתרת הבנק/מזומן המוצגת אחרי האיפוס. מאופסות כאן במפורש.
+    await updateDoc(doc(db, 'buildings', buildingId), {
+      openingBalance: 0, openingBalanceDate: null,
+      cashOpeningBalance: 0, cashOpeningBalanceDate: null
+    });
+    if (buildingData) {
+      buildingData.openingBalance = 0;
+      buildingData.openingBalanceDate = null;
+      buildingData.cashOpeningBalance = 0;
+      buildingData.cashOpeningBalanceDate = null;
     }
     showToast('✅ כל הנתונים נמחקו');
     loadAll();
@@ -5364,7 +5382,7 @@ function renderSpecialDetail() {
     + '</div>'
     + '<div style="font-size:12px;color:var(--gray-500);margin-top:8px;text-align:center;">'+paidCount+' מתוך '+units.length+' דירות שילמו • '+fmtCurrency(sc.amountPerApt)+' ליחידה</div>'
     + '<div style="font-size:11px;color:var(--gray-400);margin-top:6px;text-align:center;">💡 גבייה זו נכללת בסה"כ הגבייה וביתרת הבנק/מזומן בלשונית "מאזן"</div>'
-    + '<button class="btn-icon" style="width:100%;margin-top:10px;" onclick="editSpecialCollection(\''+sc.id+'\')">✏️ ערוך פרטי הגבייה</button>'
+    + '<button class="btn-icon" style="width:100%;margin-top:10px;" onclick="editSpecialCollection(\''+sc.id+'\')">✏️ עריכת/מחיקת הגבייה</button>'
     + '<button class="btn-icon" style="width:100%;margin-top:8px;" onclick="generateSpecialCollectionPDF(\''+sc.id+'\')">📄 הפק דוח PDF לדיירים</button>'
     + '</div>';
 
