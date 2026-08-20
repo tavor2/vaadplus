@@ -1420,7 +1420,7 @@
       <label class="form-label">מיזוג דירות מפוצלות</label>
       <select class="form-select" id="sp-merge-split" onchange="updateSpecialTotalNote()">
         <option value="no">הצג כל יחידה מפוצלת בנפרד</option>
-        <option value="yes">מזג דירות מפוצלות (5א+5ב יחד, כדירה אחת עם בעלים אחד)</option>
+        <option value="yes">מזג דירות מפוצלות לדירה אחת</option>
       </select>
       <div style="font-size:11px;color:var(--gray-500);margin-top:4px;">רלוונטי רק לדירות שפוצלו בפועל ליחידות נפרדות (למשל 5א, 5ב) שיש להן אותו בעלים. אם ליחידות מפוצלות יש בעלים שונים — לא ניתן למזג אותן; הן תמיד יוצגו בנפרד עם אזהרה, ללא קשר לבחירה כאן.</div>
     </div>
@@ -2327,7 +2327,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.52'; // כפתור "✏️ ערוך פרטי הגבייה" בפרטי גבייה מיוחדת (renderSpecialDetail) שונה ל-"✏️ עריכת/מחיקת הגבייה" — מדויק יותר, כי הכפתור פותח מודל שכולל גם אפשרות מחיקה (btn-delete-special), לא רק עריכה.
+const APP_VERSION = '2.15.55'; // דוח PDF "גבייה מיוחדת" (createSpecialCollectionPDFReport, גם עבור "ממי גובים: בעלי הדירות" וגם עבור "בעלים ושוכרים") — עמודת "שם" הוסרה לגמרי מהטבלה (גם מהכותרת וגם מהשורות), לבקשת הועד. הדוח מציג כעת רק דירה/קומה/סטטוס/סכום/תאריך תשלום, ללא שמות דיירים/בעלים כלל.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5245,13 +5245,33 @@ window.updateSpecialTotalNote = () => {
     + (mismatchCount ? `<br/><span style="color:var(--red);">⚠️ ${mismatchCount} יחידות מפוצלות עם בעלים שונים לא מוזגו ונספרות בנפרד</span>` : '');
 };
 
+// True אם קיימת בבניין לפחות דירה אחת מפוצלת בפועל (שתי יחידות דיירים
+// ומעלה החולקות אותו מספר דירה בסיסי, למשל "5א" ו-"5ב" — ראה parseAptId).
+// משמש להסתרת שדה "מיזוג דירות מפוצלות" כשאין בכלל דירות מפוצלות בבניין —
+// כי במקרה כזה האופציה לא רלוונטית ורק מבלבלת (המנהל רואה בחירה בין "הצג
+// כל יחידה בנפרד" למיזוג, כשאין בכלל מה למזג).
+function hasAnySplitApartments() {
+  const baseCounts = {};
+  allResidents.forEach(r => {
+    const { num } = parseAptId(r.apt);
+    baseCounts[num] = (baseCounts[num] || 0) + 1;
+  });
+  return Object.values(baseCounts).some(count => count > 1);
+}
+
 // מציג/מסתיר את שדה "מיזוג דירות מפוצלות" — רלוונטי רק כש"ממי גובים"
 // מוגדר ל"בעלי הדירות" (במצב "בעלים ושוכרים" אין צורך למזג, כי כל תת-יחידה
-// מפוצלת כבר מוצגת עם שם הדייר שלה בעצמה — מנגנון קיים שעובד כרגיל).
-// גם מרענן את תצוגת יעד הגבייה בהתאם.
+// מפוצלת כבר מוצגת עם שם הדייר שלה בעצמה — מנגנון קיים שעובד כרגיל) וגם רק
+// כשיש בפועל דירה מפוצלת אחת לפחות בבניין (ראה hasAnySplitApartments) —
+// אחרת השדה מוסתר כדי לא להציג בחירה חסרת משמעות. כשהשדה מוסתר, sp-merge-split
+// מאופס בחזרה ל-'no' כדי שערך "יש למזג" שנבחר קודם (למשל בעריכת גבייה
+// קיימת שנוצרה כשהיו דירות מפוצלות, שמאז אוחדו/נמחקו) לא יישאר תקוע
+// ויוחל בטעות בשמירה. גם מרענן את תצוגת יעד הגבייה בהתאם.
 window.onSpecialPayerScopeChange = () => {
   const scope = document.getElementById('sp-payer-scope').value;
-  document.getElementById('sp-merge-split-group').style.display = scope === 'owners' ? '' : 'none';
+  const showMergeOption = scope === 'owners' && hasAnySplitApartments();
+  document.getElementById('sp-merge-split-group').style.display = showMergeOption ? '' : 'none';
+  if (!showMergeOption) document.getElementById('sp-merge-split').value = 'no';
   updateSpecialTotalNote();
 };
 
@@ -5648,16 +5668,10 @@ async function createSpecialCollectionPDFReport(id) {
       ? '<span style="color:#0E9F6E;font-weight:bold;">✓ שולם</span>'
       : '<span style="color:#E02424;font-weight:bold;">✗ לא שולם</span>';
     const paidDate = p?.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '-';
-    // בשורה ששולמה, שם המשלם הוא זה שכבר נשמר על התשלום עצמו (p.name),
-    // כפי שנקבע ב-markSpecialPaidUnit() בזמן הסימון — לא u.name הנוכחי,
-    // כדי שלא ישתנה רטרואקטיבית אם sc.payerScope/מיזוג עודכן אחרי שהתשלום
-    // כבר נרשם. בשורה שטרם שולמה משתמשים ב-u.name החי, לפי ההגדרה הנוכחית.
-    const displayName = p ? (p.name || u.name || '') : u.name;
     const aptCell = aptDisplay(u.displayApt);
     const floorVal = u.residentsIncluded[0]?.floor;
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptCell}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${displayName}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${floorVal !== undefined ? floorVal : '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${statusHtml}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${amount.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
@@ -5696,7 +5710,7 @@ async function createSpecialCollectionPDFReport(id) {
       ${contractorLine}
       <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:16px;">${(() => { const now=new Date(); return '<span>הופק</span><span dir="ltr">'+now.toLocaleDateString('he-IL')+'</span><span>בשעה</span><span dir="ltr">'+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})+'</span>'; })()}</div>
 
-      <table><thead><tr><th>דירה</th><th>שם</th><th>קומה</th><th>סטטוס</th><th>סכום</th><th>תאריך תשלום</th></tr></thead>
+      <table><thead><tr><th>דירה</th><th>קומה</th><th>סטטוס</th><th>סכום</th><th>תאריך תשלום</th></tr></thead>
       <tbody>${rows}</tbody></table>
 
       <div class="summary">
