@@ -2327,7 +2327,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.55'; // דוח PDF "גבייה מיוחדת" (createSpecialCollectionPDFReport, גם עבור "ממי גובים: בעלי הדירות" וגם עבור "בעלים ושוכרים") — עמודת "שם" הוסרה לגמרי מהטבלה (גם מהכותרת וגם מהשורות), לבקשת הועד. הדוח מציג כעת רק דירה/קומה/סטטוס/סכום/תאריך תשלום, ללא שמות דיירים/בעלים כלל.
+const APP_VERSION = '2.15.56'; // דוח PDF "גבייה מיוחדת" — עמודת "קומה" הוסרה גם היא מהטבלה (בנוסף לעמודת "שם" שהוסרה בגרסה הקודמת). הדוח מציג כעת רק: דירה, סטטוס, סכום, תאריך תשלום.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5669,10 +5669,8 @@ async function createSpecialCollectionPDFReport(id) {
       : '<span style="color:#E02424;font-weight:bold;">✗ לא שולם</span>';
     const paidDate = p?.paidAt ? new Date(p.paidAt.toDate()).toLocaleDateString('he-IL') : '-';
     const aptCell = aptDisplay(u.displayApt);
-    const floorVal = u.residentsIncluded[0]?.floor;
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptCell}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${floorVal !== undefined ? floorVal : '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${statusHtml}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${amount.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${paidDate}</td>
@@ -5710,7 +5708,7 @@ async function createSpecialCollectionPDFReport(id) {
       ${contractorLine}
       <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:16px;">${(() => { const now=new Date(); return '<span>הופק</span><span dir="ltr">'+now.toLocaleDateString('he-IL')+'</span><span>בשעה</span><span dir="ltr">'+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})+'</span>'; })()}</div>
 
-      <table><thead><tr><th>דירה</th><th>קומה</th><th>סטטוס</th><th>סכום</th><th>תאריך תשלום</th></tr></thead>
+      <table><thead><tr><th>דירה</th><th>סטטוס</th><th>סכום</th><th>תאריך תשלום</th></tr></thead>
       <tbody>${rows}</tbody></table>
 
       <div class="summary">
