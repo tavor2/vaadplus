@@ -1229,9 +1229,9 @@
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
-      <button class="btn-primary" onclick="closeAdminFinance();generatePDF();">📄 הפק PDF שנתי</button>
-      <button class="btn-primary" onclick="closeAdminFinance();generateMonthlyPDF();">🗓️ הפק PDF חודשי</button>
-      <button class="btn-primary" onclick="closeAdminFinance();generateSemiAnnualPDF();">📆 הפק PDF חצי שנתי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openYearlyPDFSelector();">📄 הפק PDF שנתי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openMonthlyPDFSelector();">🗓️ הפק PDF חודשי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openSemiAnnualPDFSelector();">📆 הפק PDF חצי שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
@@ -1319,6 +1319,55 @@
       <button class="btn-secondary" style="color:#d33;border-color:#d33;" onclick="closeAdminFinance();openResetData()">🗑️ איפוס נתונים</button>
       <button class="btn-secondary" onclick="closeAdminFinance()">סגור</button>
     </div>
+  </div>
+</div>
+
+<!-- Yearly PDF Report — Year Selector Modal -->
+<div class="modal-overlay" id="modal-yearly-select">
+  <div class="modal">
+    <div class="modal-title">📄 דוח שנתי</div>
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">בחר/י שנה להפקת הדוח</div>
+    <div class="form-group">
+      <label class="form-label">שנה</label>
+      <select class="form-select" id="ya-year"></select>
+    </div>
+    <button class="btn-primary" onclick="confirmYearlyPDF()">📄 הפק דוח</button>
+    <button class="btn-secondary" onclick="closeModal('modal-yearly-select')">ביטול</button>
+  </div>
+</div>
+
+<!-- Monthly PDF Report — Period Selector Modal -->
+<div class="modal-overlay" id="modal-monthly-select">
+  <div class="modal">
+    <div class="modal-title">🗓️ דוח חודשי</div>
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">בחר/י חודש להפקת הדוח</div>
+    <div class="form-group">
+      <label class="form-label">חודש</label>
+      <select class="form-select" id="ma-month"></select>
+    </div>
+    <button class="btn-primary" onclick="confirmMonthlyPDF()">📄 הפק דוח</button>
+    <button class="btn-secondary" onclick="closeModal('modal-monthly-select')">ביטול</button>
+  </div>
+</div>
+
+<!-- Semi-Annual PDF Report — Period Selector Modal -->
+<div class="modal-overlay" id="modal-semiannual-select">
+  <div class="modal">
+    <div class="modal-title">📆 דוח חצי שנתי</div>
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">בחר/י שנה ומחצית להפקת הדוח</div>
+    <div class="form-group">
+      <label class="form-label">שנה</label>
+      <select class="form-select" id="sa-year"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">מחצית</label>
+      <select class="form-select" id="sa-half">
+        <option value="1">מחצית ראשונה — ינואר עד יוני</option>
+        <option value="2">מחצית שנייה — יולי עד דצמבר</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="confirmSemiAnnualPDF()">📄 הפק דוח</button>
+    <button class="btn-secondary" onclick="closeModal('modal-semiannual-select')">ביטול</button>
   </div>
 </div>
 
@@ -2327,7 +2376,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.56'; // דוח PDF "גבייה מיוחדת" — עמודת "קומה" הוסרה גם היא מהטבלה (בנוסף לעמודת "שם" שהוסרה בגרסה הקודמת). הדוח מציג כעת רק: דירה, סטטוס, סכום, תאריך תשלום.
+const APP_VERSION = '2.15.61'; // דוח PDF שנתי — כפתור "📄 הפק PDF שנתי" (בתפריט ניהול כספים) פותח כעת מודל בחירת שנה מפורש (modal-yearly-select, טווח 5 שנים אחורה מהשנה הנוכחית) לפני ההפקה, במקום לגזור את השנה בשקט מהחודש שנבחר בסלקטור העליון של מסך "כספים" (payment-month-select, שממילא מכסה רק שנה נוכחית+קודמת). ברירת המחדל בטופס היא שנת החודש שכרגע נבחר בסלקטור העליון (או השנה הנוכחית אם אין), כך שהמקרה הנפוץ עדיין דורש רק אישור אחד נוסף.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -7872,7 +7921,32 @@ window.openLog = async () => {
   container.innerHTML = html;
 };
 
-window.generatePDF = async () => {
+// פותח את מודל בחירת השנה לדוח שנתי — עד לשינוי הזה השנה נקבעה אוטומטית
+// ובשקט לפי הסלקטור העליון של מסך "כספים" (payment-month-select), מה
+// שהצריך לזוז קודם בסלקטור העליון (שמכסה רק שנה נוכחית+קודמת) כדי להפיק
+// דוח לשנה אחרת. כאן הטווח רחב יותר — 5 שנים אחורה מהשנה הנוכחית, כדי
+// לתמוך גם בדוחות היסטוריים רחוקים יותר. ברירת המחדל בטופס היא השנה של
+// החודש שכרגע נבחר בסלקטור העליון (או השנה הנוכחית אם אין), כך שהמקרה
+// הנפוץ עדיין דורש רק אישור אחד נוסף.
+window.openYearlyPDFSelector = () => {
+  const selectedYm = document.getElementById('payment-month-select')?.value;
+  const currentYear = selectedYm ? parseInt(selectedYm.split('-')[0], 10) : new Date().getFullYear();
+  const nowYear = new Date().getFullYear();
+  const sel = document.getElementById('ya-year');
+  const years = [];
+  for (let y = nowYear; y >= nowYear - 5; y--) years.push(y);
+  sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  sel.value = currentYear;
+  openModal('modal-yearly-select');
+};
+
+window.confirmYearlyPDF = async () => {
+  const year = parseInt(document.getElementById('ya-year').value, 10);
+  closeModal('modal-yearly-select');
+  await generatePDF(year);
+};
+
+window.generatePDF = async (year) => {
   if (receiptGenerationInProgress) {
     showToast('פעולת PDF אחרת עדיין בתהליך, רגע בבקשה...');
     return;
@@ -7897,7 +7971,7 @@ window.generatePDF = async () => {
         document.head.appendChild(script);
       });
     }
-    await createPDFReport();
+    await createPDFReport(year);
   } catch(e) {
     showToast('שגיאה: ' + e.message);
   } finally {
@@ -7906,9 +7980,10 @@ window.generatePDF = async () => {
   }
 };
 
-async function createPDFReport() {
-  const selectedYm = document.getElementById('payment-month-select').value;
-  const year = selectedYm ? parseInt(selectedYm.split('-')[0]) : new Date().getFullYear();
+async function createPDFReport(year) {
+  // year מגיע כעת כפרמטר מפורש מהמודל modal-yearly-select
+  // (openYearlyPDFSelector/confirmYearlyPDF) — לא נגזר יותר בשקט מהחודש
+  // שנבחר בסלקטור העליון של מסך "כספים".
   
   // Fetch data
   const resSnap = await getDocs(collection(db, 'buildings', buildingId, 'residents'));
@@ -8048,7 +8123,7 @@ async function createPDFReport() {
         h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; word-spacing: normal; letter-spacing: normal; }
         table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
         th { background: #1A56DB; color: white; padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
-        td { padding: 8px; border: 1px solid #ddd; }
+        td { padding: 8px; border: 1px solid #ddd; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
         tr { page-break-inside: avoid; break-inside: avoid; }
         .summary { margin-top: 30px; font-size: 16px; }
         .summary-line { margin: 10px 0; page-break-inside: avoid; break-inside: avoid; }
@@ -8123,16 +8198,16 @@ async function createPDFReport() {
         ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.openingBalanceDate)}</span>` : ''}</div>` : ''}
         ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.cashOpeningBalanceDate)}</span>` : ''}</div>` : ''}
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (טעינה חשמלית):</span><span dir="ltr">₪${chargingBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (טעינה חשמלית):</span><span dir="ltr">₪${chargingCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק (גבייה מיוחדת):</span><span dir="ltr">₪${specialBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה (גבייה מיוחדת):</span><span dir="ltr">₪${specialCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - ועד שוטף</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - ועד שוטף</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה:</span><span dir="ltr">₪${totalCollectedAllYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -8181,7 +8256,29 @@ async function createPDFReport() {
   logAnalyticsEvent('pdf_report_generated');
 }
 
-window.generateMonthlyPDF = async () => {
+// פותח את מודל בחירת החודש לדוח חודשי — עד לשינוי הזה החודש נקבע אוטומטית
+// ובשקט לפי הסלקטור העליון של מסך "כספים" (payment-month-select), מה
+// שהצריך לזוז קודם בסלקטור העליון כדי להפיק דוח לחודש אחר. משתמש ב-
+// buildWideMonthOptionsHtml (כבר קיים, ראה openEditCategoryGroup) לטווח
+// רחב יותר מה-24 החודשים שאחורה של הסלקטור העליון — 60 חודשים אחורה, 6
+// קדימה. ברירת המחדל בטופס היא החודש שכרגע נבחר בסלקטור העליון (או החודש
+// הנוכחי אם אין), כך שהמקרה הנפוץ עדיין דורש רק אישור אחד נוסף.
+window.openMonthlyPDFSelector = () => {
+  const currentYm = document.getElementById('payment-month-select')?.value
+    || (() => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0'); })();
+  const sel = document.getElementById('ma-month');
+  sel.innerHTML = buildWideMonthOptionsHtml(60, 6, [currentYm]);
+  sel.value = currentYm;
+  openModal('modal-monthly-select');
+};
+
+window.confirmMonthlyPDF = async () => {
+  const ym = document.getElementById('ma-month').value;
+  closeModal('modal-monthly-select');
+  await generateMonthlyPDF(ym);
+};
+
+window.generateMonthlyPDF = async (ym) => {
   if (receiptGenerationInProgress) {
     showToast('פעולת PDF אחרת עדיין בתהליך, רגע בבקשה...');
     return;
@@ -8200,7 +8297,7 @@ window.generateMonthlyPDF = async () => {
         document.head.appendChild(script);
       });
     }
-    await createMonthlyPDFReport();
+    await createMonthlyPDFReport(ym);
   } catch(e) {
     showToast('שגיאה: ' + e.message);
   } finally {
@@ -8209,9 +8306,10 @@ window.generateMonthlyPDF = async () => {
   }
 };
 
-async function createMonthlyPDFReport() {
-  // דוח נבנה לפי החודש שנבחר בסלקטור של מסך "כספים"
-  const ym = document.getElementById('payment-month-select').value;
+async function createMonthlyPDFReport(ym) {
+  // ym מגיע כעת כפרמטר מפורש מהמודל modal-monthly-select
+  // (openMonthlyPDFSelector/confirmMonthlyPDF) — לא נגזר יותר בשקט מהחודש
+  // שנבחר בסלקטור העליון של מסך "כספים".
   const monthLbl = monthLabel(ym);
   // html2canvas + RTL: regular spaces between pure-Hebrew words (and in
   // mixed Hebrew/number headers) intermittently collapse when rendered —
@@ -8345,7 +8443,7 @@ async function createMonthlyPDFReport() {
       h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; }
       table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
       th { background: #1A56DB; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
-      td { padding: 8px; border: 1px solid #ddd; }
+      td { padding: 8px; border: 1px solid #ddd; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
       tr { page-break-inside: avoid; break-inside: avoid; }
       .summary { margin-top: 20px; font-size: 15px; }
       .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; page-break-inside: avoid; break-inside: avoid; }
@@ -8371,16 +8469,16 @@ async function createMonthlyPDFReport() {
       <tbody>${catRowsHtml}</tbody></table>
 
       <div class="summary">
-        <div class="summary-line"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (טעינה חשמלית):</span><span dir="ltr">₪${chargingBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (טעינה חשמלית):</span><span dir="ltr">₪${chargingCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (גבייה מיוחדת):</span><span dir="ltr">₪${specialBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (גבייה מיוחדת):</span><span dir="ltr">₪${specialCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - ועד שוטף</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - ועד שוטף</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה החודש:</span><span dir="ltr">₪${totalCollectedAllMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
@@ -8423,7 +8521,30 @@ async function createMonthlyPDFReport() {
   logAnalyticsEvent('monthly_pdf_report_generated');
 }
 
-window.generateSemiAnnualPDF = async () => {
+// פותח את מודל בחירת התקופה (שנה + מחצית) לדוח חצי שנתי — עד לשינוי הזה
+// המחצית נקבעה אוטומטית ובשקט לפי החודש שנבחר בסלקטור העליון של מסך
+// "כספים" (payment-month-select), מה שהקשה על הפקת דוח למחצית שאינה
+// המחצית הנוכחית בלי לזוז קודם בסלקטור העליון. ברירת המחדל בטופס עדיין
+// נגזרת מהתאריך הנוכחי (שנה נוכחית, מחצית שבה אנחנו נמצאים כרגע) — כדי
+// שהמקרה הנפוץ (הפקת הדוח למחצית הנוכחית) עדיין ידרוש רק אישור אחד.
+window.openSemiAnnualPDFSelector = () => {
+  const yearSel = document.getElementById('sa-year');
+  const currentYear = new Date().getFullYear();
+  yearSel.innerHTML = [currentYear, currentYear - 1, currentYear - 2]
+    .map(y => `<option value="${y}">${y}</option>`).join('');
+  yearSel.value = currentYear;
+  document.getElementById('sa-half').value = (new Date().getMonth() + 1) <= 6 ? '1' : '2';
+  openModal('modal-semiannual-select');
+};
+
+window.confirmSemiAnnualPDF = async () => {
+  const year = parseInt(document.getElementById('sa-year').value, 10);
+  const isFirstHalf = document.getElementById('sa-half').value === '1';
+  closeModal('modal-semiannual-select');
+  await generateSemiAnnualPDF(year, isFirstHalf);
+};
+
+window.generateSemiAnnualPDF = async (year, isFirstHalf) => {
   if (receiptGenerationInProgress) {
     showToast('פעולת PDF אחרת עדיין בתהליך, רגע בבקשה...');
     return;
@@ -8442,7 +8563,7 @@ window.generateSemiAnnualPDF = async () => {
         document.head.appendChild(script);
       });
     }
-    await createSemiAnnualPDFReport();
+    await createSemiAnnualPDFReport(year, isFirstHalf);
   } catch(e) {
     showToast('שגיאה: ' + e.message);
   } finally {
@@ -8451,15 +8572,10 @@ window.generateSemiAnnualPDF = async () => {
   }
 };
 
-async function createSemiAnnualPDFReport() {
-  // התקופה נקבעת לפי החודש שנבחר בסלקטור של מסך "כספים": מחצית ינואר-יוני
-  // או יולי-דצמבר של אותה שנה, לפי המחצית שבה נמצא החודש שנבחר. אותו עיקרון
-  // כמו createMonthlyPDFReport() שמשתמש בסלקטור הזה לקביעת החודש.
-  const selectedYm = document.getElementById('payment-month-select').value;
-  const nowDate = new Date();
-  const [selYear, selMonth] = selectedYm ? selectedYm.split('-').map(Number) : [nowDate.getFullYear(), nowDate.getMonth()+1];
-  const isFirstHalf = selMonth <= 6;
-  const year = selYear;
+async function createSemiAnnualPDFReport(year, isFirstHalf) {
+  // התקופה מגיעה כעת כפרמטרים מפורשים מהמודל modal-semiannual-select
+  // (openSemiAnnualPDFSelector/confirmSemiAnnualPDF) — לא נגזרת יותר בשקט
+  // מהחודש שנבחר בסלקטור העליון של מסך "כספים" כמו קודם.
   const startMonthIdx = isFirstHalf ? 0 : 6; // 0-based אינדקס לתוך HEBREW_MONTHS
   const monthsInHalf = HEBREW_MONTHS.slice(startMonthIdx, startMonthIdx + 6);
   const fromYm = `${year}-${String(startMonthIdx+1).padStart(2,'0')}`;
@@ -8616,7 +8732,7 @@ async function createSemiAnnualPDFReport() {
         h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; word-spacing: normal; letter-spacing: normal; }
         table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
         th { background: #1A56DB; color: white; padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
-        td { padding: 8px; border: 1px solid #ddd; }
+        td { padding: 8px; border: 1px solid #ddd; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
         tr { page-break-inside: avoid; break-inside: avoid; }
         .summary { margin-top: 30px; font-size: 16px; }
         .summary-line { margin: 10px 0; display:flex; direction:rtl; gap:5px; page-break-inside: avoid; break-inside: avoid; }
@@ -8627,7 +8743,7 @@ async function createSemiAnnualPDFReport() {
       <h1 style="letter-spacing:4px;">דוח חצי שנתי לוועד הבית</h1>
       <h2>${(buildingData?.address || '').replace(/ /g, '\u00A0')}</h2>
       <h2>${halfLabelNbsp}</h2>
-      <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:20px;">${(() => { const d = nowDate.toLocaleDateString('he-IL'); const t = nowDate.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); return '<span>הופק</span><span dir="ltr">' + d + '</span><span>בשעה</span><span dir="ltr">' + t + '</span>'; })()}</div>
+      <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:20px;">${(() => { const now = new Date(); const d = now.toLocaleDateString('he-IL'); const t = now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}); return '<span>הופק</span><span dir="ltr">' + d + '</span><span>בשעה</span><span dir="ltr">' + t + '</span>'; })()}</div>
 
       <table>
         <thead>
@@ -8687,16 +8803,16 @@ async function createSemiAnnualPDFReport() {
       </table>
 
       <div class="summary">
-        <div class="summary-line"><span>💳 הועבר לבנק (ועד שוטף):</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (ועד שוטף):</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - בעלים):</span><span dir="ltr">₪${exceptionalOwnerCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (חריגה - שוכרים):</span><span dir="ltr">₪${exceptionalRenterCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (טעינה חשמלית):</span><span dir="ltr">₪${chargingBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (טעינה חשמלית):</span><span dir="ltr">₪${chargingCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק (גבייה מיוחדת):</span><span dir="ltr">₪${specialBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה (גבייה מיוחדת):</span><span dir="ltr">₪${specialCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - ועד שוטף</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - ועד שוטף</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק - גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה - גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה בתקופה:</span><span dir="ltr">₪${totalCollectedAllHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
