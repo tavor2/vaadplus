@@ -2376,7 +2376,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.62'; // תוקן המשך לבאג bidi בדוחות PDF (שנתי/חודשי/חצי-שנתי): אחרי הסרת הסוגריים/נקודתיים בגרסה הקודמת (v2.15.59), התגלה שגם הרווחים הרגילים בין המילים בתוויות "פירוט גבייה" (למשל "ועד שוטף", "חריגה בעלים") נבלעים לפעמים ב-html2canvas ומוצגים צמודים ("ועדשוטף", "חריגהבעלים") — אותה תופעת "רווחים נבלעים בין מילים בעברית טהורה" שכבר תועדה עבור כותרות הדוח. הוחלפו הרווחים הרגילים ב-\u00A0 (רווח בלתי שובר) בעשר התוויות האלו בכל שלושת הדוחות.
+const APP_VERSION = '2.15.64'; // הוסר המקף מ-10 שורות "פירוט גבייה" בסיכום שלושת דוחות ה-PDF (למשל "💳 הועבר לבנק - ועד שוטף" הפך ל-"💳 הועבר לבנק ועד שוטף") — 30 מופעים. הרווח הבלתי-שובר בין המילים (\u00A0, מ-v2.15.62) נשאר במקום, כך שהמילים עדיין לא נפרדות זו מזו.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -8043,7 +8043,7 @@ async function createPDFReport(year) {
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e).replace(/ /g, '\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
@@ -8198,16 +8198,16 @@ async function createPDFReport(year) {
         ${openingBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה בבנק:</span><span dir="ltr">₪${openingBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.openingBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.openingBalanceDate)}</span>` : ''}</div>` : ''}
         ${cashOpeningBalance ? `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;flex-wrap:wrap;"><span class="total">יתרת פתיחה מזומן:</span><span dir="ltr">₪${cashOpeningBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span>${buildingData?.cashOpeningBalanceDate ? `<span>נכון ל-</span><span dir="ltr">${fmtDateDMY(buildingData.cashOpeningBalanceDate)}</span>` : ''}</div>` : ''}
         <div style="border-top:2px solid #000;margin:15px 0;padding:10px 0;">
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - ועד שוטף</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - ועד שוטף</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק - גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה - גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק ועד שוטף</span><span dir="ltr">₪${vaadBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה ועד שוטף</span><span dir="ltr">₪${vaadCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה:</span><span dir="ltr">₪${totalCollectedAllYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -8399,7 +8399,7 @@ async function createMonthlyPDFReport(ym) {
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category||'-').replace(/ /g,'\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e).replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date||'-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
@@ -8469,16 +8469,16 @@ async function createMonthlyPDFReport(ym) {
       <tbody>${catRowsHtml}</tbody></table>
 
       <div class="summary">
-        <div class="summary-line"><span>💳 הועבר לבנק - ועד שוטף</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - ועד שוטף</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק ועד שוטף</span><span dir="ltr">₪${bankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה ועד שוטף</span><span dir="ltr">₪${cashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה החודש:</span><span dir="ltr">₪${totalCollectedAllMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
@@ -8679,7 +8679,7 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e).replace(/ /g, '\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNote(e)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
@@ -8803,16 +8803,16 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
       </table>
 
       <div class="summary">
-        <div class="summary-line"><span>💳 הועבר לבנק - ועד שוטף</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - ועד שוטף</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💳 הועבר לבנק - גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
-        <div class="summary-line"><span>💵 מזומן שנגבה - גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק ועד שוטף</span><span dir="ltr">₪${vaadBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה ועד שוטף</span><span dir="ltr">₪${vaadCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה חריגה בעלים</span><span dir="ltr">₪${exceptionalOwnerCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה חריגה שוכרים</span><span dir="ltr">₪${exceptionalRenterCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק טעינה חשמלית</span><span dir="ltr">₪${chargingBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה בתקופה:</span><span dir="ltr">₪${totalCollectedAllHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
