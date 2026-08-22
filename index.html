@@ -2094,6 +2094,33 @@ function splitCashBank(items) {
   return { cash, bank: total - cash, total };
 }
 
+// html2pdf.js (via html2canvas) renders the ENTIRE off-screen report element
+// into ONE single canvas before slicing it into PDF pages — regardless of
+// the 'pagebreak' option, which only controls where page breaks fall
+// *within* that one already-rendered image, not how it's captured. Many
+// mobile browsers/WebViews (especially older/lower-end Android Chrome and
+// in-app WebViews) impose a canvas HEIGHT ceiling well below desktop limits
+// — commonly somewhere in the 8,000–16,000px range. A long yearly/semi-
+// annual report (resident×month matrix + full year of expenses + a long
+// multi-line summary) at the previously-fixed scale:2 can push the raw
+// canvas height past that ceiling on such a device: html2canvas then
+// silently produces a truncated capture, which is exactly what showed up
+// as "the report cuts off right before the bank/cash balance lines at the
+// very end" — not a missing-content bug in the HTML/data (that part was
+// verified present), but a rendering-pipeline height ceiling being hit.
+// This measures the actual off-screen element height (after it's been
+// appended to the DOM and painted) and scales DOWN from the desired
+// scale only as much as needed to stay under a conservative safe ceiling
+// — buildings with few residents/transactions still get the full
+// crisp scale:2, only genuinely long reports degrade (still readable)
+// instead of silently losing their last page of content.
+function computeSafeHtml2CanvasScale(element, desiredScale = 2, maxSafeCanvasHeight = 8000) {
+  const rawHeight = element.scrollHeight || element.offsetHeight || 0;
+  if (!rawHeight) return desiredScale;
+  const scale = maxSafeCanvasHeight / rawHeight;
+  return Math.max(1, Math.min(desiredScale, scale));
+}
+
 // Combines an expense's description with its optional note (e.g. "תשלום 1
 // מתוך 3") for display in reports — shared across createPDFReport()
 // (yearly), createMonthlyPDFReport(), createSemiAnnualPDFReport() and
@@ -2392,7 +2419,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.65'; // תוקן באג bidi נוסף בעמודת "תיאור" בטבלת "פירוט הוצאות" בדוחות PDF (שנתי/חודשי/חצי-שנתי): תיאור/הערה עם כמה קטעים מספריים סמוכים (למשל "ח-ן לתקופה 9.3.26 עד 23.4.26 (מס' חוזה 340756679)") הוצגו חופפים/מעוותים אחרי שהגלישה לשורה תוקנה בגרסה הקודמת (v2.15.63) — html2canvas מתקשה למקם נכון כמה קטעי מספרים (LTR) בתוך פסקת עברית (RTL) גולשת. נוספה descWithNoteHtml() — גרסה חדשה של descWithNote() המיועדת רק לתאי הדוח (לא ל-exportExcel, ששם תא חייב טקסט נקי בלי HTML) — שעוטפת כל רצף ספרות/תאריך/מספר חוזה ב-<bdi dir="ltr">, התג הסמנטי הרשמי ב-HTML5 לבידוד טקסט כיווני, שלא נוסה עדיין בקוד הזה (בניגוד ל-unicode-bidi:isolate/flexbox שכבר נוסו ולא הועילו במקרה דומה של מספרי דירה).
+const APP_VERSION = '2.15.66'; // תוקן באג חוזר: דוח PDF ארוך (בעיקר שנתי, לפעמים גם חצי-שנתי/חודשי) נחתך בסופו ולא הציג את שורות "יתרה בחשבון הבנק"/"יתרת מזומן" — למרות שהן קיימות ב-HTML של הדוח (וודא בבדיקה ידנית). הסיבה: html2pdf.js מצלם את כל הדוח לקנבס ענק אחד לפני חלוקה לעמודים — 'pagebreak' רק קובע איפה לחתוך את התמונה הזו לעמודים, לא איך מצלמים אותה. במכשירים ניידים רבים יש תקרת גובה canvas נמוכה בהרבה מדסקטופ; דוח ארוך (טבלת דירות×חודשים + רשימת הוצאות שנתית מלאה + סיכום ארוך) ב-scale קבוע 2 יכול לחצות את התקרה הזו, וה-html2canvas פשוט "שוכח" את הסוף בלי שגיאה גלויה. נוספה computeSafeHtml2CanvasScale() — מודדת את הגובה בפועל של האלמנט הבלתי-נראה ומורידה את ה-scale רק כשצריך (עד גובה יעד בטוח של כ-8000px), כך שדוחות קצרים ממשיכים לקבל scale:2 חד, ורק דוחות ארוכים באמת "נדחסים" קצת כדי להישאר שלמים. הוחל בדוח השנתי, החודשי והחצי-שנתי (לא בדוח גבייה מיוחדת, שקצר מטבעו).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -8257,11 +8284,15 @@ async function createPDFReport(year) {
   // pagebreak mode 'css' בלבד (לא 'css'+'legacy') — ראה הסבר מלא ב-
   // createSpecialCollectionPDFReport, אותו תיקון לאותו באג ידוע ב-html2pdf.js
   // (רווחים מוזרים בין שורות טבלה + תוכן חתוך בסוף הדוח עם טבלה ארוכה).
+  // scale אדפטיבי (ראה computeSafeHtml2CanvasScale) — הדוח השנתי (טבלת
+  // דירות×חודשים + רשימת הוצאות שנתית מלאה + סיכום ארוך) עלול להיות גבוה
+  // מאוד; ב-scale קבוע 2 זה חתך בפועל את סוף הדוח (כולל שורות יתרת בנק/
+  // מזומן) במכשירים ניידים עם תקרת גובה canvas נמוכה יותר מדסקטופ.
   const opt = {
     margin: 10,
     filename: `vaad_bait_${year}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2 },
+    html2canvas: { scale: computeSafeHtml2CanvasScale(element) },
     jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
     pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
   };
@@ -8522,11 +8553,13 @@ async function createMonthlyPDFReport(ym) {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
   // pagebreak mode 'css' בלבד — ראה הסבר מלא ב-createSpecialCollectionPDFReport.
+  // scale אדפטיבי — ראה computeSafeHtml2CanvasScale (הגנה מפני חיתוך סוף
+  // דוח ארוך על מכשירים ניידים עם תקרת גובה canvas נמוכה).
   const opt = {
     margin: 10,
     filename: `vaad_bait_${ym}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2 },
+    html2canvas: { scale: computeSafeHtml2CanvasScale(element) },
     jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
     pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
   };
@@ -8862,11 +8895,13 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
   // pagebreak mode 'css' בלבד — ראה הסבר מלא ב-createSpecialCollectionPDFReport.
+  // scale אדפטיבי — ראה computeSafeHtml2CanvasScale (הגנה מפני חיתוך סוף
+  // דוח ארוך על מכשירים ניידים עם תקרת גובה canvas נמוכה).
   const opt = {
     margin: 10,
     filename: `vaad_bait_${fromYm}_${toYm}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2 },
+    html2canvas: { scale: computeSafeHtml2CanvasScale(element) },
     jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
     pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
   };
