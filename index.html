@@ -2157,24 +2157,39 @@ function descWithNote(e) {
 
 // גרסת descWithNote() המיועדת אך ורק לתאי טבלה בדוחות PDF (createPDFReport,
 // createMonthlyPDFReport, createSemiAnnualPDFReport) — לא לשימוש ב-exportExcel
-// (תא באקסל צריך טקסט נקי, בלי תווים מיוחדים). מחליפה כל רווח רגיל ב-
-// "\u00A0\u200B" (רווח בלתי-שובר ואחריו מיד רווח ברוחב אפס):
-//  - הרווח הבלתי-שובר (\u00A0) פותר את הבאג הידוע של html2canvas שבו רווח
-//    רגיל בין שתי מילים עבריות "נבלע" ומודד את רוחב המילה הבאה לא נכון,
-//    מה שגורם למילים לְהִדָּבֵק זו לזו ("תשלוםשוטף" במקום "תשלום שוטף").
-//  - אבל רווח בלתי-שובר, בהגדרה, לא מאפשר גלישת שורה באותה נקודה — ולכן
-//    לבדו הוא היה גורם לתיאור ארוך לגלוש/להיחתך (הבעיה שתוקנה ב-v2.15.63
-//    ע"י הסרת הרווח הבלתי-שובר). התוספת של \u200B (רווח ברוחב אפס, בלתי-
-//    נראה) מיד אחריו מחזירה בדיוק את נקודת השבירה החסרה — טריק טקסט מוכר
-//    שמאפשר גם רוחב-רווח יציב וגם גלישת שורה תקינה, בלי הפשרה בין השניים.
-// הערה: גרסה קודמת של הפונקציה הזו (v2.15.65) עטפה כל רצף ספרות ב-
-// <bdi dir="ltr"> כדי לנסות לתקן חפיפת מספרים — אך זה גרם לבאג חדש: סוגריים
-// הצמודים לתחום ה-bdi (למשל "(2)") קיבלו כיוון-מראה (mirroring) הפוך
-// ב-html2canvas (") 2 מתוך (" במקום "(מתוך 2)"), ככל הנראה כי html2canvas
-// פותר את כיוון הסוגריים לפי ההקשר LTR שדולף מגבול ה-isolate הסמוך.
-// הוסר בגרסה הזו — התברר שהוא גורם לנזק גדול יותר משהוא פותר.
+// (תא באקסל צריך טקסט נקי, בלי תווים מיוחדים ובלי לאבד את הסוגריים
+// שהמשתמש רגיל לראות שם). שני תיקונים, שניהם ספציפיים לתא הדוח בלבד:
+//
+// 1) מחליפה כל רווח רגיל ב-"\u00A0\u200B" (רווח בלתי-שובר ואחריו מיד רווח
+//    ברוחב אפס): הרווח הבלתי-שובר (\u00A0) פותר באג ידוע של html2canvas
+//    שבו רווח רגיל בין שתי מילים עבריות "נבלע" ומודד את רוחב המילה הבאה
+//    לא נכון, מה שגורם למילים לְהִדָּבֵק זו לזו ("תשלוםשוטף" במקום "תשלום
+//    שוטף"). \u200B (בלתי-נראה) מיד אחריו מחזיר בדיוק את נקודת השבירה
+//    לגלישת שורה, שרווח בלתי-שובר לבדו מבטל.
+//
+// 2) הסוגריים סביב ההערה (" (" + ")") הוחלפו במקף (" - ") — לא בגלל
+//    עטיפת ה-<bdi> שהייתה בגרסה קודמת (הוסרה, ראה למטה), אלא כי מתברר
+//    שהבעיה קיימת גם בלעדיה: כל הדוגמאות שבהן הסוגריים יצאו הפוכים/
+//    במקום הלא נכון היו תיאורים/הערות ארוכים שגלשו לשתי שורות, כשה-"("
+//    או ה-")" נפל בדיוק על/ליד נקודת שבירת השורה — ואילו כל הסוגריים
+//    בתיאורים קצרים (שורה אחת, בלי גלישה) הציגו נכון לגמרי. נראה
+//    שה-mirroring הכיווני (RTL) שה-html2canvas מבצע לסוגריים מחושב נכון
+//    רק על פני שורה ויזואלית בודדת, לא על פני הפסקה הלוגית השלמה — כך
+//    שסוגריים שנופלים על גבול גלישה "מתבלבלים". הפתרון: לא להשתמש בכלל
+//    בתווי סוגריים בתא הזה (אותה טכניקה שכבר עבדה לשורות "פירוט גבייה"
+//    בסיכום הדוח — ראה שם).
+//
+// גם הוסרו word-wrap/overflow-wrap:break-word מה-CSS של ה-td (ראה <style>
+// בכל דוח) — התברר שהם היו גורמים לדפדפן לשבור מספרים/תאריכים בתוך
+// התיאור (כמו "26.5.26") *באמצע* המספר כשהשורה לא הספיקה, מה שגרם
+// לספרות חופפות/מעוותות ב-html2canvas. עם נקודות השבירה המפורשות
+// (\u200B) בין כל שתי מילים, אין יותר צורך בשבירה-כפויה-באמצע-מילה כרשת
+// ביטחון — ומספר/תאריך שלם נשאר תמיד שלם על שורה אחת.
 function descWithNoteHtml(e) {
-  return descWithNote(e).replace(/ /g, '\u00A0\u200B');
+  const desc = e.description || '-';
+  const note = e.note || e.repairNote;
+  const combined = note ? desc + ' - ' + note : desc;
+  return combined.replace(/ /g, '\u00A0\u200B');
 }
 
 // Shared bank/cash balance formula. Takes plain data arrays (already
@@ -2446,7 +2461,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.68'; // תוקנו שני באגים בעמודת "תיאור" בטבלת "פירוט הוצאות" בדוחות PDF: (1) רווחים רגילים בין מילים נבלעו לפעמים ב-html2canvas וגרמו למילים להידבק ("תשלוםשוטף" במקום "תשלום שוטף", "לכלהקומות" במקום "לכל הקומות") — הרווח הבלתי-שובר \u00A0 שכבר תיעדנו כפתרון לבעיה הזו הוסר בטעות מעמודת "תיאור" ב-v2.15.63 כדי לפתור גלישת שורה; עכשיו הוחזר יחד עם \u200B (רווח ברוחב אפס מיד אחריו) שמשמש כנקודת שבירה חלופית — כך שגם הרווח לא נבלע וגם השורה עדיין גולשת כרגיל. (2) עטיפת מספרים בתג <bdi> שנוספה ב-v2.15.65 כדי לתקן חפיפת מספרים גרמה בפועל לבאג חדש וגרוע יותר: סוגריים צמודים למספר (כמו "(2)") קיבלו כיוון-מראה הפוך ב-html2canvas והוצגו במקום הלא נכון (")2 מתוך(" במקום "(מתוך 2)") — הוסרה לגמרי.
+const APP_VERSION = '2.15.69'; // שני תיקונים נוספים בעמודת "תיאור" בטבלת "פירוט הוצאות" בדוחות PDF, אחרי שהתברר שהתיקון הקודם (v2.15.68) לא הספיק: (1) הסוגריים סביב ההערה הוחלפו במקף (" - ") — התברר שהבעיה קיימת גם בלי עטיפת <bdi> שכבר הוסרה בגרסה הקודמת: סוגריים שנפלו על גבול גלישת שורה (בתיאור/הערה ארוכים שגלשו לשתי שורות) יצאו הפוכים ב-html2canvas, בעוד סוגריים בתיאור קצר (שורה אחת) תמיד הציגו נכון — נראה שה-mirroring הכיווני של html2canvas מחושב רק לפי שורה ויזואלית בודדת ולא לפי הפסקה השלמה. אותה טכניקה שכבר עבדה ל"פירוט גבייה" (הימנעות מוחלטת מסוגריים) הוחלה גם כאן. (2) הוסרו word-wrap/overflow-wrap:break-word מה-CSS של תאי td בשלושת הדוחות — התברר שהם גרמו לדפדפן לשבור מספרים/תאריכים (כמו "26.5.26") באמצע המספר עצמו כשהשורה לא הספיקה, מה שגרם לספרות חופפות/מעוותות; עם נקודות השבירה המפורשות (\u200B) שכבר בין כל שתי מילים אין יותר צורך בשבירה-כפויה-באמצע-מילה, ומספר/תאריך שלם נשאר תמיד שלם.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -8193,7 +8208,7 @@ async function createPDFReport(year) {
         h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; word-spacing: normal; letter-spacing: normal; }
         table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
         th { background: #1A56DB; color: white; padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
-        td { padding: 8px; border: 1px solid #ddd; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
+        td { padding: 8px; border: 1px solid #ddd; vertical-align: top; }
         tr { page-break-inside: avoid; break-inside: avoid; }
         .summary { margin-top: 30px; font-size: 16px; }
         .summary-line { margin: 10px 0; page-break-inside: avoid; break-inside: avoid; }
@@ -8517,7 +8532,7 @@ async function createMonthlyPDFReport(ym) {
       h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; }
       table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
       th { background: #1A56DB; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
-      td { padding: 8px; border: 1px solid #ddd; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
+      td { padding: 8px; border: 1px solid #ddd; vertical-align: top; }
       tr { page-break-inside: avoid; break-inside: avoid; }
       .summary { margin-top: 20px; font-size: 15px; }
       .summary-line { margin: 8px 0; display:flex; direction:rtl; gap:5px; page-break-inside: avoid; break-inside: avoid; }
@@ -8808,7 +8823,7 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
         h2 { text-align: center; color: #666; font-size: 16px; margin-top: 0; margin-bottom: 20px; word-spacing: normal; letter-spacing: normal; }
         table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
         th { background: #1A56DB; color: white; padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
-        td { padding: 8px; border: 1px solid #ddd; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
+        td { padding: 8px; border: 1px solid #ddd; vertical-align: top; }
         tr { page-break-inside: avoid; break-inside: avoid; }
         .summary { margin-top: 30px; font-size: 16px; }
         .summary-line { margin: 10px 0; display:flex; direction:rtl; gap:5px; page-break-inside: avoid; break-inside: avoid; }
