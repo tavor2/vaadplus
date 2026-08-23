@@ -1232,7 +1232,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openYearlyPDFSelector();">📄 הפק PDF שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openMonthlyPDFSelector();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSemiAnnualPDFSelector();">📆 הפק PDF חצי שנתי</button>
-      <button class="btn-primary" onclick="closeAdminFinance();exportExcel();">📊 ייצוא לאקסל שנתי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openExcelYearlySelector();">📊 ייצוא לאקסל שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
@@ -1333,6 +1333,20 @@
     </div>
     <button class="btn-primary" onclick="confirmYearlyPDF()">📄 הפק דוח</button>
     <button class="btn-secondary" onclick="closeModal('modal-yearly-select')">ביטול</button>
+  </div>
+</div>
+
+<!-- Yearly Excel Export — Year Selector Modal -->
+<div class="modal-overlay" id="modal-excel-yearly-select">
+  <div class="modal">
+    <div class="modal-title">📊 ייצוא לאקסל שנתי</div>
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">בחר/י שנה לייצוא</div>
+    <div class="form-group">
+      <label class="form-label">שנה</label>
+      <select class="form-select" id="xl-year"></select>
+    </div>
+    <button class="btn-primary" onclick="confirmExportExcel()">📊 ייצא</button>
+    <button class="btn-secondary" onclick="closeModal('modal-excel-yearly-select')">ביטול</button>
   </div>
 </div>
 
@@ -2464,7 +2478,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.70'; // המקף במקום סוגריים בעמודת "תיאור" (v2.15.69) עבד, אבל מילים עדיין נדבקו זו לזו ("חדפעמי", "תלתפאזי") למרות הרווח הבלתי-שובר+ברוחב-אפס — התברר שהבאג של html2canvas הוא במדידת רוחב תו-רווח בעברית, ולא משנה איזה תו-רווח (רגיל/\u00A0/\u200B) — הבעיה במדידת הגליף עצמו, לא בבחירת התו. descWithNoteHtml() שוכתבה: כל מילה עוטפת עכשיו ב-<span> נפרד, בתוך מכל flex (direction:rtl) עם gap מפורש — המרחק בין מילים נקבע ע"י תכונת CSS box-model (gap), לא ע"י מדידת רוחב גליף רווח של html2canvas, כך שהבאג לא רלוונטי יותר. flex-wrap:wrap עדיין מאפשר גלישת שורה תקינה.
+const APP_VERSION = '2.15.71'; // (1) תוקן באג אמיתי ב-exportExcel(): totalBankCollectedYear/totalCashCollectedYear השתמשו ב-specialBankCollectedYear/specialCashCollectedYear לפני שהם הוגדרו בפועל (ReferenceError: "Cannot access 'specialBankCollectedYear' before initialization") — הבלוק שמביא ומחשב את specialPayments הועבר להופיע לפני חישוב הסכומים הכוללים, לא אחריו. (2) כפתור "📊 ייצוא לאקסל שנתי" פותח כעת מודל בחירת שנה מפורש (modal-excel-yearly-select, טווח 5 שנים אחורה) לפני הייצוא, במקום לייצא תמיד את השנה הנוכחית בלבד — אותו דפוס בדיוק כמו שלושת דוחות ה-PDF.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -7565,7 +7579,27 @@ window.deleteForecastExpense = async (id) => {
 };
 
 // ===== EXPORT EXCEL =====
-window.exportExcel = async () => {
+// פותח את מודל בחירת השנה לייצוא אקסל — עד לשינוי הזה השנה נקבעה אוטומטית
+// לשנה הנוכחית בלבד (new Date().getFullYear()), בלי אפשרות לייצא שנה
+// אחרת. אותו דפוס בדיוק כמו openYearlyPDFSelector() לדוח ה-PDF השנתי —
+// טווח של 5 שנים אחורה מהשנה הנוכחית.
+window.openExcelYearlySelector = () => {
+  const nowYear = new Date().getFullYear();
+  const sel = document.getElementById('xl-year');
+  const years = [];
+  for (let y = nowYear; y >= nowYear - 5; y--) years.push(y);
+  sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  sel.value = nowYear;
+  openModal('modal-excel-yearly-select');
+};
+
+window.confirmExportExcel = async () => {
+  const year = parseInt(document.getElementById('xl-year').value, 10);
+  closeModal('modal-excel-yearly-select');
+  await exportExcel(year);
+};
+
+window.exportExcel = async (year) => {
   try {
     showToast('📊 מכין קובץ אקסל...');
 
@@ -7576,7 +7610,10 @@ window.exportExcel = async () => {
       await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
     }
 
-    const year = new Date().getFullYear();
+    // year מגיע כעת כפרמטר מפורש מהמודל modal-excel-yearly-select
+    // (openExcelYearlySelector/confirmExportExcel) — נשאר עם fallback
+    // לשנה הנוכחית למקרה של קריאה ישנה/ישירה בלי פרמטר.
+    year = year || new Date().getFullYear();
     const months = HEBREW_MONTHS;
 
     // טען נתונים
@@ -7616,6 +7653,30 @@ window.exportExcel = async () => {
       const m = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
       exceptionalByMonth[m] = (exceptionalByMonth[m]||0) + (p.amount||0);
     });
+
+    // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month' כמו
+    // לתשלומים הרגילים (הם נרשמים חד-פעמית לפי paidAt, לא לפי חודש-כיסוי),
+    // ולכן שולפים את כל האוסף (בדרך כלל קטן) ומסננים/מקבצים לפי paidAt
+    // בצד הלקוח, במקום שאילתת Firestore לפי טווח כמו שאר האוספים. הועבר
+    // לכאן (לפני totalBankCollectedYear/totalCashCollectedYear למטה, שכבר
+    // צריכים את specialBankCollectedYear/specialCashCollectedYear) כדי
+    // למנוע ReferenceError של "Cannot access before initialization" —
+    // בעבר הבלוק הזה הופיע רק אחרי חישוב הסכומים הכוללים שכבר משתמשים בו.
+    const allSpecialPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'specialPayments'));
+    const allSpecialPaymentsData = allSpecialPaySnap.docs.map(d => d.data());
+    const yearSpecialPayments = allSpecialPaymentsData.filter(p => {
+      const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+      return d && d.getFullYear() === year;
+    });
+    const specialPaymentsYearXl = yearSpecialPayments;
+    const { cash: specialCashCollectedYear, bank: specialBankCollectedYear, total: specialCollectedYear } = splitCashBank(specialPaymentsYearXl);
+    const specialByMonth = {};
+    yearSpecialPayments.forEach(p => {
+      const d = p.paidAt.toDate();
+      const m = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+      specialByMonth[m] = (specialByMonth[m]||0) + (p.amount||0);
+    });
+
     // פילוח בנק/מזומן עבור "ועד בית שוטף" — מאותה קבוצת תשלומים מדוללת
     // (paymentMap) שממנה נבנה totalCollected, כמו בדוחות ה-PDF. totalCollected
     // (=grandTotal, מחושב למעלה דרך לולאת חודש-חודש עם where('month',...))
@@ -7635,25 +7696,6 @@ window.exportExcel = async () => {
       orderBy('date','asc')
     ));
     const expenses = expSnap.docs.map(d=>({id:d.id,...d.data()}));
-
-    // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month' כמו
-    // לתשלומים הרגילים (הם נרשמים חד-פעמית לפי paidAt, לא לפי חודש-כיסוי),
-    // ולכן שולפים את כל האוסף (בדרך כלל קטן) ומסננים/מקבצים לפי paidAt
-    // בצד הלקוח, במקום שאילתת Firestore לפי טווח כמו שאר האוספים.
-    const allSpecialPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'specialPayments'));
-    const allSpecialPaymentsData = allSpecialPaySnap.docs.map(d => d.data());
-    const yearSpecialPayments = allSpecialPaymentsData.filter(p => {
-      const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
-      return d && d.getFullYear() === year;
-    });
-    const specialPaymentsYearXl = yearSpecialPayments;
-    const { cash: specialCashCollectedYear, bank: specialBankCollectedYear, total: specialCollectedYear } = splitCashBank(specialPaymentsYearXl);
-    const specialByMonth = {};
-    yearSpecialPayments.forEach(p => {
-      const d = p.paidAt.toDate();
-      const m = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-      specialByMonth[m] = (specialByMonth[m]||0) + (p.amount||0);
-    });
 
     const wb = XLSX.utils.book_new();
 
