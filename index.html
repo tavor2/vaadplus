@@ -1208,6 +1208,10 @@
       </div>
       <div id="exp-receipt-note" style="font-size:13px;font-weight:600;color:var(--blue);margin-top:4px;"></div>
       <div id="exp-receipt-disabled-note" style="display:none;font-size:12px;color:var(--gray-500);margin-top:4px;line-height:1.6;">קטגוריה זו הוגדרה על ידי מנהל המערכת כלא-דורשת קבלה (הוצאה שוטפת שמופיעה בדף הבנק).</div>
+      <div id="exp-receipt-premium-note" style="display:none;font-size:12px;color:var(--orange);margin-top:4px;line-height:1.6;background:var(--orange-light);border-radius:10px;padding:10px 12px;">
+        🔒 צירוף תמונת קבלה הוא פיצ'ר פרימיום. תקופת הניסיון החינמית של הבניין הסתיימה.
+        <button type="button" class="btn-icon" style="margin-top:6px;width:100%;" onclick="openPremiumModal()">👑 שדרג עכשיו</button>
+      </div>
     </div>
     <button class="btn-primary" onclick="saveExpense()">שמור הוצאה</button>
     <button class="btn-secondary" onclick="closeModal('modal-expense')">ביטול</button>
@@ -2478,7 +2482,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.71'; // (1) תוקן באג אמיתי ב-exportExcel(): totalBankCollectedYear/totalCashCollectedYear השתמשו ב-specialBankCollectedYear/specialCashCollectedYear לפני שהם הוגדרו בפועל (ReferenceError: "Cannot access 'specialBankCollectedYear' before initialization") — הבלוק שמביא ומחשב את specialPayments הועבר להופיע לפני חישוב הסכומים הכוללים, לא אחריו. (2) כפתור "📊 ייצוא לאקסל שנתי" פותח כעת מודל בחירת שנה מפורש (modal-excel-yearly-select, טווח 5 שנים אחורה) לפני הייצוא, במקום לייצא תמיד את השנה הנוכחית בלבד — אותו דפוס בדיוק כמו שלושת דוחות ה-PDF.
+const APP_VERSION = '2.15.72'; // צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium): נוסף isFinanceLocked() כתנאי משותף (מחליף את התנאי שהיה משוכפל רק בתוך openAdminFinance) — לבניין שעבר את מכסת הבטא (requiresPayment) בלי מנוי פעיל ובלי ימי ניסיון נותרים, לא ניתן עוד לצרף תמונת קבלה חדשה להוצאה (כפתורי הצילום/גלריה מוסתרים + חסימה כפולה ב-onExpenseReceiptFileSelected/saveExpense + כרטיס הסבר עם כפתור "שדרג עכשיו"). תמונות שכבר צורפו לפני הנעילה נשארות גלויות/ניתנות להסרה כרגיל. לא משפיע על בניינים ללא requiresPayment (כל הבניינים בבטא הנוכחית) — התנהגות זהה לחלוטין להיום.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2568,6 +2572,19 @@ function trialDaysRemaining() {
   const created = buildingData.createdAt.toDate ? buildingData.createdAt.toDate() : new Date(buildingData.createdAt);
   const daysSinceCreation = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
   return Math.max(0, Math.ceil(trialDaysSetting - daysSinceCreation));
+}
+
+// True when this building is past its free allowance (requiresPayment) AND
+// has neither an active paid subscription nor remaining trial days — the
+// single "is this building locked behind the Freemium paywall right now"
+// check, used both by openAdminFinance() (blocks the whole ניהול menu) and
+// by the expense-receipt-photo feature below (blocks just photo uploads,
+// while everything else in ניהול still works). Super Admin always bypasses,
+// same as openAdminFinance(). Extracted from the duplicated condition that
+// used to live only in openAdminFinance() so both gates can never drift out
+// of sync with each other.
+function isFinanceLocked() {
+  return !!(buildingData?.requiresPayment && !hasActiveSubscription() && !isInTrialPeriod() && auth.currentUser?.email !== SUPER_ADMIN_EMAIL);
 }
 
 // ===== GOOGLE PLAY BILLING =====
@@ -4367,7 +4384,7 @@ window.saveCashOpeningBalance = async () => {
 };
 
 window.openAdminFinance = () => {
-  if (buildingData?.requiresPayment && !hasActiveSubscription() && !isInTrialPeriod() && auth.currentUser?.email !== SUPER_ADMIN_EMAIL) {
+  if (isFinanceLocked()) {
     showToast('🔒 תקופת הניסיון הסתיימה — ניהול הבניין דורש רכישת מנוי');
     setTimeout(() => openPremiumModal(), 400);
     return;
@@ -6582,6 +6599,15 @@ window.onExpenseReceiptFileSelected = async (event) => {
   const file = event.target.files[0];
   event.target.value = ''; // allow re-selecting the exact same file again later
   if (!file) return;
+  // הגנה כפולה — כפתורי ההעלאה כבר מוסתרים כש-isFinanceLocked() (ראה
+  // onExpenseCategoryChange), אך input[type=file] מוסתר עדיין נגיש טכנית
+  // (למשל אם המשתמש כבר פתח את בורר הקבצים לפני שהיתרה נחסמה). חוסם כאן
+  // גם כדי שלא ייווצר קובץ יתום ב-Storage מהעלאה שממילא תיחסם ב-saveExpense.
+  if (isFinanceLocked()) {
+    showToast('🔒 צירוף תמונת קבלה הוא פיצ\'ר פרימיום — נדרש מנוי לבניין הזה');
+    setTimeout(() => openPremiumModal(), 400);
+    return;
+  }
   if (!file.type.startsWith('image/')) { showToast('יש לבחור קובץ תמונה בלבד'); return; }
 
   const note = document.getElementById('exp-receipt-note');
@@ -6648,10 +6674,18 @@ window.onExpenseCategoryChange = () => {
   }
 
   const allowed = categoryAllowsReceipt(cat);
+  // שכבת חסימה נפרדת מה-Super-Admin-category-gate: תוכנית ה-Freemium
+  // (isFinanceLocked, ראה שם — אותו תנאי בדיוק שחוסם את כל תפריט "ניהול"
+  // לבניינים מעל המכסה בלי מנוי/ניסיון פעיל). כשהבניין נעול, לא ניתן
+  // לצרף תמונות קבלה חדשות גם אם הקטגוריה עצמה מותרת — אבל תמונה קיימת
+  // מלפני הנעילה נשארת גלויה/ניתנת להסרה (אותו עיקרון בדיוק כמו הטיפול
+  // ב"קטגוריה לא מאושרת" למעלה).
+  const locked = isFinanceLocked();
   const hasExistingPhoto = !!_expReceiptOriginalUrl || !!_expReceiptPendingFile;
   document.getElementById('exp-receipt-section').style.display = (allowed || hasExistingPhoto) ? '' : 'none';
-  document.getElementById('exp-receipt-upload-buttons').style.display = allowed ? '' : 'none';
+  document.getElementById('exp-receipt-upload-buttons').style.display = (allowed && !locked) ? '' : 'none';
   document.getElementById('exp-receipt-disabled-note').style.display = (!allowed && hasExistingPhoto) ? '' : 'none';
+  document.getElementById('exp-receipt-premium-note').style.display = (allowed && locked) ? '' : 'none';
 };
 
 window.openAddExpense = () => {
@@ -6821,6 +6855,14 @@ window.saveExpense = async () => {
   let uploadedUrl = null;
   const removed = document.getElementById('exp-receipt-removed').value === 'true';
   const receiptNote = document.getElementById('exp-receipt-note');
+  // הגנה שלישית ואחרונה (אחרי הסתרת הכפתורים ב-onExpenseCategoryChange
+  // וחסימת הבחירה עצמה ב-onExpenseReceiptFileSelected): אם בכל זאת יש קובץ
+  // ממתין להעלאה בזמן שהבניין נעול (למשל מנוי שפג תוקף בדיוק בין בחירת
+  // התמונה לשמירה), לא מעלים אותו ל-Storage בשקט — מנקים אותו ומודיעים.
+  if (_expReceiptPendingFile && isFinanceLocked()) {
+    _expReceiptPendingFile = null;
+    showToast('🔒 צירוף תמונת קבלה דורש מנוי פרימיום — ההוצאה תישמר בלי התמונה', 6000);
+  }
   if (_expReceiptPendingFile) {
     try {
       receiptNote.style.color = 'var(--blue)';
