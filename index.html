@@ -421,6 +421,7 @@
       ⚙️ הגדרות מערכת
     </button>
     <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.5);font-size:12px;border:1px dashed rgba(255,255,255,0.3);" onclick="runResidentEmailsMigration()">🔧 מיגרציה חד-פעמית: residentEmails</button>
+    <button class="btn-secondary" id="btn-toggle-freemium-lock" style="background:transparent;color:rgba(255,255,255,0.5);font-size:12px;border:1px dashed rgba(255,255,255,0.3);" onclick="toggleTestBuildingFreemiumLock()">🔒 נעילת Freemium (בדיקה): <span id="freemium-lock-status">טוען...</span></button>
     <button class="btn-secondary" style="background:transparent;color:rgba(255,255,255,0.6);border:none;margin-top:8px;" onclick="logout()">התנתק</button>
     <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:16px;">v<span id="app-version"></span></div>
   </div>
@@ -2316,6 +2317,7 @@ onAuthStateChanged(auth, async (user) => {
   if (user.email === SUPER_ADMIN_EMAIL) {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('super-admin-screen').style.display = 'flex';
+    refreshFreemiumLockStatus();
     return;
   }
 
@@ -2482,7 +2484,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.72'; // צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium): נוסף isFinanceLocked() כתנאי משותף (מחליף את התנאי שהיה משוכפל רק בתוך openAdminFinance) — לבניין שעבר את מכסת הבטא (requiresPayment) בלי מנוי פעיל ובלי ימי ניסיון נותרים, לא ניתן עוד לצרף תמונת קבלה חדשה להוצאה (כפתורי הצילום/גלריה מוסתרים + חסימה כפולה ב-onExpenseReceiptFileSelected/saveExpense + כרטיס הסבר עם כפתור "שדרג עכשיו"). תמונות שכבר צורפו לפני הנעילה נשארות גלויות/ניתנות להסרה כרגיל. לא משפיע על בניינים ללא requiresPayment (כל הבניינים בבטא הנוכחית) — התנהגות זהה לחלוטין להיום.
+const APP_VERSION = '2.15.73'; // (1) v2.15.72: צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium) — isFinanceLocked() כתנאי משותף (במקום התנאי שהיה משוכפל רק בתוך openAdminFinance), חוסם צירוף קבלה חדשה לבניין requiresPayment בלי מנוי/ניסיון פעיל, בשלוש שכבות הגנה. (2) v2.15.73: נוסף כפתור בדיקה במסך Super Admin ("🔒 נעילת Freemium (בדיקה)") שמפעיל/מכבה ידנית את requiresPayment (+איפוס premiumUntil) על בניין הבדיקה האישי של ה-Super Admin, בלי צורך לערוך ידנית ב-Firestore Console — ראה toggleTestBuildingFreemiumLock()/refreshFreemiumLockStatus().
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -2687,6 +2689,7 @@ window.showSuperAdminScreen = () => {
   document.getElementById('supervisor-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('super-admin-screen').style.display = 'flex';
+  refreshFreemiumLockStatus();
 };
 
 window.enterAsAdmin = async () => {
@@ -2707,6 +2710,66 @@ window.enterAsAdmin = async () => {
   document.getElementById('app').style.flexDirection = 'column';
   initUI();
   loadAll();
+};
+
+// ===== FREEMIUM LOCK — TESTING TOGGLE (Super Admin screen only) =====
+// כפתור בדיקה שמאפשר להפעיל/לכבות ידנית את מנגנון isFinanceLocked() (ראה
+// שם — אותו תנאי בדיוק שחוסם גם את תפריט "ניהול" וגם את צירוף תמונות קבלה
+// להוצאות) בלי צורך לערוך ידנית ב-Firestore Console, ובלי לחכות שמנגנון
+// Google Play Billing האמיתי יופעל. פועל תמיד על הבניין האישי של ה-Super
+// Admin עצמו ("🏠 מנהל זרחין 10, רעננה" — אותו בניין ש-enterAsAdmin() נכנס
+// אליו, מזוהה לפי adminEmail==SUPER_ADMIN_EMAIL) — לא על בניין כלשהו
+// שנבחר, כדי שהכפתור יהיה תמיד חד-משמעי מה הוא בדיוק מפעיל/מכבה.
+//
+// מפעיל נעילה = כותב requiresPayment:true ומאפס premiumUntil (כדי
+// ש-hasActiveSubscription() יחזיר false מיידית, לא רק כש-Timestamp ישן
+// כלשהו כבר פג). מכבה = requiresPayment:false בלבד. שים לב: isFinanceLocked()
+// גם תלוי ב-isInTrialPeriod()/trialDaysSetting — אם ימי הניסיון הגלובליים
+// (⚙️ הגדרות מערכת → "ימי ניסיון חינם לבניין חדש מעל המכסה") גדולים מ-0
+// ו"תאריך יצירת" הבניין קרוב מדי, ייתכן שהבניין עדיין לא ייחסם בפועל למרות
+// requiresPayment:true — זה תקין (אותה לוגיקה בדיוק חלה על בניין אמיתי
+// מעל המכסה), לא תקלה בכפתור.
+async function findSuperAdminTestBuildingRef() {
+  const q = query(collection(db, 'buildings'), where('adminEmail', '==', SUPER_ADMIN_EMAIL));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  return snap.docs[0];
+}
+
+window.refreshFreemiumLockStatus = async () => {
+  const statusEl = document.getElementById('freemium-lock-status');
+  const btn = document.getElementById('btn-toggle-freemium-lock');
+  if (!statusEl || !btn) return;
+  statusEl.textContent = 'טוען...';
+  try {
+    const bDoc = await findSuperAdminTestBuildingRef();
+    if (!bDoc) {
+      statusEl.textContent = 'אין בניין בדיקה';
+      btn.style.opacity = '0.5';
+      btn.style.pointerEvents = 'none';
+      return;
+    }
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+    const locked = !!bDoc.data().requiresPayment;
+    statusEl.textContent = locked ? '🔴 פעילה (נעול)' : '🟢 כבויה (פתוח)';
+  } catch(e) {
+    statusEl.textContent = 'שגיאה';
+  }
+};
+
+window.toggleTestBuildingFreemiumLock = async () => {
+  try {
+    const bDoc = await findSuperAdminTestBuildingRef();
+    if (!bDoc) { showToast('לא נמצא בניין בדיקה (אין בניין עם adminEmail = חשבון ה-Super Admin)'); return; }
+    const currentlyLocked = !!bDoc.data().requiresPayment;
+    const newLocked = !currentlyLocked;
+    const updateData = { requiresPayment: newLocked };
+    if (newLocked) updateData.premiumUntil = null; // מבטיח שהנעילה תיכנס לתוקף מיידית, לא תלויה במנוי ישן שעדיין בתוקף
+    await updateDoc(doc(db, 'buildings', bDoc.id), updateData);
+    showToast(newLocked ? '🔒 נעילת Freemium הופעלה על בניין הבדיקה' : '🔓 נעילת Freemium כובתה על בניין הבדיקה');
+    await refreshFreemiumLockStatus();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
 };
 
 window.openSystemSettings = async () => {
