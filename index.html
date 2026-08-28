@@ -1559,10 +1559,6 @@
     <div class="modal-title">✏️ עריכת תשלום</div>
     <input type="hidden" id="ecp-key"/>
     <div id="ecp-context" style="font-size:13px;color:var(--gray-600);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
-    <div class="form-group" id="ecp-month-single-group" style="display:none;">
-      <label class="form-label">חודש *</label>
-      <select class="form-select" id="ecp-month-single"></select>
-    </div>
     <div class="form-group" id="ecp-month-range-group" style="display:none;">
       <label class="form-label">מחודש *</label>
       <select class="form-select" id="ecp-month-from"></select>
@@ -2489,7 +2485,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.75'; // (1) v2.15.72: צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium) — isFinanceLocked() כתנאי משותף (במקום התנאי שהיה משוכפל רק בתוך openAdminFinance), חוסם צירוף קבלה חדשה לבניין requiresPayment בלי מנוי/ניסיון פעיל, בשלוש שכבות הגנה. (2) v2.15.73: נוסף כפתור בדיקה במסך Super Admin ("🔒 נעילת Freemium (בדיקה)") שמפעיל/מכבה ידנית את requiresPayment (+איפוס premiumUntil) על בניין הבדיקה האישי של ה-Super Admin, בלי צורך לערוך ידנית ב-Firestore Console — ראה toggleTestBuildingFreemiumLock()/refreshFreemiumLockStatus(). (3) v2.15.74: נוסף שדה "תאריך העברה בפועל" בטופס "הוסף תשלום ← ועד בית" (מתחת לשדה "חודש") — צעד ראשון בטיפול בבעיית גבייה מראש/באיחור: מאפשר למנהל לתעד את התאריך שבו הכסף באמת התקבל, נפרד מהחודש שהתשלום מיועד לו. אם נבחר תאריך, הוא נשמר כ-paidAt של התשלום במקום זמן השמירה בפועל (serverTimestamp) — ראה savePayment(). (4) v2.15.75: "טעינה חשמלית" בטופס "הוסף תשלום" עברה לתמוך בטווח חודשים ("מחודש"/"עד חודש (כולל)") ובשדה "תאריך העברה בפועל" — אותו מנגנון בדיוק שכבר קיים לגבייה חריגה (isMultiMonth ב-buildPaymentModalForCategory/savePayment). הסכום מתחלק שווה בשווה בין החודשים שנבחרו, ונשמר כמה מסמכי תשלום נפרדים (אחד לכל חודש, כולם עם category:'charging' — לא הופכת ל-'exceptional' ואין לה payerType). שים לב: דוחות/מאזן ממשיכים לשייך תשלומי טעינה לתקופה לפי שדה ה-'month' של כל שורה (לא לפי תאריך ההעברה בפועל, כמו שכבר נהוג עבור "ועד") — טרם טופל בשלב זה.
+const APP_VERSION = '2.15.77'; // (1) v2.15.72: צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium) — isFinanceLocked() כתנאי משותף. (2) v2.15.73: כפתור בדיקה במסך Super Admin ("🔒 נעילת Freemium (בדיקה)") שמפעיל/מכבה ידנית requiresPayment על בניין הבדיקה של ה-Super Admin. (3) v2.15.74: נוסף שדה "תאריך העברה בפועל" בטופס "הוסף תשלום ← ועד בית" — מאפשר לתעד גבייה מראש/באיחור; משמש כ-paidAt אם מולא. (4) v2.15.75: "טעינה חשמלית" בטופס "הוסף תשלום" עברה לתמוך בטווח חודשים ("מחודש"/"עד חודש (כולל)") ובשדה "תאריך העברה בפועל" — כמו גבייה חריגה, נשארת category:'charging' בלי payerType. (5) v2.15.76: מודל "עדכון גבייה חריגה לדייר" ← עריכת תשלום עודכן בהתאם — שדה "חודש" הבודד הוסר, שתי הקטגוריות משתמשות תמיד בטווח "מחודש"/"עד חודש (כולל)". (6) v2.15.77: בטאב "מאזן" ← "פירוט גבייה", כשנבחרת תקופה (מחודש/עד חודש), נוספו 4 שורות מידע "ועד מראש"/"ועד באיחור" (בנק+מזומן כל אחת) — מציגות כסף שהתקבל בפועל (לפי paidAt) בתוך התקופה הנבחרת, אך מיועד לחודש שמחוץ לתקופה (מאוחר ממנה = "מראש", מוקדם ממנה = "באיחור"). תשלום שגם חודש הכיסוי וגם תאריך הקבלה שלו בתוך התקופה ממשיך להיספר כרגיל תחת "ועד שוטף" בלבד, בלי כפילות. השורות מוצגות כמידע נוסף בלבד — לא נכללות ב"סה"כ" של פירוט הגבייה או ב"סה"כ גבייה" הכללי, כדי לא לשנות התנהגות/סכומים קיימים; מוצגות רק כשיש בפועל גבייה כזו בתקופה. ראה renderBalance().
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -6198,7 +6194,7 @@ window.cancelCategoryGroup = async (key) => {
 
 // בונה HTML של <option> לרשימה רחבה של חודשים (yyyy-mm), ברירת מחדל 60
 // חודשים אחורה ו-6 חודשים קדימה מהיום, מהחדש לישן — משמש את מודל עריכת
-// תשלום קטגוריה (ecp-month-single/ecp-month-from/ecp-month-to), שזקוק
+// תשלום קטגוריה (ecp-month-from/ecp-month-to), שזקוק
 // לטווח רחב יותר מ-24 החודשים שאחורה ש-openAddPayment() בונה, כי תשלום
 // ישן שנערך עכשיו עשוי להתייחס לחודש רחוק יותר מהטווח הזה. extraYms
 // (אופציונלי) הם ערכי yyyy-mm נוספים שמובטח שייכללו גם אם הם מחוץ לטווח
@@ -6216,12 +6212,12 @@ function buildWideMonthOptionsHtml(monthsBack = 60, monthsForward = 6, extraYms 
 }
 
 // פותח את טופס עריכת תשלום קטגוריה (טעינה/גבייה חריגה) עבור קבוצה קיימת.
-// ניתן לערוך: סכום כולל, אופן תשלום, הערה — וכעת גם את החודש/טווח החודשים
-// (ecp-month-single לטעינה החשמלית, שהיא תמיד תשלום לחודש בודד; ecp-month-from/
-// ecp-month-to לגבייה חריגה, שיכולה לכסות כמה חודשים) ואת תאריך ההעברה
-// בפועל (ecp-actual-date). לא ניתן לערוך דירה/סוג גבייה (בעלים מול שוכרים),
-// כדי לא לפתוח מחדש את כל שאלות הזכאות/הכפילות שכבר טופלו ב-savePayment()
-// בזמן היצירה. לקבוצה מרובת-חודשים (גבייה חריגה) הסכום מוצג כסכום כולל
+// ניתן לערוך: סכום כולל, אופן תשלום, הערה, טווח החודשים (ecp-month-from/
+// ecp-month-to — משותף כעת לשתי הקטגוריות: מ-v2.15.75 גם טעינה חשמלית
+// תומכת בטווח חודשים, לא רק גבייה חריגה, ראה savePayment) ואת תאריך
+// ההעברה בפועל (ecp-actual-date). לא ניתן לערוך דירה/סוג גבייה (בעלים מול
+// שוכרים), כדי לא לפתוח מחדש את כל שאלות הזכאות/הכפילות שכבר טופלו
+// ב-savePayment() בזמן היצירה. לקבוצה מרובת-חודשים הסכום מוצג כסכום כולל
 // ומחולק מחדש בשמירה — בדיוק כמו ביצירה המקורית.
 window.openEditCategoryGroup = (key) => {
   if (!isAdmin) { showToast('אין הרשאה'); return; }
@@ -6234,17 +6230,11 @@ window.openEditCategoryGroup = (key) => {
     + '<br/>' + catLabel;
 
   const optsHtml = buildWideMonthOptionsHtml(60, 6, g.months);
-  document.getElementById('ecp-month-single-group').style.display = isCharging ? '' : 'none';
-  document.getElementById('ecp-month-range-group').style.display = isCharging ? 'none' : '';
-  if (isCharging) {
-    document.getElementById('ecp-month-single').innerHTML = optsHtml;
-    document.getElementById('ecp-month-single').value = g.months[0];
-  } else {
-    document.getElementById('ecp-month-from').innerHTML = optsHtml;
-    document.getElementById('ecp-month-to').innerHTML = optsHtml;
-    document.getElementById('ecp-month-from').value = g.months[0];
-    document.getElementById('ecp-month-to').value = g.months[g.months.length - 1];
-  }
+  document.getElementById('ecp-month-range-group').style.display = '';
+  document.getElementById('ecp-month-from').innerHTML = optsHtml;
+  document.getElementById('ecp-month-to').innerHTML = optsHtml;
+  document.getElementById('ecp-month-from').value = g.months[0];
+  document.getElementById('ecp-month-to').value = g.months[g.months.length - 1];
 
   document.getElementById('ecp-actual-date').value = g.paidAtMs ? new Date(g.paidAtMs).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
@@ -6269,32 +6259,27 @@ window.saveEditCategoryGroup = async () => {
   if (!actualDateStr) { showToast('חובה לבחור תאריך העברה בפועל'); return; }
 
   const isCharging = g.category === 'charging';
-  let newMonths;
-  if (isCharging) {
-    const m = document.getElementById('ecp-month-single').value;
-    if (!m) { showToast('חובה לבחור חודש'); return; }
-    newMonths = [m];
-  } else {
-    const fromMonth = document.getElementById('ecp-month-from').value;
-    const toMonth = document.getElementById('ecp-month-to').value;
-    if (!fromMonth || !toMonth) { showToast('חובה לבחור טווח חודשים'); return; }
-    newMonths = enumerateMonths(fromMonth, toMonth);
-    if (!newMonths.length) { showToast('טווח החודשים לא תקין'); return; }
-    // אותה הגבלה כמו ביצירת גבייה חריגה חדשה (savePayment) — תאריך ההעברה
-    // בפועל הוא הקובע לאיזו שנה התשלום ייחשב שייך (לצורך דוחות/מאזן),
-    // ולכן לא ניתן לבחור תאריך משנה שקדמה לנוכחית.
-    if (parseInt(actualDateStr.split('-')[0], 10) < new Date().getFullYear()) {
-      showToast('⚠️ תאריך ההעברה בפועל חייב להיות בשנה הנוכחית ואילך — לא ניתן לרשום תאריך משנה קודמת', 5500);
-      return;
-    }
+
+  // טווח החודשים (מחודש/עד חודש) משותף כעת לשתי הקטגוריות — מ-v2.15.75
+  // גם טעינה חשמלית תומכת בכמה חודשים, לא רק גבייה חריגה.
+  const fromMonth = document.getElementById('ecp-month-from').value;
+  const toMonth = document.getElementById('ecp-month-to').value;
+  if (!fromMonth || !toMonth) { showToast('חובה לבחור טווח חודשים'); return; }
+  const newMonths = enumerateMonths(fromMonth, toMonth);
+  if (!newMonths.length) { showToast('טווח החודשים לא תקין'); return; }
+  // אותה הגבלה כמו ביצירת תשלום חדש (savePayment) — תאריך ההעברה בפועל
+  // הוא הקובע לאיזו שנה התשלום ייחשב שייך (לצורך דוחות/מאזן), ולכן לא
+  // ניתן לבחור תאריך משנה שקדמה לנוכחית. חל על שתי הקטגוריות.
+  if (parseInt(actualDateStr.split('-')[0], 10) < new Date().getFullYear()) {
+    showToast('⚠️ תאריך ההעברה בפועל חייב להיות בשנה הנוכחית ואילך — לא ניתן לרשום תאריך משנה קודמת', 5500);
+    return;
   }
 
   const actualDate = Timestamp.fromDate(new Date(actualDateStr));
 
   // חלוקה מחדש בין החודשים באותו אופן שבו savePayment() חילק ביצירה
-  // המקורית — חודש אחרון סופג את שארית העיגול. עבור חודש בודד (כל תשלומי
-  // הטעינה, וגבייה חריגה שכוסתה בחודש אחד בלבד) זה פשוט מציב את הסכום
-  // המלא באותו תשלום יחיד.
+  // המקורית — חודש אחרון סופג את שארית העיגול. עבור חודש בודד זה פשוט
+  // מציב את הסכום המלא באותו תשלום יחיד.
   const n = newMonths.length;
   const perItem = Math.round((amount / n) * 100) / 100;
   const roundedRest = Math.round(perItem * (n - 1) * 100) / 100;
@@ -6312,7 +6297,7 @@ window.saveEditCategoryGroup = async () => {
       const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
       const data = {
         apt: g.apt, name: g.name, amount: itemAmount, month: ym,
-        note: note || (n > 1 ? `גבייה חריגה עבור ${n} חודשים` : null),
+        note: note || (n > 1 ? (isCharging ? `טעינה חשמלית עבור ${n} חודשים` : `גבייה חריגה עבור ${n} חודשים`) : null),
         method, category: g.category, paidAt: actualDate, recordedBy: currentUser.uid
       };
       if (!isCharging) {
@@ -7254,6 +7239,32 @@ function renderBalance() {
     totalDeposits
   } = computeBalanceFigures(periodPayments, periodExpenses, periodDeposits, 0, 0, periodSpecialPayments);
 
+  // ===== גבייה מראש / באיחור עבור "ועד בית שוטף" =====
+  // periodPayments (למעלה) מסנן תשלומי ועד/טעינה לפי שדה 'month' בלבד (החודש
+  // שהתשלום מכסה) — לכן תשלום שהתקבל בפועל (paidAt) בתוך התקופה הנבחרת, אך
+  // מיועד לחודש שנמצא *מחוץ* לתקופה, לא נכלל בכלל ב-periodPayments ולכן גם
+  // לא בשורות "ועד שוטף" למעלה או ב"סה"כ גבייה" הכללי. השורות הבאות
+  // משלימות את התמונה: מציגות בנפרד כסף שפיזית נכנס בתקופה הזו, עבור חודש
+  // מחוץ לתקופה — "מראש" (חודש הכיסוי מאוחר מסוף התקופה) או "באיחור" (חודש
+  // הכיסוי מוקדם מתחילת התקופה). תשלום שגם חודש הכיסוי וגם ה-paidAt שלו
+  // נמצאים בתוך התקופה הנבחרת כבר נספר כרגיל בשורות "ועד שוטף" — לא מוצג
+  // כאן שוב, כדי למנוע כפל ספירה (לכן התנאי דורש שחודש הכיסוי יהיה *מחוץ*
+  // לתקופה, לא רק ש-paidAt בתוכה).
+  const periodFromDateObj = new Date(periodFromDateStr + 'T00:00:00');
+  const periodToDateObj = new Date(periodToDateStr + 'T23:59:59.999');
+  const vaadAllPayments = balPaymentsAll.filter(isVaadPayment);
+  const vaadAdvancePayments = vaadAllPayments.filter(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && d >= periodFromDateObj && d <= periodToDateObj && p.month > periodTo;
+  });
+  const vaadLatePayments = vaadAllPayments.filter(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && d >= periodFromDateObj && d <= periodToDateObj && p.month < periodFrom;
+  });
+  const { cash: vaadAdvanceCashCollected, bank: vaadAdvanceTransferCollected, total: vaadAdvanceCollected } = splitCashBank(vaadAdvancePayments);
+  const { cash: vaadLateCashCollected, bank: vaadLateTransferCollected, total: vaadLateCollected } = splitCashBank(vaadLatePayments);
+
+
   // Group expenses by category — מוגבל לתקופה הנבחרת, עקבי עם שאר הכרטיסים
   const byCat = {};
   periodExpenses.forEach(e => {
@@ -7346,6 +7357,23 @@ function renderBalance() {
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
     + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(ועד שוטף)</span></span><span style="font-weight:700;color:var(--green);">₪'+vaadCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
+    + (vaadAdvanceCollected > 0 || vaadLateCollected > 0 ? (
+      '<div style="background:var(--gray-50);border-radius:8px;padding:8px 10px;margin:6px 0;">'
+      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px;">💡 כסף שהתקבל בפועל בתקופה הנבחרת, אך מיועד לחודש מחוץ לתקופה — לא נכלל ב"ועד שוטף" למעלה ולא בסה"כ גבייה, כדי לא לספור פעמיים כשתיבחר התקופה שהחודש הזה כן שייך אליה.</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;">'
+      + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(ועד מראש)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+vaadAdvanceTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;">'
+      + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(ועד מראש)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+vaadAdvanceCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;">'
+      + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(ועד באיחור)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+vaadLateTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;">'
+      + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(ועד באיחור)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+vaadLateCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+      + '</div>'
+      + '</div>'
+    ) : '')
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
     + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(חריגה - בעלים)</span></span><span style="font-weight:700;color:var(--orange);">₪'+exceptionalOwnerTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
