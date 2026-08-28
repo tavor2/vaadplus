@@ -1024,6 +1024,11 @@
       <label class="form-label" id="p-month-label">חודש *</label>
       <select class="form-select" id="p-month"></select>
     </div>
+    <div class="form-group" id="p-vaad-actual-date-group" style="display:none;">
+      <label class="form-label">תאריך העברה בפועל</label>
+      <input class="form-input" id="p-vaad-actual-date" type="date"/>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:4px;">התאריך שבו הכסף באמת התקבל — יכול להיות שונה מהחודש שנבחר למעלה (למשל גבייה מראש או גבייה שהתקבלה באיחור).</div>
+    </div>
     <div class="form-group" id="p-month-to-group" style="display:none;">
       <label class="form-label">עד חודש (כולל) *</label>
       <select class="form-select" id="p-month-to"></select>
@@ -2484,7 +2489,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.73'; // (1) v2.15.72: צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium) — isFinanceLocked() כתנאי משותף (במקום התנאי שהיה משוכפל רק בתוך openAdminFinance), חוסם צירוף קבלה חדשה לבניין requiresPayment בלי מנוי/ניסיון פעיל, בשלוש שכבות הגנה. (2) v2.15.73: נוסף כפתור בדיקה במסך Super Admin ("🔒 נעילת Freemium (בדיקה)") שמפעיל/מכבה ידנית את requiresPayment (+איפוס premiumUntil) על בניין הבדיקה האישי של ה-Super Admin, בלי צורך לערוך ידנית ב-Firestore Console — ראה toggleTestBuildingFreemiumLock()/refreshFreemiumLockStatus().
+const APP_VERSION = '2.15.75'; // (1) v2.15.72: צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium) — isFinanceLocked() כתנאי משותף (במקום התנאי שהיה משוכפל רק בתוך openAdminFinance), חוסם צירוף קבלה חדשה לבניין requiresPayment בלי מנוי/ניסיון פעיל, בשלוש שכבות הגנה. (2) v2.15.73: נוסף כפתור בדיקה במסך Super Admin ("🔒 נעילת Freemium (בדיקה)") שמפעיל/מכבה ידנית את requiresPayment (+איפוס premiumUntil) על בניין הבדיקה האישי של ה-Super Admin, בלי צורך לערוך ידנית ב-Firestore Console — ראה toggleTestBuildingFreemiumLock()/refreshFreemiumLockStatus(). (3) v2.15.74: נוסף שדה "תאריך העברה בפועל" בטופס "הוסף תשלום ← ועד בית" (מתחת לשדה "חודש") — צעד ראשון בטיפול בבעיית גבייה מראש/באיחור: מאפשר למנהל לתעד את התאריך שבו הכסף באמת התקבל, נפרד מהחודש שהתשלום מיועד לו. אם נבחר תאריך, הוא נשמר כ-paidAt של התשלום במקום זמן השמירה בפועל (serverTimestamp) — ראה savePayment(). (4) v2.15.75: "טעינה חשמלית" בטופס "הוסף תשלום" עברה לתמוך בטווח חודשים ("מחודש"/"עד חודש (כולל)") ובשדה "תאריך העברה בפועל" — אותו מנגנון בדיוק שכבר קיים לגבייה חריגה (isMultiMonth ב-buildPaymentModalForCategory/savePayment). הסכום מתחלק שווה בשווה בין החודשים שנבחרו, ונשמר כמה מסמכי תשלום נפרדים (אחד לכל חודש, כולם עם category:'charging' — לא הופכת ל-'exceptional' ואין לה payerType). שים לב: דוחות/מאזן ממשיכים לשייך תשלומי טעינה לתקופה לפי שדה ה-'month' של כל שורה (לא לפי תאריך ההעברה בפועל, כמו שכבר נהוג עבור "ועד") — טרם טופל בשלב זה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5048,6 +5053,10 @@ function buildPaymentModalForCategory(category) {
   }
 
   const isExceptional = category.startsWith('exceptional');
+  // "טעינה חשמלית" תומכת כעת גם היא בטווח חודשים ("מחודש/עד חודש") ובתאריך
+  // העברה בפועל — בדיוק כמו גבייה חריגה, כדי לאפשר גבייה מראש (למשל תשלום
+  // מרוכז על כמה חודשי טעינה קדימה). "ועד" נשאר תמיד תשלום לחודש בודד.
+  const isMultiMonth = isExceptional || category === 'charging';
   const titleEl = document.getElementById('modal-payment-title');
   const monthLabelEl = document.getElementById('p-month-label');
   const amountLabelEl = document.getElementById('p-amount-label');
@@ -5083,16 +5092,29 @@ function buildPaymentModalForCategory(category) {
     noteEl.style.display = 'none';
   }
 
-  monthLabelEl.textContent = isExceptional ? 'מחודש *' : 'חודש *';
-  amountLabelEl.textContent = isExceptional ? 'סכום כולל להעברה (₪) *' : 'סכום (₪) *';
-  document.getElementById('p-amount-note').textContent = isExceptional ? 'הסכום יחולק שווה בשווה בין החודשים שנבחרו.' : '';
-  monthToGroup.style.display = isExceptional ? '' : 'none';
-  actualDateGroup.style.display = isExceptional ? '' : 'none';
-  if (isExceptional) {
-    // "תאריך העברה בפועל" הוא התאריך הקובע לאיזו שנה תשלום חריג ייחשב
-    // שייך אליה (לצורך דוחות/מאזן) — לכן לא ניתן לבחור תאריך משנה שקדמה
+  monthLabelEl.textContent = isMultiMonth ? 'מחודש *' : 'חודש *';
+  amountLabelEl.textContent = isMultiMonth ? 'סכום כולל להעברה (₪) *' : 'סכום (₪) *';
+  document.getElementById('p-amount-note').textContent = isMultiMonth ? 'הסכום יחולק שווה בשווה בין החודשים שנבחרו.' : '';
+  monthToGroup.style.display = isMultiMonth ? '' : 'none';
+  actualDateGroup.style.display = isMultiMonth ? '' : 'none';
+
+  // "תאריך העברה בפועל" — רלוונטי רק לתשלום ועד רגיל (לא לטעינה חשמלית/
+  // גבייה חריגה, שכבר יש להן שדה תאריך משלהן — p-actual-date, ראה למטה).
+  // מאפשר לתעד גבייה שהתקבלה מראש או באיחור ביחס לחודש שנבחר למעלה. לא
+  // שדה חובה — אם נשאר ריק, ההתנהגות ההיסטורית (serverTimestamp בזמן
+  // השמירה) נשמרת, ראה savePayment().
+  const vaadActualDateGroup = document.getElementById('p-vaad-actual-date-group');
+  vaadActualDateGroup.style.display = category === 'vaad' ? '' : 'none';
+  if (category === 'vaad' && !document.getElementById('p-vaad-actual-date').value) {
+    document.getElementById('p-vaad-actual-date').value = new Date().toISOString().split('T')[0];
+  }
+
+  if (isMultiMonth) {
+    // "תאריך העברה בפועל" הוא התאריך הקובע לאיזו שנה התשלום ייחשב שייך
+    // אליה (לצורך דוחות/מאזן) — לכן לא ניתן לבחור תאריך משנה שקדמה
     // לנוכחית: חוב מ-2025 שמשולם בפועל ב-2026 צריך "להיכנס" ל-2026, לא
-    // ל-2025 (ששם הוא לא באמת נכנס לחשבון הבנק).
+    // ל-2025 (ששם הוא לא באמת נכנס לחשבון הבנק). חל גם על טעינה חשמלית
+    // מרובת חודשים, לא רק על גבייה חריגה.
     const currentYearStart = new Date().getFullYear() + '-01-01';
     document.getElementById('p-actual-date').min = currentYearStart;
     if (!document.getElementById('p-actual-date').value) {
@@ -5154,6 +5176,7 @@ window.openAddPayment = (category) => {
   document.getElementById('p-month-to').value = currentYm;
   document.getElementById('p-note').value = '';
   document.getElementById('p-actual-date').value = '';
+  document.getElementById('p-vaad-actual-date').value = '';
 
   buildPaymentModalForCategory(category);
   openModal('modal-payment');
@@ -5162,6 +5185,11 @@ window.openAddPayment = (category) => {
 window.savePayment = async () => {
   const category = document.getElementById('p-category').value; // 'vaad' | 'charging' | 'exceptional_owner' | 'exceptional_renter'
   const isExceptional = category.startsWith('exceptional');
+  // תואם ל-isMultiMonth ב-buildPaymentModalForCategory — "ועד" נשאר תמיד
+  // תשלום לחודש בודד; "טעינה חשמלית" ו"גבייה חריגה" שתיהן תומכות בטווח
+  // חודשים + תאריך העברה בפועל (p-month-to / p-actual-date, המשותפים
+  // לשתיהן בטופס).
+  const isMultiMonth = isExceptional || category === 'charging';
   const apt = document.getElementById('p-apt').value;
   const fromMonth = document.getElementById('p-month').value;
   const amount = parseFloat(document.getElementById('p-amount').value);
@@ -5180,36 +5208,43 @@ window.savePayment = async () => {
     return;
   }
 
-  if (!isExceptional) {
-    // "ועד" — לא ניתן לרשום פעמיים לאותה דירה/חודש. הבדיקה מול Firestore
+  if (!isMultiMonth) {
+    // "ועד" בלבד — לא ניתן לרשום פעמיים לאותה דירה/חודש. הבדיקה מול Firestore
     // (ולא מול allPayments המקומי) כי המודל נפתח גם ממסכים שלא בהכרח טענו
-    // את החודש הרלוונטי, ורק תשלום מסוג "ועד" חוסם — תשלומי טעינה/גבייה
-    // חריגה לאותה דירה/חודש לא נחשבים כפילות של דמי הועד.
-    if (category === 'vaad') {
-      if (isClosedYearForVaad(fromMonth)) { showToast(CLOSED_YEAR_VAAD_MSG(fromMonth.split('-')[0]), 6500); return; }
-      try {
-        // מסננים רק לפי חודש דרך Firestore, ואת ההתאמה לדירה עצמה עושים
-        // בצד הלקוח עם aptEquals — כי Firestore רגיש לטיפוס בהשוואת שוויון,
-        // ותשלומים ישנים עשויים להיות שמורים עם apt כמספר (מלפני תמיכת
-        // דירות מפוצלות), לא כטקסט כמו apt כאן.
-        const dupSnap = await getDocs(query(
-          collection(db, 'buildings', buildingId, 'payments'),
-          where('month','==', fromMonth)
-        ));
-        const existingVaad = dupSnap.docs.map(d => d.data()).find(p => aptEquals(p.apt, apt) && (p.category || 'vaad') === 'vaad');
-        if (existingVaad) {
-          const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
-          showToast('⚠️ כבר קיים תשלום ועד לדירה ' + apt + ' עבור ' + monthLabel(fromMonth) + ' (נרשם ב-' + dateStr + '). לתיקון סכום יש לבטל קודם את התשלום הקיים דרך היסטוריית הדייר.', 6500);
-          return;
-        }
-      } catch(e) { showToast('שגיאה בבדיקת כפילות: ' + e.message); return; }
-    }
+    // את החודש הרלוונטי.
+    if (isClosedYearForVaad(fromMonth)) { showToast(CLOSED_YEAR_VAAD_MSG(fromMonth.split('-')[0]), 6500); return; }
+    try {
+      // מסננים רק לפי חודש דרך Firestore, ואת ההתאמה לדירה עצמה עושים
+      // בצד הלקוח עם aptEquals — כי Firestore רגיש לטיפוס בהשוואת שוויון,
+      // ותשלומים ישנים עשויים להיות שמורים עם apt כמספר (מלפני תמיכת
+      // דירות מפוצלות), לא כטקסט כמו apt כאן.
+      const dupSnap = await getDocs(query(
+        collection(db, 'buildings', buildingId, 'payments'),
+        where('month','==', fromMonth)
+      ));
+      const existingVaad = dupSnap.docs.map(d => d.data()).find(p => aptEquals(p.apt, apt) && (p.category || 'vaad') === 'vaad');
+      if (existingVaad) {
+        const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
+        showToast('⚠️ כבר קיים תשלום ועד לדירה ' + apt + ' עבור ' + monthLabel(fromMonth) + ' (נרשם ב-' + dateStr + '). לתיקון סכום יש לבטל קודם את התשלום הקיים דרך היסטוריית הדייר.', 6500);
+        return;
+      }
+    } catch(e) { showToast('שגיאה בבדיקת כפילות: ' + e.message); return; }
+
+    // "תאריך העברה בפועל" (p-vaad-actual-date) — אם המנהל בחר תאריך, הוא
+    // נשמר כ-paidAt במקום זמן השמירה בפועל (serverTimestamp). זה מה שמאפשר
+    // לתעד גבייה מראש/באיחור נכון (למשל תשלום שהתקבל בפועל בפברואר עבור
+    // חודש ינואר, או תשלום שהתקבל בדצמבר עבור פברואר הבא). אם השדה נשאר
+    // ריק — נשמרת ההתנהגות ההיסטורית: paidAt = זמן השמירה.
+    let vaadPaidAt = serverTimestamp();
+    const vaadActualDateStr = document.getElementById('p-vaad-actual-date').value;
+    if (vaadActualDateStr) vaadPaidAt = Timestamp.fromDate(new Date(vaadActualDateStr));
+
     try {
       const batch = writeBatch(db);
       const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
       batch.set(paymentRef, {
         apt, name: resident?.name || '', amount, month: fromMonth, note,
-        method, category, paidAt: serverTimestamp(), recordedBy: currentUser.uid
+        method, category, paidAt: vaadPaidAt, recordedBy: currentUser.uid
       });
       const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
       batch.set(logRef, {
@@ -5225,7 +5260,8 @@ window.savePayment = async () => {
     return;
   }
 
-  // Exceptional multi-month transfer (גבייה חריגה — בעלים/שוכרים)
+  // ===== Multi-month transfer — משותף לטעינה חשמלית מרובת חודשים ולגבייה
+  // חריגה (בעלים/שוכרים) =====
   const toMonth = document.getElementById('p-month-to').value;
   const actualDateStr = document.getElementById('p-actual-date').value;
   if (!toMonth || !actualDateStr) { showToast('חובה למלא עד חודש ותאריך העברה בפועל'); return; }
@@ -5239,7 +5275,39 @@ window.savePayment = async () => {
   const perMonth = Math.round((amount / months.length) * 100) / 100;
   const roundedTotal = Math.round(perMonth * (months.length - 1) * 100) / 100;
   const lastMonthAmount = Math.round((amount - roundedTotal) * 100) / 100; // absorb rounding remainder
+  const actualDate = Timestamp.fromDate(new Date(actualDateStr));
 
+  if (category === 'charging') {
+    // טעינה חשמלית מרובת חודשים — נשארת category:'charging' (לא הופכת
+    // ל-'exceptional', ואין לה payerType — זה שדה שרלוונטי רק לגבייה
+    // חריגה). אותו מבנה פיצול סכום/רישום יומן בדיוק כמו בגבייה חריגה למטה.
+    try {
+      const batch = writeBatch(db);
+      months.forEach((ym, i) => {
+        const monthAmount = (i === months.length - 1) ? lastMonthAmount : perMonth;
+        const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+        batch.set(paymentRef, {
+          apt, name: resident?.name || '', amount: monthAmount, month: ym,
+          note: note || `טעינה חשמלית עבור ${months.length} חודשים`,
+          method, category: 'charging', paidAt: actualDate, recordedBy: currentUser.uid, exceptionalTransfer: true
+        });
+      });
+      const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+      batch.set(logRef, {
+        type: 'payment', apt, name: resident?.name || '', amount, action: 'paid', category: 'charging',
+        month: `${fromMonth} עד ${toMonth}`, exceptionalTransfer: true, actualDate: actualDateStr,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
+      showToast(`✅ תשלום טעינה חשמלית נרשם עבור ${months.length} חודשים`);
+      closeModal('modal-payment');
+      loadPayments();
+      logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS', category: 'charging', multiMonth: true });
+    } catch(e) { showToast('שגיאה: ' + e.message); }
+    return;
+  }
+
+  // Exceptional multi-month transfer (גבייה חריגה — בעלים/שוכרים)
   // התיוג נגזר מהבחירה עצמה בסוג התשלום (בעלים/שוכרים) — לא מנחשים לפי
   // סטטוס המגורים הנוכחי של הדירה, כי הרשימה כבר סוננה מראש לפי הבחירה.
   // category הכללי שנשמר ב-Firestore הוא תמיד 'exceptional' (לצורך התאמה
@@ -5257,7 +5325,6 @@ window.savePayment = async () => {
   }
 
   try {
-    const actualDate = Timestamp.fromDate(new Date(actualDateStr));
     const batch = writeBatch(db);
     months.forEach((ym, i) => {
       const monthAmount = (i === months.length - 1) ? lastMonthAmount : perMonth;
