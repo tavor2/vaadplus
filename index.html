@@ -1592,6 +1592,45 @@
   </div>
 </div>
 
+<!-- Resident History Grid — Edit/Cancel a Single Vaad Payment Modal — placed
+     after modal-resident-history in DOM order on purpose: every
+     .modal-overlay shares the same z-index, so with no other stacking
+     context involved, paint order between simultaneously-open overlays
+     follows DOM/source order (later sibling renders on top). openHistEditPayment()
+     is invoked from a button inside modal-resident-history while that modal
+     is still open underneath it, so this modal must come after it in the
+     markup or it would silently open hidden behind it — same bug pattern
+     already documented above for modal-special-new/modal-confirm. -->
+<div class="modal-overlay" id="modal-hist-edit-payment">
+  <div class="modal">
+    <div class="modal-title">✏️ עדכון תשלום</div>
+    <input type="hidden" id="hist-edit-payment-id"/>
+    <input type="hidden" id="hist-edit-ym"/>
+    <div id="hist-edit-context" style="font-size:13px;color:var(--gray-600);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
+    <div class="form-group">
+      <label class="form-label">סכום (₪) *</label>
+      <input class="form-input" id="hist-edit-amount" type="number" step="0.01" min="0"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">תאריך העברה בפועל *</label>
+      <input class="form-input" id="hist-edit-actual-date" type="date"/>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:4px;">התאריך שבו הכסף באמת התקבל — יכול להיות שונה מהחודש שהתשלום מכסה (למשל גבייה מראש או באיחור).</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">אופן תשלום</label>
+      <select class="form-select" id="hist-edit-method">
+        <option value="transfer">💳 העברה בנקאית</option>
+        <option value="standingOrder">🔁 הוראת קבע</option>
+        <option value="cash">💵 מזומן</option>
+        <option value="check">🧾 שיק</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="saveHistEditPayment()">💾 שמור שינויים</button>
+    <button class="btn-icon" style="width:100%;margin-top:8px;color:#d33;border-color:#d33;" onclick="deleteHistEditPayment()">🗑️ בטל תשלום</button>
+    <button class="btn-secondary" onclick="closeModal('modal-hist-edit-payment')">סגור</button>
+  </div>
+</div>
+
 <!-- PDF generation (hidden) -->
 <!-- PDF generation (hidden) — position:fixed at top:0/left:0 (NOT a huge
      negative offset like left:-99999px, which this used to be) with
@@ -2053,6 +2092,16 @@ function monthLabel(ym) {
   return HEBREW_MONTHS[parseInt(m)-1] + ' ' + y;
 }
 
+// Returns the yyyy-mm of a payment's actual collection date (paidAt), or
+// null if paidAt is missing/not yet resolved. Used by renderHistoryGrid()
+// to compare against the cell's covered month (ym) and decide whether to
+// show the advance/late collection indicator dot — see paidYm usage there.
+function paidAtYm(payment) {
+  const d = payment?.paidAt?.toDate ? payment.paidAt.toDate() : null;
+  if (!d) return null;
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+
 // Formats a set of consecutive yyyy-mm months (as produced by the payment
 // reminders debt-streak calculation, which is always gap-free by
 // construction) as "מרץ עד יוני 2026" instead of a comma-separated list.
@@ -2485,7 +2534,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.77'; // (1) v2.15.72: צירוף תמונת קבלה להוצאות הפך לפיצ'ר פרימיום (Freemium) — isFinanceLocked() כתנאי משותף. (2) v2.15.73: כפתור בדיקה במסך Super Admin ("🔒 נעילת Freemium (בדיקה)") שמפעיל/מכבה ידנית requiresPayment על בניין הבדיקה של ה-Super Admin. (3) v2.15.74: נוסף שדה "תאריך העברה בפועל" בטופס "הוסף תשלום ← ועד בית" — מאפשר לתעד גבייה מראש/באיחור; משמש כ-paidAt אם מולא. (4) v2.15.75: "טעינה חשמלית" בטופס "הוסף תשלום" עברה לתמוך בטווח חודשים ("מחודש"/"עד חודש (כולל)") ובשדה "תאריך העברה בפועל" — כמו גבייה חריגה, נשארת category:'charging' בלי payerType. (5) v2.15.76: מודל "עדכון גבייה חריגה לדייר" ← עריכת תשלום עודכן בהתאם — שדה "חודש" הבודד הוסר, שתי הקטגוריות משתמשות תמיד בטווח "מחודש"/"עד חודש (כולל)". (6) v2.15.77: בטאב "מאזן" ← "פירוט גבייה", כשנבחרת תקופה (מחודש/עד חודש), נוספו 4 שורות מידע "ועד מראש"/"ועד באיחור" (בנק+מזומן כל אחת) — מציגות כסף שהתקבל בפועל (לפי paidAt) בתוך התקופה הנבחרת, אך מיועד לחודש שמחוץ לתקופה (מאוחר ממנה = "מראש", מוקדם ממנה = "באיחור"). תשלום שגם חודש הכיסוי וגם תאריך הקבלה שלו בתוך התקופה ממשיך להיספר כרגיל תחת "ועד שוטף" בלבד, בלי כפילות. השורות מוצגות כמידע נוסף בלבד — לא נכללות ב"סה"כ" של פירוט הגבייה או ב"סה"כ גבייה" הכללי, כדי לא לשנות התנהגות/סכומים קיימים; מוצגות רק כשיש בפועל גבייה כזו בתקופה. ראה renderBalance().
+const APP_VERSION = '2.15.79'; // (1) v2.15.76: מודל "עדכון גבייה חריגה לדייר" ← עריכת תשלום עודכן — שדה "חודש" הבודד הוסר, שתי הקטגוריות (טעינה/חריגה) משתמשות תמיד בטווח "מחודש"/"עד חודש (כולל)". (2) v2.15.77: בטאב "מאזן" ← "פירוט גבייה", כשנבחרת תקופה, נוספו 4 שורות מידע "ועד מראש"/"ועד באיחור" (בנק+מזומן) — כסף שהתקבל בפועל (paidAt) בתוך התקופה, עבור חודש מחוץ לתקופה. לא נכללות ב"סה"כ" הקיימים. (3) v2.15.78: מתחת לכרטיס "פירוט גבייה" נוסף כרטיס "פירוט גבייה מראש/באיחור של ועד בית" — שתי טבלאות עם השורות הבודדות (דירה/סכום/אמצעי תשלום/חודש/תאריך גבייה) של vaadAdvancePayments/vaadLatePayments. (4) v2.15.79: ברשת ההיסטוריה של דייר ("ניהול ← סקירה ← לחיצה על דירה") — לחיצה על חודש ששולם (תא ירוק) פותחת כעת מודל עדכון (modal-hist-edit-payment) עם אפשרות לערוך סכום/תאריך העברה בפועל/אמצעי תשלום, וגם כפתור "בטל תשלום" נפרד (החלפה להתנהגות הישנה של אישור-ביטול ישיר בלחיצה) — ראה openHistEditPayment()/saveHistEditPayment()/deleteHistEditPayment(). כמו כן נוסף עיגול קטן בפינת התא הירוק: זהוב אם התשלום שולם בפועל (paidAt) בחודש מוקדם מהחודש שהתא מייצג (גבייה מראש), שחור אם שולם בחודש מאוחר יותר (גבייה באיחור) — ראה paidAtYm().
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -7403,6 +7452,50 @@ function renderBalance() {
     + '</div>'
     + '</div>';
 
+  // פירוט גבייה מראש/באיחור של ועד בית — טבלת השורות עצמן (לא רק הסכומים
+  // המצטברים שכבר מוצגים למעלה בכרטיס "פירוט גבייה") עבור vaadAdvancePayments/
+  // vaadLatePayments שחושבו למעלה. עמודות: דירה, סכום, אמצעי תשלום, חודש
+  // (החודש שהתשלום מכסה — ולא תאריך הגבייה, ר' תיעוד vaadAdvancePayments/
+  // vaadLatePayments למעלה), תאריך גבייה (paidAt בפועל). מוצג רק כשיש בפועל
+  // גבייה כזו בתקופה הנבחרת. ממוין לפי מספר דירה (aptCompare) כדי שיהיה קל
+  // לזהות דיירים שחוזרים על עצמם.
+  function buildAdvanceLateTable(list) {
+    const sorted = [...list].sort((a,b) => aptCompare(a.apt, b.apt));
+    const rows = sorted.map(p => {
+      const dateStr = p.paidAt?.toDate ? p.paidAt.toDate().toLocaleDateString('he-IL') : '-';
+      return '<tr>'
+        + '<td style="border:1px solid #ddd;padding:7px;text-align:center;font-weight:bold;">'+(p.apt ?? '-')+'</td>'
+        + '<td style="border:1px solid #ddd;padding:7px;text-align:center;">₪'+(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})+'</td>'
+        + '<td style="border:1px solid #ddd;padding:7px;text-align:center;">'+(PAYMENT_METHOD_ICONS[p.method]||'')+'</td>'
+        + '<td style="border:1px solid #ddd;padding:7px;text-align:center;">'+(p.month ? monthLabel(p.month) : '-')+'</td>'
+        + '<td style="border:1px solid #ddd;padding:7px;text-align:center;">'+dateStr+'</td>'
+        + '</tr>';
+    }).join('');
+    return '<div style="overflow-x:auto;">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + '<thead><tr style="background-color:var(--blue);color:white;">'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:center;">דירה</th>'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:center;">סכום</th>'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:center;">אמצעי תשלום</th>'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:center;">חודש</th>'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:center;">תאריך גבייה</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  if (vaadAdvancePayments.length || vaadLatePayments.length) {
+    html += '<div class="card" style="margin-bottom:16px;">'
+      + '<div style="font-weight:700;margin-bottom:10px;">פירוט גבייה מראש/באיחור של ועד בית</div>';
+    if (vaadAdvancePayments.length) {
+      html += '<div style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:6px;">🔵 גבייה מראש (' + vaadAdvancePayments.length + ')</div>'
+        + buildAdvanceLateTable(vaadAdvancePayments);
+    }
+    if (vaadLatePayments.length) {
+      html += '<div style="font-size:13px;font-weight:600;color:var(--gray-600);margin:' + (vaadAdvancePayments.length ? '14px' : '0') + ' 0 6px;">🟠 גבייה באיחור (' + vaadLatePayments.length + ')</div>'
+        + buildAdvanceLateTable(vaadLatePayments);
+    }
+    html += '</div>';
+  }
+
   // "יתרת פתיחה לתקופה" — היתרה המצטברת נכון לתחילת periodFrom (לא בהכרח
   // זהה ליתרת הפתיחה הקבועה של הבניין שמוגדרת בניהול כספים; אם periodFrom
   // מוקדם יותר או שווה לתאריך יתרת הפתיחה המקורית, הערכים יהיו זהים —
@@ -9242,9 +9335,19 @@ async function renderHistoryGrid(apt, name, fee) {
     const paid = paidMonths[ym];
     if (paid) {
       const isSelected = _histMultiMode && _histSelected.has(ym);
-      const style = 'background:var(--green-light);border-radius:10px;padding:10px 6px;text-align:center;cursor:'+(isAdmin?'pointer':'default')+';'
+      const style = 'position:relative;background:var(--green-light);border-radius:10px;padding:10px 6px;text-align:center;cursor:'+(isAdmin?'pointer':'default')+';'
         + (isSelected ? 'box-shadow:0 0 0 2.5px var(--blue);' : '');
+      // עיגול קטן בפינה — מסמן גבייה מראש/באיחור ביחס לחודש שהתא הזה מייצג
+      // (ym): משווים בין yyyy-mm של תאריך הגבייה בפועל (paidAt, דרך paidAtYm)
+      // לבין ym עצמו. זהוב = שולם בחודש מוקדם יותר (גבייה מראש). שחור = שולם
+      // בחודש מאוחר יותר (גבייה באיחור). אם אין הבדל (או שאין paidAt כלל,
+      // מצב שכמעט לא קורה בפועל) — לא מוצג עיגול בכלל.
+      const paidYm = paidAtYm(paid);
+      const timingDot = (paidYm && paidYm !== ym)
+        ? '<div title="' + (paidYm < ym ? 'שולם מראש (' + monthLabel(paidYm) + ')' : 'שולם באיחור (' + monthLabel(paidYm) + ')') + '" style="position:absolute;top:6px;right:6px;width:10px;height:10px;border-radius:50%;background:' + (paidYm < ym ? '#D4AF37' : '#000') + ';border:1.5px solid white;"></div>'
+        : '';
       grid += '<div class="hist-cell" data-ym="'+ym+'" data-pid="'+paid.id+'" style="'+style+'">'
+        + timingDot
         + '<div style="font-size:12px;font-weight:700;color:var(--green);">'+monthNames[m]+'</div>'
         + '<div style="font-size:18px;margin:4px 0;">'+(isSelected ? '☑️' : '✅')+'</div>'
         + '<div style="font-size:11px;color:var(--green);">₪'+(paid.amount||fee)+' '+(PAYMENT_METHOD_ICONS[paid.method]||'')+'</div>'
@@ -9312,55 +9415,125 @@ async function renderHistoryGrid(apt, name, fee) {
       }
 
       if (pid) {
-        const ok = await customConfirm('לבטל תשלום ' + ym + '?');
-        if (!ok) return;
-        const paymentRef = doc(db, 'buildings', buildingId, 'payments', pid);
-        const snap = await getDoc(paymentRef);
-        const p = snap.exists() ? snap.data() : {};
+        openHistEditPayment(pid, ym);
+        return;
+      }
+
+      if (isClosedYearForVaad(ym)) { showToast(CLOSED_YEAR_VAAD_MSG(ym.split('-')[0]), 6500); return; }
+      const flightKey = _histApt + '_' + ym;
+      if (_vaadPaymentInFlight.has(flightKey)) return; // כבר בתהליך רישום — מונע לחיצה כפולה/מהירה
+      _vaadPaymentInFlight.add(flightKey);
+      try {
+        const existingVaad = await checkExistingVaadPayment(_histApt, ym);
+        if (existingVaad) {
+          const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
+          showToast('⚠️ כבר קיים תשלום ועד לדירה ' + _histApt + ' עבור ' + monthLabel(ym) + ' (נרשם ב-' + dateStr + ')', 5500);
+          await renderHistoryGrid(_histApt, _histName, _histFee);
+          return;
+        }
+        const histResident = allResidents.find(r => aptEquals(r.apt, _histApt));
+        const histMethod = histResident?.paymentMethod || 'transfer';
         const batch = writeBatch(db);
-        batch.delete(paymentRef);
+        const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
+        batch.set(paymentRef, {
+          apt: _histApt, name: _histName, amount: _histFee,
+          month: ym, method: histMethod, category: 'vaad', paidAt: serverTimestamp(), recordedBy: currentUser.uid
+        });
         const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
         batch.set(logRef, {
-          apt: _histApt, name: _histName, amount: _histFee, month: ym, action: 'cancelled',
+          apt: _histApt, name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid', category: 'vaad',
           at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
         });
         await batch.commit();
-        showToast('תשלום בוטל');
-      } else {
-        if (isClosedYearForVaad(ym)) { showToast(CLOSED_YEAR_VAAD_MSG(ym.split('-')[0]), 6500); return; }
-        const flightKey = _histApt + '_' + ym;
-        if (_vaadPaymentInFlight.has(flightKey)) return; // כבר בתהליך רישום — מונע לחיצה כפולה/מהירה
-        _vaadPaymentInFlight.add(flightKey);
-        try {
-          const existingVaad = await checkExistingVaadPayment(_histApt, ym);
-          if (existingVaad) {
-            const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
-            showToast('⚠️ כבר קיים תשלום ועד לדירה ' + _histApt + ' עבור ' + monthLabel(ym) + ' (נרשם ב-' + dateStr + ')', 5500);
-            await renderHistoryGrid(_histApt, _histName, _histFee);
-            return;
-          }
-          const histResident = allResidents.find(r => aptEquals(r.apt, _histApt));
-          const histMethod = histResident?.paymentMethod || 'transfer';
-          const batch = writeBatch(db);
-          const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
-          batch.set(paymentRef, {
-            apt: _histApt, name: _histName, amount: _histFee,
-            month: ym, method: histMethod, category: 'vaad', paidAt: serverTimestamp(), recordedBy: currentUser.uid
-          });
-          const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
-          batch.set(logRef, {
-            apt: _histApt, name: _histName, amount: _histFee, month: ym, method: histMethod, action: 'paid', category: 'vaad',
-            at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
-          });
-          await batch.commit();
-          showToast('✅ שולם');
-        } finally { _vaadPaymentInFlight.delete(flightKey); }
-      }
+        showToast('✅ שולם');
+      } finally { _vaadPaymentInFlight.delete(flightKey); }
       await renderHistoryGrid(_histApt, _histName, _histFee);
       loadPayments();
     });
   }
 }
+
+// פותח את מודל עדכון תשלום ועד בודד (modal-hist-edit-payment) עבור תא ירוק
+// ("שולם") שנלחץ ברשת ההיסטוריה של הדייר — מחליף את התנהגות הלחיצה הישנה
+// (customConfirm ישיר לביטול תשלום). מאפשר עכשיו גם לעדכן סכום/תאריך
+// העברה בפועל/אמצעי תשלום, לא רק לבטל. נשען על _histPaidMonthsCache (כבר
+// מחושב ב-renderHistoryGrid) כדי לא לבצע קריאת Firestore נוספת.
+window.openHistEditPayment = (pid, ym) => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const p = _histPaidMonthsCache[ym];
+  if (!p || p.id !== pid) { showToast('שגיאה: התשלום לא נמצא, נסה/י לרענן'); return; }
+  document.getElementById('hist-edit-payment-id').value = pid;
+  document.getElementById('hist-edit-ym').value = ym;
+  document.getElementById('hist-edit-context').innerHTML = '<strong>' + (_histName||'') + '</strong> • דירה ' + _histApt + ' • ' + monthLabel(ym);
+  document.getElementById('hist-edit-amount').value = p.amount || _histFee;
+  document.getElementById('hist-edit-actual-date').value = p.paidAt?.toDate ? p.paidAt.toDate().toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+  document.getElementById('hist-edit-method').value = p.method || 'transfer';
+  openModal('modal-hist-edit-payment');
+};
+
+// שומרת עדכון לתשלום ועד קיים (סכום/תאריך העברה בפועל/אמצעי תשלום) —
+// לא נוגעת בשדה 'month' (החודש שהתשלום מכסה נשאר קבוע; אם צריך לשייך
+// תשלום לחודש אחר, יש לבטל ולרשום מחדש). תאריך ההעברה בפועל נשמר כ-paidAt
+// ומשמש להצגת עיגול "גבייה מראש/באיחור" ב-renderHistoryGrid — ראה שם.
+window.saveHistEditPayment = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const pid = document.getElementById('hist-edit-payment-id').value;
+  const ym = document.getElementById('hist-edit-ym').value;
+  const amount = parseFloat(document.getElementById('hist-edit-amount').value);
+  const dateStr = document.getElementById('hist-edit-actual-date').value;
+  const method = document.getElementById('hist-edit-method').value;
+  if (!amount || amount <= 0) { showToast('הכנס סכום תקין'); return; }
+  if (!dateStr) { showToast('חובה לבחור תאריך העברה בפועל'); return; }
+  try {
+    const paymentRef = doc(db, 'buildings', buildingId, 'payments', pid);
+    const snap = await getDoc(paymentRef);
+    const prev = snap.exists() ? snap.data() : {};
+    const paidAt = Timestamp.fromDate(new Date(dateStr));
+    const batch = writeBatch(db);
+    batch.update(paymentRef, { amount, method, paidAt });
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: _histApt, name: _histName, amount, previousAmount: prev.amount || 0, month: ym,
+      method, previousMethod: prev.method || null,
+      action: 'vaad_payment_updated', category: 'vaad',
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    showToast('✅ התשלום עודכן');
+    closeModal('modal-hist-edit-payment');
+    await renderHistoryGrid(_histApt, _histName, _histFee);
+    loadPayments();
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// מבטלת (מוחקת) תשלום ועד בודד — אותה פעולה שהייתה קודם מבוצעת ישירות
+// בלחיצה על התא, כעת נגישה מתוך כפתור "בטל תשלום" בתוך מודל העדכון.
+window.deleteHistEditPayment = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const pid = document.getElementById('hist-edit-payment-id').value;
+  const ym = document.getElementById('hist-edit-ym').value;
+  const ok = await customConfirm('לבטל תשלום ' + monthLabel(ym) + '?');
+  if (!ok) return;
+  try {
+    const paymentRef = doc(db, 'buildings', buildingId, 'payments', pid);
+    const snap = await getDoc(paymentRef);
+    const p = snap.exists() ? snap.data() : {};
+    const batch = writeBatch(db);
+    batch.delete(paymentRef);
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      apt: _histApt, name: _histName, amount: p.amount || _histFee, month: ym, action: 'cancelled',
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    showToast('תשלום בוטל');
+    closeModal('modal-hist-edit-payment');
+    await renderHistoryGrid(_histApt, _histName, _histFee);
+    loadPayments();
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
 
 window.toggleHistMultiMode = () => {
   _histMultiMode = !_histMultiMode;
