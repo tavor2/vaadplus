@@ -2590,7 +2590,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.84'; // *** שינוי מהותי *** — טאב "מאזן": תשלומי "ועד בית שוטף" משויכים כעת לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' (החודש שהתשלום מכסה) — בדיוק כמו "גבייה חריגה" שכבר עבדה כך (ראה paymentsInYmRange). המטרה: יתרת הבנק/מזומן המוצגת תשקף את מה שבאמת יש בבנק, לא את "מה שאמור להיות שם" לפי חודשי כיסוי. תשלום ועד ששולם מראש (מכסה חודש עתידי) ייספר בתקופה שבה הוא באמת הועבר, לא בתקופה שהוא מכסה — ולהפך לתשלום שהתקבל באיחור. "טעינה חשמלית" עדיין לפי 'month' (לא שונה בשלב זה). *** מה לא השתנה בכוונה: *** היסטוריית תשלומי הדיירים (renderHistoryGrid), מסכי סקירה/רשימה (renderPayments), בדיקת כפילות (checkExistingVaadPayment), הדרופדאון העליון של מסך כספים — כל אלה ממשיכים להסתמך אך ורק על 'month' כרגיל; paymentsInYmRange נקראת אך ורק מ-renderBalance(), כך שההשפעה מוגבלת לטאב "מאזן" בלבד. כתוצאה מכך, שורות/טבלת "גבייה מראש/באיחור" (v2.15.77-78) הפכו למידע בלבד — התשלומים שהן מציגות כבר נכללים כרגיל בסה"כ למעלה, לא נספרים בנפרד (עודכנו הטקסטים בהתאם). דוחות PDF/אקסל טרם שונו (ימשיכו לפי 'month' עד להחלטה נפרדת).
+const APP_VERSION = '2.15.85'; // *** שינוי מהותי, המשך ל-v2.15.84 *** — עכשיו גם דוחות ה-PDF/אקסל (שנתי/חודשי/חצי-שנתי/exportExcel) משייכים "ועד בית שוטף" לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' — עקבי עם טאב "מאזן" (v2.15.84) ועם "גבייה חריגה" שכבר עבדה כך. נוסף fetchAllVaadPayments() (מקביל ל-fetchAllExceptionalPayments) ששולף את כל תשלומי הועד בבניין ומסנן ב-JS (isVaadPayment, כדי לתפוס גם תשלומים ישנים בלי שדה category כלל — שאילתת Firestore לפי category=='vaad' הייתה מפספסת אותם). splitPaymentsForPeriod() עודכן לקבל allVaadPayments כפרמטר רביעי אופציונלי (עם fallback לתאימות לאחור אם לא סופק) ומחליף גם תשלומי ועד, לא רק גבייה חריגה, בגרסה המסוננת-לפי-paidAt בחישובי היתרה המצטברת. *** מה לא השתנה בכוונה: *** טבלת ה-✓/- (כיסוי חודשי לכל דירה, resident×month) בכל שלושת דוחות ה-PDF וגיליון "תשלומים" באקסל ממשיכים להתבסס אך ורק על 'month' כרגיל (paymentMap) — זו שאלת "מי שילם עבור איזה חודש", לא נוגעים בה; רק הסיכומים הפיננסיים (סה"כ גבייה, פילוח בנק/מזומן, יתרות מצטברות) עברו ל-paidAt. "טעינה חשמלית" עדיין לפי 'month' בכל מקום, לא שונתה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5165,20 +5165,46 @@ async function fetchAllExceptionalPayments() {
   return snap.docs.map(d => d.data());
 }
 
+// שולפת את כל תשלומי "ועד בית שוטף" (isVaadPayment) בבניין, על פני כל
+// הזמנים — ללא תלות בשדה 'month' שלהם. דרוש מ-v2.15.85 ואילך, מאותה סיבה
+// בדיוק כמו fetchAllExceptionalPayments() למעלה: דוחות משייכים כעת תשלום
+// ועד לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' — עקבי עם
+// טאב "מאזן" (ראה paymentsInYmRange). בשונה מגבייה חריגה, אי אפשר לסנן
+// כאן לפי where('category','==','vaad') ישירות ב-Firestore — תשלומי ועד
+// ישנים (מלפני שהשדה category נוסף) לא כוללים את השדה כלל, ולכן שאילתה
+// כזו הייתה מפספסת אותם; isVaadPayment() כבר יודע להתייחס אליהם נכון
+// (!p.category נחשב 'vaad'), אך רק בצד הלקוח, לא בתוך שאילתת Firestore.
+// לכן שולפים את כל אוסף התשלומים (כמו openDuplicatePayments/
+// openOrphanPayments) ומסננים ב-JS.
+async function fetchAllVaadPayments() {
+  const snap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
+  return snap.docs.map(d => d.data()).filter(isVaadPayment);
+}
+
 // מרכיבה את קבוצת התשלומים "הנכונה" לתקופה נתונה (עבור חישובי יתרה
-// מצטברת/דוח): תשלומי ועד+טעינה כרגיל לפי 'month' (monthScopedPayments —
-// כבר מסונן מראש ע"י שאילתת Firestore), בתוספת תשלומי "גבייה חריגה" מסוננים
-// לפי paidAt דרך isInPeriod (פונקציה שהקורא מספק, למשל d => d <= endDate).
-// monthScopedPayments עדיין עשוי להכיל תשלומי exceptional ישנים (הגיעו
-// מאותה שאילתת month) — אלה מוסרים במפורש כדי לא לספור אותם פעמיים לצד
-// הגרסה המסוננת-לפי-paidAt.
-function splitPaymentsForPeriod(monthScopedPayments, allExceptionalPayments, isInPeriod) {
-  const nonExceptional = monthScopedPayments.filter(p => p.category !== 'exceptional');
+// מצטברת/דוח): תשלומי טעינה כרגיל לפי 'month' (monthScopedPayments —
+// כבר מסונן מראש ע"י שאילתת Firestore), בתוספת תשלומי "גבייה חריגה"
+// ו"ועד בית שוטף" — שניהם מסוננים לפי paidAt דרך isInPeriod (פונקציה
+// שהקורא מספק, למשל d => d <= endDate), עקבי עם paymentsInYmRange בטאב
+// "מאזן" (מ-v2.15.85 גם ועד עבר לשיוך לפי paidAt, לא רק גבייה חריגה).
+// monthScopedPayments עדיין עשוי להכיל תשלומי exceptional/vaad ישנים
+// (הגיעו מאותה שאילתת month) — אלה מוסרים במפורש כדי לא לספור אותם
+// פעמיים לצד הגרסאות המסוננות-לפי-paidAt. allVaadPayments הוא אופציונלי
+// לתאימות לאחור: אם לא סופק, נופלים בחזרה על הישן (vaad נשאר בתוך
+// monthScopedPayments, לפי 'month') — כדי לא לשבור קריאות ישנות שטרם
+// עודכנו להעביר את הפרמטר החדש.
+function splitPaymentsForPeriod(monthScopedPayments, allExceptionalPayments, isInPeriod, allVaadPayments) {
+  const excludeVaadToo = !!allVaadPayments;
+  const remaining = monthScopedPayments.filter(p => p.category !== 'exceptional' && !(excludeVaadToo && isVaadPayment(p)));
   const exceptionalInPeriod = allExceptionalPayments.filter(p => {
     const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
     return d && isInPeriod(d);
   });
-  return nonExceptional.concat(exceptionalInPeriod);
+  const vaadInPeriod = excludeVaadToo ? allVaadPayments.filter(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && isInPeriod(d);
+  }) : [];
+  return remaining.concat(exceptionalInPeriod).concat(vaadInPeriod);
 }
 
 // מגן בסיסי מפני לחיצה כפולה/מהירה על אותו כפתור "סמן כשולם" לפני שהכתיבה
@@ -8156,6 +8182,21 @@ window.exportExcel = async (year) => {
       exceptionalByMonth[m] = (exceptionalByMonth[m]||0) + (p.amount||0);
     });
 
+    // "ועד בית שוטף" — מ-v2.15.85 משויך לשנה/לחודש (בגיליון "מאזן") לפי
+    // paidAt גם הוא, עקבי עם גבייה חריגה למעלה וטאב "מאזן". נפרד לגמרי
+    // מ-paymentMap (שממשיך להיבנות לפי 'month' — מזין את גיליון "תשלומים").
+    const allVaadPayments = await fetchAllVaadPayments();
+    const yearVaadPaymentsByPaidAt = allVaadPayments.filter(p => {
+      const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+      return d && d.getFullYear() === year;
+    });
+    const vaadByMonth = {};
+    yearVaadPaymentsByPaidAt.forEach(p => {
+      const d = p.paidAt.toDate();
+      const m = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+      vaadByMonth[m] = (vaadByMonth[m]||0) + (p.amount||0);
+    });
+
     // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month' כמו
     // לתשלומים הרגילים (הם נרשמים חד-פעמית לפי paidAt, לא לפי חודש-כיסוי),
     // ולכן שולפים את כל האוסף (בדרך כלל קטן) ומסננים/מקבצים לפי paidAt
@@ -8179,14 +8220,12 @@ window.exportExcel = async (year) => {
       specialByMonth[m] = (specialByMonth[m]||0) + (p.amount||0);
     });
 
-    // פילוח בנק/מזומן עבור "ועד בית שוטף" — מאותה קבוצת תשלומים מדוללת
-    // (paymentMap) שממנה נבנה totalCollected, כמו בדוחות ה-PDF. totalCollected
-    // (=grandTotal, מחושב למעלה דרך לולאת חודש-חודש עם where('month',...))
-    // עלול לפספס "תשלומים יתומים" — תשלום ועד שנרשם לדירה שלאחר מכן נמחקה
-    // או שמספרה שונה — אותה בעיה בדיוק כמו בדוחות ה-PDF (ראה התיעוד
-    // המורחב ב-createPDFReport). totalBankCollectedYear/totalCashCollectedYear
-    // למטה מסתמכים על מסמכי התשלום עצמם ולא על ה-loop, ולכן לא סובלים מזה.
-    const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(Object.values(paymentMap));
+    // פילוח בנק/מזומן עבור "ועד בית שוטף" — מ-v2.15.85 מבוסס על
+    // yearVaadPaymentsByPaidAt (paidAt בתוך השנה, ללא תלות ב'month' שהתשלום
+    // מכסה), עקבי עם טאב "מאזן". שונה במכוון מגיליון "תשלומים" (paymentMap),
+    // שממשיך לענות על "מי שילם עבור איזה חודש" (שאלת כיסוי), לא "כמה כסף
+    // פיזית נכנס השנה" (שאלה פיננסית) — ראה תיעוד מורחב ב-createPDFReport.
+    const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(yearVaadPaymentsByPaidAt);
     const totalBankCollectedYear = vaadBankCollectedYear + exceptionalOwnerBankCollectedYear + exceptionalRenterBankCollectedYear + chargingBankCollectedYear + specialBankCollectedYear;
     const totalCashCollectedYear = vaadCashCollectedYear + exceptionalOwnerCashCollectedYear + exceptionalRenterCashCollectedYear + chargingCashCollectedYear + specialCashCollectedYear;
     const totalCollectedAllYear = totalBankCollectedYear + totalCashCollectedYear;
@@ -8315,12 +8354,14 @@ window.exportExcel = async (year) => {
       const ym = `${year}-${String(m+1).padStart(2,'0')}`;
       // גבייה חודשית כאן = הכל (ועד שוטף + טעינה + גבייה חריגה + גבייה
       // מיוחדת לתיקונים), כדי שההפרש מול ההוצאות ישקף את התזרים האמיתי של
-      // החודש, לא רק את דמי הועד. גבייה חריגה נספרת לפי exceptionalByMonth
-      // (paidAt) ולא לפי yearPayments.filter(month===ym) — כדי שתשלום חריג
-      // ישויך לחודש שבו הוא באמת הועבר, לא לחודשים שהוא מכסה.
+      // החודש, לא רק את דמי הועד. גבייה חריגה וגם ועד שוטף (מ-v2.15.85)
+      // נספרים לפי exceptionalByMonth/vaadByMonth (paidAt) ולא לפי
+      // yearPayments.filter(month===ym) — כדי שתשלום ישויך לחודש שבו הוא
+      // באמת הועבר, לא לחודשים שהוא מכסה. נותר רק טעינה חשמלית מחושבת
+      // מ-yearPayments לפי 'month' (לא שונתה בשלב זה).
       const monthCollected = yearPayments
-        .filter(p => p.month === ym && p.category !== 'exceptional')
-        .reduce((s,p) => s + (p.amount||0), 0) + (specialByMonth[ym] || 0) + (exceptionalByMonth[ym] || 0);
+        .filter(p => p.month === ym && p.category !== 'exceptional' && !isVaadPayment(p))
+        .reduce((s,p) => s + (p.amount||0), 0) + (specialByMonth[ym] || 0) + (exceptionalByMonth[ym] || 0) + (vaadByMonth[ym] || 0);
       const monthExpenses = expByMonth[ym] || 0;
       monthlyRows.push([months[m], monthCollected, monthExpenses, monthCollected - monthExpenses]);
     }
@@ -8650,6 +8691,18 @@ async function createPDFReport(year) {
   const exceptionalRenterPaymentsYear = yearExceptionalPayments.filter(p => p.payerType === 'renter');
   const { cash: exceptionalRenterCashCollectedYear, bank: exceptionalRenterBankCollectedYear, total: exceptionalRenterCollectedYear } = splitCashBank(exceptionalRenterPaymentsYear);
 
+  // "ועד בית שוטף" — מ-v2.15.85 משויך לדוח לפי paidAt (תאריך ההעברה בפועל)
+  // גם הוא, עקבי עם טאב "מאזן" (ראה paymentsInYmRange) ועם גבייה חריגה
+  // למעלה. שים לב: זה נפרד לגמרי מ-paymentMap/totalCollected למעלה, שממשיכים
+  // להיבנות לפי 'month' — אלה מזינים את טבלת ה-✓/- (כיסוי חודשי לכל דירה),
+  // שאלה שונה במהותה מ"כמה כסף פיזית נכנס השנה" (ראה תיעוד מורחב ליד
+  // vaadCashCollectedYear/vaadBankCollectedYear למטה).
+  const allVaadPayments = await fetchAllVaadPayments();
+  const yearVaadPaymentsByPaidAt = allVaadPayments.filter(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && d.getFullYear() === year;
+  });
+
   // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month', לכן
   // שולפים את כל האוסף ומסננים לפי paidAt בצד הלקוח (ראה אותו תיעוד ב-exportExcel).
   const allSpecialPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'specialPayments'));
@@ -8711,20 +8764,16 @@ async function createPDFReport(year) {
     totalCollected += rowTotal;
   });
 
-  // פילוח בנק/מזומן עבור "ועד בית שוטף" — מחושב מאותה קבוצת תשלומים מדוללת
-  // (paymentMap, תשלום אחד לדירה/חודש) שממנה נבנה totalCollected למעלה
-  // (המוצג בעמודת "סה"כ" של כל דירה בטבלה), כדי שהפילוח הזה יסתכם לאותו
-  // סה"כ שמוצג שם. לעומת זאת, "סה"כ גבייה" הכולל בתחתית הדוח (למטה)
-  // מחושב מ-totalBankCollectedYear/totalCashCollectedYear (ולא מ-
-  // totalCollected+chargingCollectedYear+...) כי totalCollected מבוסס על
-  // מעבר על allResidents הנוכחיים בלבד — דייר/דירה שנמחקו או שונו אחרי
-  // שהתשלום נרשם ("תשלום יתום") לא ייספרו שם, בעוד ש-vaadBankCollectedYear/
-  // vaadCashCollectedYear (ושאר הערוצים למטה) מסתמכים על כל מסמכי התשלום
-  // עצמם, ללא תלות ברשימת הדיירים הנוכחית — בדיוק כמו computeBalanceFigures()
-  // בטאב "מאזן". התאמה זו מתקנת חוסר-עקביות שהתגלה בפועל: "סה"כ גבייה"
-  // בדוח היה נמוך מהסכום האמיתי (וממה שמוצג בטאב "מאזן") בדיוק בסכום של
-  // תשלום כזה.
-  const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(Object.values(paymentMap));
+  // פילוח בנק/מזומן עבור "ועד בית שוטף" — מ-v2.15.85 מבוסס על paidAt (מי
+  // מ-yearVaadPaymentsByPaidAt, כל תשלומי הועד שבאמת הועברו/שולמו בשנה
+  // הזו — ללא תלות בחודש שהם מכסים), עקבי עם טאב "מאזן" ועם גבייה חריגה/
+  // מיוחדת למעלה. זה שונה במכוון מ-totalCollected למעלה (המוצג בעמודת
+  // "סה"כ" של כל דירה בטבלה), שממשיך להתבסס על paymentMap (לפי 'month') —
+  // totalCollected עונה על "כמה כל דירה שילמה עבור שנה זו" (שאלת כיסוי),
+  // בעוד vaadBankCollectedYear/vaadCashCollectedYear עונות על "כמה כסף
+  // פיזית נכנס לבנק/לקופה השנה" (שאלה פיננסית) — שתי שאלות שונות שיכולות
+  // להניב סכומים שונים כשיש גבייה מראש/באיחור, בדיוק כמו בטאב "מאזן".
+  const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(yearVaadPaymentsByPaidAt);
   const totalBankCollectedYear = vaadBankCollectedYear + exceptionalOwnerBankCollectedYear + exceptionalRenterBankCollectedYear + chargingBankCollectedYear + specialBankCollectedYear;
   const totalCashCollectedYear = vaadCashCollectedYear + exceptionalOwnerCashCollectedYear + exceptionalRenterCashCollectedYear + chargingCashCollectedYear + specialCashCollectedYear;
   const totalCollectedAllYear = totalBankCollectedYear + totalCashCollectedYear;
@@ -8990,6 +9039,16 @@ async function createMonthlyPDFReport(ym) {
   const exceptionalRenterPaymentsMonth = monthExceptionalPayments.filter(p => p.payerType === 'renter');
   const { cash: exceptionalRenterCashCollectedMonth, bank: exceptionalRenterBankCollectedMonth, total: exceptionalRenterCollectedMonth } = splitCashBank(exceptionalRenterPaymentsMonth);
 
+  // "ועד בית שוטף" — מ-v2.15.85 משויך לחודש הדוח לפי paidAt גם הוא, עקבי
+  // עם טאב "מאזן" וגבייה חריגה למעלה. נפרד לגמרי מ-vaadMonthPayments/
+  // paymentMap למעלה (שממשיכים להיבנות לפי 'month' — מזינים את טבלת "מי
+  // שילם", שאלת כיסוי, לא שאלה פיננסית — ראה תיעוד מורחב למטה).
+  const allVaadPayments = await fetchAllVaadPayments();
+  const monthVaadPaymentsByPaidAt = allVaadPayments.filter(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && d.getFullYear() === ymYear && (d.getMonth()+1) === ymMonthNum;
+  });
+
   const residents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
   let totalCollected = 0, paidCount = 0;
   const residentRows = residents.map(r => {
@@ -9009,14 +9068,13 @@ async function createMonthlyPDFReport(ym) {
     </tr>`;
   }).join('');
 
-  // פילוח בנק/מזומן עבור "ועד בית שוטף" בחודש הנבחר — מבוסס על
-  // vaadMonthPayments (כל תשלומי הועד השוטף החודש, ללא תלות ברשימת
-  // הדיירים הנוכחית) ולא על haltCollected/paymentMap-based totalCollected
-  // למעלה (שמבוסס על מעבר על allResidents ולכן מפספס "תשלומים יתומים"
-  // של דירות שנמחקו/שונו אחרי התשלום) — אותה סיבה בדיוק כמו בדוח השנתי
-  // (createPDFReport), כדי ש"סה"כ גבייה החודש" למטה תמיד יתאים לסכום
-  // האמיתי שמוצג גם בטאב "מאזן".
-  const { cash: cashCollectedMonth, bank: bankCollectedMonth } = splitCashBank(vaadMonthPayments);
+  // פילוח בנק/מזומן עבור "ועד בית שוטף" בחודש הנבחר — מ-v2.15.85 מבוסס על
+  // monthVaadPaymentsByPaidAt (paidAt בתוך החודש, ללא תלות ב'month' שהתשלום
+  // מכסה), עקבי עם טאב "מאזן". שונה במכוון מ-totalCollected למעלה (שממשיך
+  // להתבסס על paymentMap/'month' — עונה על "מי שילם עבור החודש הזה", לא
+  // "כמה כסף פיזית נכנס החודש") — ראה תיעוד מורחב באותה נקודה בדוח השנתי
+  // (createPDFReport).
+  const { cash: cashCollectedMonth, bank: bankCollectedMonth } = splitCashBank(monthVaadPaymentsByPaidAt);
   const totalBankCollectedMonth = bankCollectedMonth + exceptionalOwnerBankCollectedMonth + exceptionalRenterBankCollectedMonth + chargingBankCollectedMonth + specialBankCollectedMonth;
   const totalCashCollectedMonth = cashCollectedMonth + exceptionalOwnerCashCollectedMonth + exceptionalRenterCashCollectedMonth + chargingCashCollectedMonth + specialCashCollectedMonth;
   const totalCollectedAllMonth = totalBankCollectedMonth + totalCashCollectedMonth;
@@ -9058,7 +9116,7 @@ async function createMonthlyPDFReport(ym) {
   // מחליפים את תשלומי ה"גבייה חריגה" שהגיעו מהשאילתה לפי 'month' (למעלה)
   // בגרסה המסוננת לפי paidAt <= סוף החודש הנבחר — כדי שהיתרה המצטברת תשקף
   // מתי הכסף באמת נכנס לחשבון, לא אילו חודשים התשלום מכסה.
-  const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= monthEndDate);
+  const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= monthEndDate, allVaadPayments);
   const { bankBalance, cashBalance, totalDeposits } = computeBalanceFigures(
     cumCombinedPayments,
     cumExpSnap.docs.map(d => d.data()),
@@ -9270,6 +9328,15 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   const exceptionalRenterPaymentsHalf = halfExceptionalPayments.filter(p => p.payerType === 'renter');
   const { cash: exceptionalRenterCashCollectedHalf, bank: exceptionalRenterBankCollectedHalf, total: exceptionalRenterCollectedHalf } = splitCashBank(exceptionalRenterPaymentsHalf);
 
+  // "ועד בית שוטף" — מ-v2.15.85 משויך לתקופה לפי paidAt גם הוא, עקבי עם
+  // טאב "מאזן" וגבייה חריגה למעלה. נפרד לגמרי מ-halfPayments/paymentMap
+  // למעלה (שממשיכים להיבנות לפי 'month' — מזינים את טבלת "מי שילם").
+  const allVaadPayments = await fetchAllVaadPayments();
+  const halfVaadPaymentsByPaidAt = allVaadPayments.filter(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && d >= fromDateObj && d <= toDateEndObj;
+  });
+
   let tableRows = '';
   let totalCollected = 0;
   residents.forEach(r => {
@@ -9291,13 +9358,12 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
     totalCollected += rowTotal;
   });
 
-  // פילוח בנק/מזומן עבור "ועד בית שוטף" — מאותה קבוצת תשלומים מדוללת
-  // (paymentMap) שממנה נבנה totalCollected למעלה, כמו בדוח השנתי. אותה
-  // סיבה בדיוק כמו בדוח השנתי/חודשי (createPDFReport/createMonthlyPDFReport):
-  // totalCollected מבוסס על מעבר על allResidents הנוכחיים בלבד ולכן מפספס
-  // "תשלומים יתומים" של דירות שנמחקו/שונו — totalBankCollectedHalf/
-  // totalCashCollectedHalf למטה מסתמכים במקום זאת על מסמכי התשלום עצמם.
-  const { cash: vaadCashCollectedHalf, bank: vaadBankCollectedHalf } = splitCashBank(Object.values(paymentMap));
+  // פילוח בנק/מזומן עבור "ועד בית שוטף" — מ-v2.15.85 מבוסס על
+  // halfVaadPaymentsByPaidAt (paidAt בתוך התקופה, ללא תלות ב'month' שהתשלום
+  // מכסה), עקבי עם טאב "מאזן". שונה במכוון מ-totalCollected למעלה (שממשיך
+  // להתבסס על paymentMap/'month' — עונה על "מי שילם עבור התקופה הזו", לא
+  // "כמה כסף פיזית נכנס בתקופה") — ראה תיעוד מורחב באותה נקודה בדוח השנתי.
+  const { cash: vaadCashCollectedHalf, bank: vaadBankCollectedHalf } = splitCashBank(halfVaadPaymentsByPaidAt);
   const totalBankCollectedHalf = vaadBankCollectedHalf + exceptionalOwnerBankCollectedHalf + exceptionalRenterBankCollectedHalf + chargingBankCollectedHalf + specialBankCollectedHalf;
   const totalCashCollectedHalf = vaadCashCollectedHalf + exceptionalOwnerCashCollectedHalf + exceptionalRenterCashCollectedHalf + chargingCashCollectedHalf + specialCashCollectedHalf;
   const totalCollectedAllHalf = totalBankCollectedHalf + totalCashCollectedHalf;
@@ -9336,7 +9402,7 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   // מחליפים את תשלומי ה"גבייה חריגה" שהגיעו מהשאילתה לפי 'month' בגרסה
   // המסוננת לפי paidAt < תחילת התקופה — כדי שיתרת הפתיחה תשקף מתי הכסף
   // באמת נכנס לחשבון, לא אילו חודשים התשלום מכסה.
-  const preCombinedPayments = splitPaymentsForPeriod(prePaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d < fromDateObj);
+  const preCombinedPayments = splitPaymentsForPeriod(prePaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d < fromDateObj, allVaadPayments);
   const { bankBalance: bankBalanceStart, cashBalance: cashBalanceStart } = computeBalanceFigures(
     preCombinedPayments,
     preExpSnap.docs.map(d => d.data()),
@@ -9348,7 +9414,7 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   const cumPaySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','<=', toYm)));
   const cumExpSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<=', toDateLastDay)));
   const cumDepSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<=', toDateLastDay)));
-  const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= toDateEndObj);
+  const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= toDateEndObj, allVaadPayments);
   const { bankBalance: bankBalanceEnd, cashBalance: cashBalanceEnd, totalDeposits: totalDepositsEnd } = computeBalanceFigures(
     cumCombinedPayments,
     cumExpSnap.docs.map(d => d.data()),
