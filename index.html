@@ -1234,7 +1234,7 @@
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn-primary" onclick="closeAdminFinance();openAddPayment('vaad');">➕ הוסף תשלום</button>
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 עדכון גבייה חריגה לדייר</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 רשימת גבייה חריגה של דיירים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת לכל הדיירים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
@@ -2590,7 +2590,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.82'; // (1) v2.15.79: ברשת ההיסטוריה של דייר — לחיצה על חודש ששולם פותחת מודל עדכון (סכום/תאריך העברה בפועל/אמצעי תשלום) + כפתור "בטל תשלום" נפרד, וגם עיגול זהוב/שחור בפינת התא הירוק לסימון גבייה מראש/באיחור. (2) v2.15.80: כפתור "✓ סמן כשולם" פותח כעת מודל אישור (modal-mark-paid) לפני רישום התשלום — מאפשר לעדכן סכום, תאריך העברה בפועל ואמצעי תשלום לפני השמירה. (3) v2.15.81: בטאב "מאזן", שינוי שדה "מחודש" בבורר התקופה מסנכרן כעת גם את הדרופדאון העליון של מסך "כספים" (payment-month-select) לאותו חודש (+טעינה מחדש). (4) v2.15.82: נוסף כפתור חדש בניהול כספים — "📊 דוח התפלגות תשלומים" (modal-distribution-report) — דוח על-מסך (לא PDF) עם בחירת טווח מחודש/עד חודש, מציג לכל חודש בנפרד: מספר וסכום תשלומי ועד בית שוטף שהתקבלו בהעברה לבנק, מספר וסכום שהתקבלו במזומן, וסה"כ לחודש; ובתחתית — סיכום כולל: סה"כ הועבר לבנק, סה"כ מזומן, סה"כ גבייה כוללת לכל התקופה. כולל רק תשלומי "ועד בית שוטף" (isVaadPayment) — לא טעינה חשמלית/גבייה חריגה/גבייה מיוחדת, שיש להן דוחות ייעודיים משלהן. "בהעברה" = כל אמצעי תשלום שאינו מזומן (כמו בכל שאר הדוחות/המאזן, splitCashBank). ראה openDistributionReport()/renderDistributionReport().
+const APP_VERSION = '2.15.84'; // *** שינוי מהותי *** — טאב "מאזן": תשלומי "ועד בית שוטף" משויכים כעת לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' (החודש שהתשלום מכסה) — בדיוק כמו "גבייה חריגה" שכבר עבדה כך (ראה paymentsInYmRange). המטרה: יתרת הבנק/מזומן המוצגת תשקף את מה שבאמת יש בבנק, לא את "מה שאמור להיות שם" לפי חודשי כיסוי. תשלום ועד ששולם מראש (מכסה חודש עתידי) ייספר בתקופה שבה הוא באמת הועבר, לא בתקופה שהוא מכסה — ולהפך לתשלום שהתקבל באיחור. "טעינה חשמלית" עדיין לפי 'month' (לא שונה בשלב זה). *** מה לא השתנה בכוונה: *** היסטוריית תשלומי הדיירים (renderHistoryGrid), מסכי סקירה/רשימה (renderPayments), בדיקת כפילות (checkExistingVaadPayment), הדרופדאון העליון של מסך כספים — כל אלה ממשיכים להסתמך אך ורק על 'month' כרגיל; paymentsInYmRange נקראת אך ורק מ-renderBalance(), כך שההשפעה מוגבלת לטאב "מאזן" בלבד. כתוצאה מכך, שורות/טבלת "גבייה מראש/באיחור" (v2.15.77-78) הפכו למידע בלבד — התשלומים שהן מציגות כבר נכללים כרגיל בסה"כ למעלה, לא נספרים בנפרד (עודכנו הטקסטים בהתאם). דוחות PDF/אקסל טרם שונו (ימשיכו לפי 'month' עד להחלטה נפרדת).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -7333,20 +7333,40 @@ function lastDayOfMonthStr(ym) {
 }
 
 // מחזירה את תת-הקבוצה של payments ששייכת לטווח [fromYm, toYm] (כולל בשני
-// הקצוות). תשלומי "ועד"/"טעינה" משויכים לפי שדה 'month' הרגיל שלהם;
-// תשלומי "גבייה חריגה" (category==='exceptional') משויכים לפי paidAt
-// (תאריך ההעברה בפועל) — עקבי עם איך שדוחות ה-PDF כבר משייכים אותם
-// (ראה splitPaymentsForPeriod למעלה). fromYm/toYm יכולים להיות רחבים מאוד
-// (למשל '0000-01') כדי לקבל את "כל מה שלפני"/"כל מה שעד" תאריך מסוים.
+// הקצוות) — לצורך חישובי "מאזן" (יתרת בנק/מזומן, סה"כ גבייה לתקופה).
+//
+// *** שינוי מהותי (ראה תיעוד מפורט למטה): תשלומי "ועד בית" משויכים כעת
+// לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' (החודש שהתשלום מכסה) —
+// בדיוק כמו "גבייה חריגה" שכבר עבדה כך. ***
+//
+// תשלומי "טעינה חשמלית" עדיין משויכים לפי 'month' בלבד — לא שונו בשלב הזה
+// (לא התבקש; אם יתבקש בעתיד, אותו שינוי בדיוק).
+//
+// למה השינוי הזה בוצע: יתרת הבנק/מזומן המוצגת במאזן אמורה לשקף את מה
+// שבאמת יש בחשבון הבנק בפועל, נכון לתאריך מסוים — לא את "מה שאמור להיות
+// שם" לפי אילו חודשים כבר "הגיע זמנם". לפני השינוי, תשלום ועד ששולם
+// מראש (למשל: שולם בפועל בפברואר, אבל מכסה את חודש יולי) לא נכלל בכלל
+// ביתרת הבנק/מזומן שמוצגת עד סוף יוני — למרות שהכסף כבר פיזית נמצא בבנק!
+// ולהפך: תשלום שהתקבל באיחור (למשל: מכסה את ינואר, אבל בפועל שולם רק
+// במרץ) נספר "כאילו" הוא כבר בבנק כבר בינואר-פברואר, לפני שהכסף באמת
+// הגיע — מנפח מלאכותית את היתרה המוצגת ביחס למה שבאמת יש בבנק.
+//
+// *** מה לא השתנה (בכוונה) — היסטוריית תשלומי הדיירים: *** רשת ההיסטוריה
+// של דייר (renderHistoryGrid), מסכי "סקירה"/"רשימה" (renderPayments),
+// בדיקת הכפילות (checkExistingVaadPayment), הדרופדאון העליון של מסך
+// "כספים" (payment-month-select) — כל אלה ממשיכים להסתמך אך ורק על שדה
+// 'month' כרגיל, בלי שום שינוי. פונקציה זו (paymentsInYmRange) נקראת אך
+// ורק מתוך renderBalance() — כך שההשפעה של השינוי מוגבלת לחלוטין לטאב
+// "מאזן" בלבד, ואינה נוגעת כלל בשאלה "האם דירה X שילמה עבור חודש Y".
 function paymentsInYmRange(payments, fromYm, toYm) {
   const fromDateObj = new Date(fromYm + '-01T00:00:00');
   const toDateObj = new Date(lastDayOfMonthStr(toYm) + 'T23:59:59.999');
   return payments.filter(p => {
-    if (p.category === 'exceptional') {
+    if (p.category === 'exceptional' || isVaadPayment(p)) {
       const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
       return d && d >= fromDateObj && d <= toDateObj;
     }
-    return p.month >= fromYm && p.month <= toYm;
+    return p.month >= fromYm && p.month <= toYm; // טעינה חשמלית — עדיין לפי 'month', לא שונה בשלב זה
   });
 }
 
@@ -7478,17 +7498,15 @@ function renderBalance() {
     totalDeposits
   } = computeBalanceFigures(periodPayments, periodExpenses, periodDeposits, 0, 0, periodSpecialPayments);
 
-  // ===== גבייה מראש / באיחור עבור "ועד בית שוטף" =====
-  // periodPayments (למעלה) מסנן תשלומי ועד/טעינה לפי שדה 'month' בלבד (החודש
-  // שהתשלום מכסה) — לכן תשלום שהתקבל בפועל (paidAt) בתוך התקופה הנבחרת, אך
-  // מיועד לחודש שנמצא *מחוץ* לתקופה, לא נכלל בכלל ב-periodPayments ולכן גם
-  // לא בשורות "ועד שוטף" למעלה או ב"סה"כ גבייה" הכללי. השורות הבאות
-  // משלימות את התמונה: מציגות בנפרד כסף שפיזית נכנס בתקופה הזו, עבור חודש
-  // מחוץ לתקופה — "מראש" (חודש הכיסוי מאוחר מסוף התקופה) או "באיחור" (חודש
-  // הכיסוי מוקדם מתחילת התקופה). תשלום שגם חודש הכיסוי וגם ה-paidAt שלו
-  // נמצאים בתוך התקופה הנבחרת כבר נספר כרגיל בשורות "ועד שוטף" — לא מוצג
-  // כאן שוב, כדי למנוע כפל ספירה (לכן התנאי דורש שחודש הכיסוי יהיה *מחוץ*
-  // לתקופה, לא רק ש-paidAt בתוכה).
+  // ===== גבייה מראש / באיחור עבור "ועד בית שוטף" — פירוט בלבד =====
+  // *** עדכון: מ-v2.15.84, periodPayments (למעלה) כבר מסנן תשלומי ועד לפי
+  // paidAt (תאריך ההעברה בפועל בפועל) ולא לפי 'month' — ראה paymentsInYmRange.
+  // המשמעות: תשלום שהתקבל בפועל בתוך התקופה הנבחרת, גם אם הוא מיועד לחודש
+  // שמחוץ לתקופה (גבייה מראש/באיחור), כבר *נכלל* כרגיל בשורות "ועד שוטף"
+  // ו"סה"כ גבייה" למעלה — בדיוק כמו שצריך, כי הכסף באמת נמצא בבנק/בקופה
+  // באותה תקופה. השורות/הטבלה למטה הן כעת מידע נוסף בלבד (לא סכום נפרד
+  // שצריך להוסיף לשום דבר): פירוט של *אילו* מהתשלומים שכבר נספרו למעלה
+  // הם בעצם עבור חודש אחר — לצורך שקיפות/מעקב, לא לצורך חישוב. ***
   const periodFromDateObj = new Date(periodFromDateStr + 'T00:00:00');
   const periodToDateObj = new Date(periodToDateStr + 'T23:59:59.999');
   const vaadAllPayments = balPaymentsAll.filter(isVaadPayment);
@@ -7598,7 +7616,7 @@ function renderBalance() {
     + '</div>'
     + (vaadAdvanceCollected > 0 || vaadLateCollected > 0 ? (
       '<div style="background:var(--gray-50);border-radius:8px;padding:8px 10px;margin:6px 0;">'
-      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px;">💡 כסף שהתקבל בפועל בתקופה הנבחרת, אך מיועד לחודש מחוץ לתקופה — לא נכלל ב"ועד שוטף" למעלה ולא בסה"כ גבייה, כדי לא לספור פעמיים כשתיבחר התקופה שהחודש הזה כן שייך אליה.</div>'
+      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px;">💡 כסף שהתקבל בפועל בתקופה הנבחרת, אך מיועד לחודש מחוץ לתקופה (גבייה מראש/באיחור) — כבר נכלל כרגיל ב"ועד שוטף" וב"סה"כ גבייה" למעלה (כי הכסף באמת נמצא בבנק/בקופה בתקופה זו). השורות כאן הן פירוט בלבד, לא סכום נוסף.</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;">'
       + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(ועד מראש)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+vaadAdvanceTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
       + '</div>'
@@ -7674,7 +7692,8 @@ function renderBalance() {
 
   if (vaadAdvancePayments.length || vaadLatePayments.length) {
     html += '<div class="card" style="margin-bottom:16px;">'
-      + '<div style="font-weight:700;margin-bottom:10px;">פירוט גבייה מראש/באיחור של ועד בית</div>';
+      + '<div style="font-weight:700;margin-bottom:4px;">פירוט גבייה מראש/באיחור של ועד בית</div>'
+      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:10px;">התשלומים האלה כבר נכללים ב"ועד שוטף" וב"סה"כ גבייה" למעלה — הרשימה כאן היא פירוט (מי, כמה, מתי) ולא סכום נוסף.</div>';
     if (vaadAdvancePayments.length) {
       html += '<div style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:6px;">🔵 גבייה מראש (' + vaadAdvancePayments.length + ')</div>'
         + buildAdvanceLateTable(vaadAdvancePayments);
