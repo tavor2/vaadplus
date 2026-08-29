@@ -1243,6 +1243,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openMonthlyPDFSelector();">🗓️ הפק PDF חודשי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSemiAnnualPDFSelector();">📆 הפק PDF חצי שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openExcelYearlySelector();">📊 ייצוא לאקסל שנתי</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openDistributionReport();">📊 דוח התפלגות תשלומים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
@@ -1392,6 +1393,30 @@
     </div>
     <button class="btn-primary" onclick="confirmSemiAnnualPDF()">📄 הפק דוח</button>
     <button class="btn-secondary" onclick="closeModal('modal-semiannual-select')">ביטול</button>
+  </div>
+</div>
+
+<!-- Payment Distribution Report Modal — period selector + inline on-screen
+     report (not a PDF export, unlike the report modals above) -->
+<div class="modal-overlay" id="modal-distribution-report">
+  <div class="modal">
+    <div class="modal-title">📊 דוח התפלגות תשלומים</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
+      פילוח חודשי של תשלומי ועד בית שוטף בלבד (לא כולל טעינה חשמלית, גבייה חריגה או גבייה מיוחדת) — לכל חודש: כמה דיירים שילמו בהעברה לבנק וכמה סכום, וכמה שילמו במזומן וכמה סכום.
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">מחודש</label>
+        <select class="form-select" id="dist-from-month"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">עד חודש (כולל)</label>
+        <select class="form-select" id="dist-to-month"></select>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="renderDistributionReport()">📊 הצג דוח</button>
+    <div id="distribution-report-content" style="margin-top:16px;"></div>
+    <button class="btn-secondary" style="margin-top:12px;" onclick="closeModal('modal-distribution-report')">סגור</button>
   </div>
 </div>
 
@@ -1628,6 +1653,37 @@
     <button class="btn-primary" onclick="saveHistEditPayment()">💾 שמור שינויים</button>
     <button class="btn-icon" style="width:100%;margin-top:8px;color:#d33;border-color:#d33;" onclick="deleteHistEditPayment()">🗑️ בטל תשלום</button>
     <button class="btn-secondary" onclick="closeModal('modal-hist-edit-payment')">סגור</button>
+  </div>
+</div>
+
+<!-- Mark Vaad Payment As Paid — Confirm/Adjust Modal (opened by the "✓ סמן
+     כשולם" button in the payments overview/list — see markPaid()) -->
+<div class="modal-overlay" id="modal-mark-paid">
+  <div class="modal">
+    <div class="modal-title">✓ סימון תשלום ועד</div>
+    <input type="hidden" id="mp-apt"/>
+    <input type="hidden" id="mp-name"/>
+    <div id="mp-context" style="font-size:13px;color:var(--gray-600);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;"></div>
+    <div class="form-group">
+      <label class="form-label">סכום (₪) *</label>
+      <input class="form-input" id="mp-amount" type="number" step="0.01" min="0"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">תאריך העברה בפועל *</label>
+      <input class="form-input" id="mp-actual-date" type="date"/>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:4px;">התאריך שבו הכסף באמת התקבל — יכול להיות שונה מהחודש הנבחר (למשל גבייה מראש או באיחור).</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">אופן תשלום</label>
+      <select class="form-select" id="mp-method">
+        <option value="transfer">💳 העברה בנקאית</option>
+        <option value="standingOrder">🔁 הוראת קבע</option>
+        <option value="cash">💵 מזומן</option>
+        <option value="check">🧾 שיק</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="confirmMarkPaid()">✓ סמן כשולם</button>
+    <button class="btn-secondary" onclick="closeModal('modal-mark-paid')">ביטול</button>
   </div>
 </div>
 
@@ -2534,7 +2590,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.79'; // (1) v2.15.76: מודל "עדכון גבייה חריגה לדייר" ← עריכת תשלום עודכן — שדה "חודש" הבודד הוסר, שתי הקטגוריות (טעינה/חריגה) משתמשות תמיד בטווח "מחודש"/"עד חודש (כולל)". (2) v2.15.77: בטאב "מאזן" ← "פירוט גבייה", כשנבחרת תקופה, נוספו 4 שורות מידע "ועד מראש"/"ועד באיחור" (בנק+מזומן) — כסף שהתקבל בפועל (paidAt) בתוך התקופה, עבור חודש מחוץ לתקופה. לא נכללות ב"סה"כ" הקיימים. (3) v2.15.78: מתחת לכרטיס "פירוט גבייה" נוסף כרטיס "פירוט גבייה מראש/באיחור של ועד בית" — שתי טבלאות עם השורות הבודדות (דירה/סכום/אמצעי תשלום/חודש/תאריך גבייה) של vaadAdvancePayments/vaadLatePayments. (4) v2.15.79: ברשת ההיסטוריה של דייר ("ניהול ← סקירה ← לחיצה על דירה") — לחיצה על חודש ששולם (תא ירוק) פותחת כעת מודל עדכון (modal-hist-edit-payment) עם אפשרות לערוך סכום/תאריך העברה בפועל/אמצעי תשלום, וגם כפתור "בטל תשלום" נפרד (החלפה להתנהגות הישנה של אישור-ביטול ישיר בלחיצה) — ראה openHistEditPayment()/saveHistEditPayment()/deleteHistEditPayment(). כמו כן נוסף עיגול קטן בפינת התא הירוק: זהוב אם התשלום שולם בפועל (paidAt) בחודש מוקדם מהחודש שהתא מייצג (גבייה מראש), שחור אם שולם בחודש מאוחר יותר (גבייה באיחור) — ראה paidAtYm().
+const APP_VERSION = '2.15.82'; // (1) v2.15.79: ברשת ההיסטוריה של דייר — לחיצה על חודש ששולם פותחת מודל עדכון (סכום/תאריך העברה בפועל/אמצעי תשלום) + כפתור "בטל תשלום" נפרד, וגם עיגול זהוב/שחור בפינת התא הירוק לסימון גבייה מראש/באיחור. (2) v2.15.80: כפתור "✓ סמן כשולם" פותח כעת מודל אישור (modal-mark-paid) לפני רישום התשלום — מאפשר לעדכן סכום, תאריך העברה בפועל ואמצעי תשלום לפני השמירה. (3) v2.15.81: בטאב "מאזן", שינוי שדה "מחודש" בבורר התקופה מסנכרן כעת גם את הדרופדאון העליון של מסך "כספים" (payment-month-select) לאותו חודש (+טעינה מחדש). (4) v2.15.82: נוסף כפתור חדש בניהול כספים — "📊 דוח התפלגות תשלומים" (modal-distribution-report) — דוח על-מסך (לא PDF) עם בחירת טווח מחודש/עד חודש, מציג לכל חודש בנפרד: מספר וסכום תשלומי ועד בית שוטף שהתקבלו בהעברה לבנק, מספר וסכום שהתקבלו במזומן, וסה"כ לחודש; ובתחתית — סיכום כולל: סה"כ הועבר לבנק, סה"כ מזומן, סה"כ גבייה כוללת לכל התקופה. כולל רק תשלומי "ועד בית שוטף" (isVaadPayment) — לא טעינה חשמלית/גבייה חריגה/גבייה מיוחדת, שיש להן דוחות ייעודיים משלהן. "בהעברה" = כל אמצעי תשלום שאינו מזומן (כמו בכל שאר הדוחות/המאזן, splitCashBank). ראה openDistributionReport()/renderDistributionReport().
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4403,27 +4459,57 @@ window.setPayView = (view, btn) => {
   if (view === 'forecast') loadForecast();
 };
 
-window.markPaid = async (apt, name, amount) => {
+// פותחת את מודל "סימון תשלום ועד" (modal-mark-paid) במקום לרשום תשלום
+// מיידית בערכי ברירת מחדל — מאפשר למנהל לעדכן סכום/תאריך העברה בפועל/
+// אמצעי תשלום לפני השמירה בפועל (confirmMarkPaid). ערכי ברירת המחדל
+// (סכום=aptFee, תאריך=היום, אמצעי=מוגדר בכרטיס הדייר) זהים לחלוטין
+// להתנהגות הישנה כשהמנהל לא משנה כלום בטופס.
+window.markPaid = (apt, name, amount) => {
   const ym = document.getElementById('payment-month-select').value;
+  if (isClosedYearForVaad(ym)) { showToast(CLOSED_YEAR_VAAD_MSG(ym.split('-')[0]), 6500); return; }
+  const resident = allResidents.find(r => aptEquals(r.apt, apt));
+  document.getElementById('mp-apt').value = apt;
+  document.getElementById('mp-name').value = name;
+  document.getElementById('mp-context').innerHTML = '<strong>' + name + '</strong> • דירה ' + apt + ' • ' + monthLabel(ym);
+  document.getElementById('mp-amount').value = amount;
+  document.getElementById('mp-actual-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('mp-method').value = resident?.paymentMethod || 'transfer';
+  openModal('modal-mark-paid');
+};
+
+// מבצעת בפועל את רישום תשלום הועד, לאחר אישור/עדכון הפרטים במודל
+// modal-mark-paid — זו למעשה ההמשך של markPaid() הישן (אותה בדיקת כפילות,
+// אותו flightKey למניעת לחיצה כפולה, אותו רישום ליומן), רק עם הערכים
+// שנבחרו בפועל בטופס במקום ברירות מחדל קבועות, ועם paidAt לפי התאריך
+// שנבחר (Timestamp.fromDate) במקום תמיד serverTimestamp.
+window.confirmMarkPaid = async () => {
+  const apt = document.getElementById('mp-apt').value;
+  const name = document.getElementById('mp-name').value;
+  const amount = parseFloat(document.getElementById('mp-amount').value);
+  const dateStr = document.getElementById('mp-actual-date').value;
+  const method = document.getElementById('mp-method').value;
+  const ym = document.getElementById('payment-month-select').value;
+  if (!amount || amount <= 0) { showToast('הכנס סכום תקין'); return; }
+  if (!dateStr) { showToast('חובה לבחור תאריך העברה בפועל'); return; }
   if (isClosedYearForVaad(ym)) { showToast(CLOSED_YEAR_VAAD_MSG(ym.split('-')[0]), 6500); return; }
   const flightKey = apt + '_' + ym;
   if (_vaadPaymentInFlight.has(flightKey)) return; // כבר בתהליך רישום — מונע לחיצה כפולה/מהירה
   _vaadPaymentInFlight.add(flightKey);
-  const resident = allResidents.find(r => aptEquals(r.apt, apt));
-  const method = resident?.paymentMethod || 'transfer';
   try {
     const existingVaad = await checkExistingVaadPayment(apt, ym);
     if (existingVaad) {
-      const dateStr = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
-      showToast('⚠️ כבר קיים תשלום ועד לדירה ' + apt + ' עבור ' + monthLabel(ym) + ' (נרשם ב-' + dateStr + ')', 5500);
+      const dateStr2 = existingVaad.paidAt?.toDate ? existingVaad.paidAt.toDate().toLocaleDateString('he-IL') : '-';
+      showToast('⚠️ כבר קיים תשלום ועד לדירה ' + apt + ' עבור ' + monthLabel(ym) + ' (נרשם ב-' + dateStr2 + ')', 5500);
+      closeModal('modal-mark-paid');
       loadPayments();
       return;
     }
+    const paidAt = Timestamp.fromDate(new Date(dateStr));
     const batch = writeBatch(db);
     const paymentRef = doc(collection(db, 'buildings', buildingId, 'payments'));
     batch.set(paymentRef, {
       apt, name, amount, month: ym, method, category: 'vaad',
-      paidAt: serverTimestamp(), recordedBy: currentUser.uid
+      paidAt, recordedBy: currentUser.uid
     });
     const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
     batch.set(logRef, {
@@ -4432,6 +4518,7 @@ window.markPaid = async (apt, name, amount) => {
     });
     await batch.commit();
     showToast(`✅ ${name} - תשלום נרשם`);
+    closeModal('modal-mark-paid');
     loadPayments();
     logAnalyticsEvent('payment_recorded', { method, value: amount, currency: 'ILS' });
   } catch(e) { showToast('שגיאה: ' + e.message); }
@@ -4667,6 +4754,89 @@ window.saveReserveFundPercent = async () => {
     showToast('✅ אחוז קרן הרזרבה נשמר');
     renderForecast();
   } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// ===== PAYMENT DISTRIBUTION REPORT (דוח התפלגות תשלומים) =====
+// דוח פילוח חודשי של תשלומי "ועד בית שוטף" בלבד (isVaadPayment) לפי אמצעי
+// תשלום — לא כולל טעינה חשמלית/גבייה חריגה/גבייה מיוחדת, בכוונה: אלה
+// ערוצי גבייה נפרדים עם מסכים/דוחות ייעודיים משלהם (חריגים וטעינה חשמלית,
+// גבייה מיוחדת). "בהעברה" כולל כל אמצעי תשלום שאינו מזומן (transfer/
+// standingOrder/check) — אותו עיקרון בדיוק כמו splitCashBank() המשמש בכל
+// שאר הדוחות/המאזן באפליקציה, לשמירה על עקביות ("בנק" = לא-מזומן). מוצג
+// כתוכן מסך בתוך המודל עצמו (לא PDF) — לכן openDistributionReport() רק
+// ממלא את בוררי החודשים, ו-renderDistributionReport() (נקראת בלחיצה על
+// "הצג דוח") מבצעת את השאילתה והרינדור בפועל.
+window.openDistributionReport = () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const optsHtml = buildWideMonthOptionsHtml(36, 6);
+  const now = new Date();
+  const currentYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const yearStartYm = now.getFullYear() + '-01';
+  document.getElementById('dist-from-month').innerHTML = optsHtml;
+  document.getElementById('dist-to-month').innerHTML = optsHtml;
+  document.getElementById('dist-from-month').value = yearStartYm;
+  document.getElementById('dist-to-month').value = currentYm;
+  document.getElementById('distribution-report-content').innerHTML = '';
+  openModal('modal-distribution-report');
+};
+
+window.renderDistributionReport = async () => {
+  const fromYm = document.getElementById('dist-from-month').value;
+  const toYm = document.getElementById('dist-to-month').value;
+  const container = document.getElementById('distribution-report-content');
+  if (!fromYm || !toYm) { showToast('יש לבחור טווח חודשים'); return; }
+  if (fromYm > toYm) { showToast('"מחודש" חייב להיות מוקדם מ-"עד חודש" (או שווה לו)'); return; }
+
+  container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'buildings', buildingId, 'payments'),
+      where('month','>=', fromYm),
+      where('month','<=', toYm)
+    ));
+    const vaadPayments = snap.docs.map(d => d.data()).filter(isVaadPayment);
+    const months = enumerateMonths(fromYm, toYm);
+
+    let grandBankCount = 0, grandBankAmount = 0, grandCashCount = 0, grandCashAmount = 0;
+    const rows = months.map(ym => {
+      const monthPayments = vaadPayments.filter(p => p.month === ym);
+      const bankPayments = monthPayments.filter(p => p.method !== 'cash');
+      const cashPayments = monthPayments.filter(p => p.method === 'cash');
+      const bankAmount = bankPayments.reduce((s,p) => s + (p.amount||0), 0);
+      const cashAmount = cashPayments.reduce((s,p) => s + (p.amount||0), 0);
+      grandBankCount += bankPayments.length;
+      grandBankAmount += bankAmount;
+      grandCashCount += cashPayments.length;
+      grandCashAmount += cashAmount;
+      return { ym, bankCount: bankPayments.length, bankAmount, cashCount: cashPayments.length, cashAmount, totalAmount: bankAmount + cashAmount };
+    });
+
+    const tableHtml = '<div style="overflow-x:auto;"><table class="po-table"><thead><tr>'
+      + '<th>חודש</th><th>מס\' בהעברה</th><th>סכום בהעברה</th><th>מס\' במזומן</th><th>סכום מזומן</th><th>סה"כ החודש</th>'
+      + '</tr></thead><tbody>'
+      + rows.map(r => '<tr>'
+          + '<td>' + monthLabel(r.ym) + '</td>'
+          + '<td style="text-align:center;">' + r.bankCount + '</td>'
+          + '<td>' + fmtCurrency(r.bankAmount) + '</td>'
+          + '<td style="text-align:center;">' + r.cashCount + '</td>'
+          + '<td>' + fmtCurrency(r.cashAmount) + '</td>'
+          + '<td style="font-weight:700;">' + fmtCurrency(r.totalAmount) + '</td>'
+          + '</tr>').join('')
+      + '</tbody></table></div>';
+
+    const grandTotal = grandBankAmount + grandCashAmount;
+    const summaryHtml = '<div class="card" style="margin-top:14px;">'
+      + '<div style="font-weight:700;margin-bottom:10px;">סיכום התקופה</div>'
+      + '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-100);"><span>💳 סה"כ הועבר לבנק</span><span style="font-weight:700;color:var(--green);">' + fmtCurrency(grandBankAmount) + ' (' + grandBankCount + ' תשלומים)</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-100);"><span>💵 סה"כ מזומן</span><span style="font-weight:700;color:var(--green);">' + fmtCurrency(grandCashAmount) + ' (' + grandCashCount + ' תשלומים)</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:2px solid var(--gray-200);"><span style="font-weight:700;">💰 סה"כ גבייה כוללת</span><span style="font-weight:800;">' + fmtCurrency(grandTotal) + '</span></div>'
+      + '</div>';
+
+    container.innerHTML = tableHtml + summaryHtml;
+    logAnalyticsEvent('distribution_report_viewed');
+  } catch(e) {
+    container.innerHTML = '<div class="card-empty">שגיאה בהפקת הדוח: ' + e.message + '</div>';
+  }
 };
 
 // ===== DUPLICATE PAYMENTS FINDER =====
@@ -7220,6 +7390,19 @@ function buildBalancePeriodSelectorHtml() {
 // את הוצאות התקופה הנבחרת, לא טווח נפרד משלה. המנהל עדיין יכול לצמצם את
 // טבלת ההוצאות עוד יותר (קטגוריה/סוג/אמצעי תשלום/תאריכים) דרך הפילטר
 // שלה עצמה, בלי לשנות את התקופה הכללית של שאר הכרטיסים במאזן.
+//
+// כשמשנים ספציפית את "מחודש" (field==='from') — מסנכרנים גם את הדרופדאון
+// העליון של מסך "כספים" (payment-month-select, המשותף ללשוניות סקירה/
+// רשימה) לאותו חודש, כדי שאם המנהל יעבור אחר כך ללשונית "סקירה"/"רשימה"
+// יראה את אותו חודש שבדיוק צפה בו במאזן, ולא חודש אחר במקרה. הסנכרון
+// מוגן בבדיקת קיום (some) כי לדרופדאון העליון טווח אפשרויות מצומצם יותר
+// (שנה נוכחית + קודמת בלבד, 24 חודשים) מטווח בורר התקופה של המאזן (3
+// שנים) — אם "מחודש" שנבחר רחוק יותר אחורה, הדרופדאון העליון פשוט לא
+// מתעדכן (אין לו אפשרות מתאימה), אך שאר הסנכרון (balPeriodFilter/
+// balListFilters) ממשיך לעבוד כרגיל. גם קוראים ל-loadPayments() כדי שנתוני
+// allPayments בפועל יתאימו לחודש שמוצג בדרופדאון (לא רק התצוגה החזותית
+// שלו) — אחרת מעבר ללשונית "סקירה" היה מציג חודש בדרופדאון שלא תואם את
+// הנתונים שבפועל נטענו.
 window.setBalPeriod = (field, value) => {
   balPeriodFilter[field] = value;
   if (balPeriodFilter.from > balPeriodFilter.to) {
@@ -7227,6 +7410,13 @@ window.setBalPeriod = (field, value) => {
   }
   balListFilters.from = balPeriodFilter.from + '-01';
   balListFilters.to = lastDayOfMonthStr(balPeriodFilter.to);
+  if (field === 'from') {
+    const topSel = document.getElementById('payment-month-select');
+    if (topSel && [...topSel.options].some(o => o.value === balPeriodFilter.from)) {
+      topSel.value = balPeriodFilter.from;
+      loadPayments();
+    }
+  }
   renderBalance();
 };
 
