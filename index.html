@@ -2710,7 +2710,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.88'; // *** שינוי קטן, המשך ל-v2.15.87 *** — דוח "התפלגות תשלומים" (renderDistributionReport, modal-distribution-report): כותרות עמודות הטבלה שונו לניסוח ברור יותר ופוצלו לשתי שורות (<br/>) כדי לצמצם את רוחב העמודות — "מס' בהעברה"→"מספר דיירים בבנק", "סכום בהעברה"→"סכום העברה לבנק", "מס' במזומן"→"מספר דיירים במזומן", "סכום מזומן"→"סכום גבייה במזומן". שינוי תצוגה בלבד, אין שינוי בלוגיקת החישוב.
+const APP_VERSION = '2.15.90'; // *** שינוי קטן, המשך ל-v2.15.89 *** — רשת היסטוריית תשלומים של דייר (renderHistoryGrid): נוסף עיגול אדום קטן בפינה השמאלית העליונה של תא חודש ששולם ("✅"), מסמן שהסכום ששולם באותו חודש נמוך מדמי הועד המוגדרים כרגע בכרטיס הדייר. באותו סגנון בדיוק כמו עיגול הזהב/שחור הקיים (פינה ימנית עליונה) שמסמן גבייה מראש/באיחור — שני העיגולים יכולים להופיע יחד על אותו תא.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -10117,8 +10117,17 @@ async function renderHistoryGrid(apt, name, fee) {
       const timingDot = (paidYm && paidYm !== ym)
         ? '<div title="' + (paidYm < ym ? 'שולם מראש (' + monthLabel(paidYm) + ')' : 'שולם באיחור (' + monthLabel(paidYm) + ')') + '" style="position:absolute;top:6px;right:6px;width:10px;height:10px;border-radius:50%;background:' + (paidYm < ym ? '#D4AF37' : '#000') + ';border:1.5px solid white;"></div>'
         : '';
+      // עיגול אדום קטן בפינה הנגדית (שמאל למעלה — timingDot כבר תופס את ימין
+      // למעלה, ושתי האזהרות עשויות להתקיים יחד על אותו תא) — מסמן ששולם
+      // סכום נמוך מדמי הועד המוגדרים כרגע בכרטיס הדייר (fee, הפרמטר שכבר
+      // מועבר לפונקציה הזו). paid.amount!=null נבדק במפורש כדי לא לסמן
+      // בטעות תשלומים ישנים בלי שדה amount כלל (הם מוצגים עם fee כברירת
+      // מחדל — ראה שורת הסכום למטה — ואין להם מה להשוות).
+      const underpaidDot = (paid.amount != null && paid.amount < fee - 0.01)
+        ? '<div title="שולם פחות מדמי הועד המוגדרים (₪' + fee + ') — שולם ₪' + paid.amount + '" style="position:absolute;top:6px;left:6px;width:10px;height:10px;border-radius:50%;background:var(--red);border:1.5px solid white;"></div>'
+        : '';
       grid += '<div class="hist-cell" data-ym="'+ym+'" data-pid="'+paid.id+'" style="'+style+'">'
-        + timingDot
+        + timingDot + underpaidDot
         + '<div style="font-size:12px;font-weight:700;color:var(--green);">'+monthNames[m]+'</div>'
         + '<div style="font-size:18px;margin:4px 0;">'+(isSelected ? '☑️' : '✅')+'</div>'
         + '<div style="font-size:11px;color:var(--green);">₪'+(paid.amount||fee)+' '+(PAYMENT_METHOD_ICONS[paid.method]||'')+'</div>'
