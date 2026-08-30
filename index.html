@@ -1302,7 +1302,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openSemiAnnualPDFSelector();">📆 הפק PDF חצי שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openExcelYearlySelector();">📊 ייצוא לאקסל שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openDistributionReport();">📊 דוח התפלגות תשלומים</button>
-      <button class="btn-primary" onclick="closeAdminFinance();openBankLedger();">🏦 תנועות בנק</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openBankLedger();">🏦 מעקב תנועות מול הבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
@@ -2710,7 +2710,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.90'; // *** שינוי קטן, המשך ל-v2.15.89 *** — רשת היסטוריית תשלומים של דייר (renderHistoryGrid): נוסף עיגול אדום קטן בפינה השמאלית העליונה של תא חודש ששולם ("✅"), מסמן שהסכום ששולם באותו חודש נמוך מדמי הועד המוגדרים כרגע בכרטיס הדייר. באותו סגנון בדיוק כמו עיגול הזהב/שחור הקיים (פינה ימנית עליונה) שמסמן גבייה מראש/באיחור — שני העיגולים יכולים להופיע יחד על אותו תא.
+const APP_VERSION = '2.15.91'; // *** שינוי טקסט בלבד, המשך ל-v2.15.90 *** — כפתור "🏦 תנועות בנק" בניהול כספים שונה ל-"🏦 מעקב תנועות מול הבנק". אין שינוי בפונקציונליות (openBankLedger/renderBankLedger).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
