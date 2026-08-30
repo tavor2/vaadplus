@@ -1224,6 +1224,63 @@
   </div>
 </div>
 
+<!-- Other Income (הכנסות נוספות) — List Modal -->
+<div class="modal-overlay" id="modal-other-income-list">
+  <div class="modal">
+    <div class="modal-title">💹 הכנסות נוספות</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
+      כל הכנסה שאינה דמי ועד שוטפים, חוב עבר (גבייה חריגה), או גבייה חד-פעמית לשיפוץ/טעינה חשמלית — למשל השכרת שטחים, פרסום, מכירת חשמל מסולארי, החזרים ופיצויים, מענקים, מכירת ציוד, הכנסות מימוניות ועוד.
+    </div>
+    <button class="btn-primary" onclick="openOtherIncomeEdit()">➕ הוסף הכנסה נוספת</button>
+    <div id="other-income-list-content" style="margin-top:14px;"></div>
+    <button class="btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-other-income-list')">סגור</button>
+  </div>
+</div>
+
+<!-- Other Income — Add/Edit Modal — placed after modal-other-income-list in
+     DOM order on purpose: every .modal-overlay shares the same z-index, so
+     with no other stacking context involved, paint order between
+     simultaneously-open overlays follows DOM/source order (later sibling
+     renders on top). openOtherIncomeEdit() is invoked from a button inside
+     modal-other-income-list while that modal is still open underneath it,
+     so this modal must come after it in the markup or it would silently
+     open hidden behind it — same bug pattern already documented elsewhere
+     in this file for modal-special-new/modal-confirm. -->
+<div class="modal-overlay" id="modal-other-income-edit">
+  <div class="modal">
+    <div class="modal-title" id="modal-other-income-edit-title">הכנסה נוספת חדשה</div>
+    <input type="hidden" id="edit-other-income-id"/>
+    <div class="form-group">
+      <label class="form-label">קטגוריה *</label>
+      <select class="form-select" id="oi-category"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">תיאור *</label>
+      <input class="form-input" id="oi-desc" placeholder="פירוט ההכנסה"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">סכום (₪) *</label>
+      <input class="form-input" id="oi-amount" type="number" step="0.01" min="0" placeholder="0"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">תאריך העברה בפועל *</label>
+      <input class="form-input" id="oi-date" type="date"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">אמצעי תשלום</label>
+      <select class="form-select" id="oi-method">
+        <option value="bank">🏦 בנק</option>
+        <option value="cash">💵 מזומן</option>
+        <option value="check">🧾 שיק</option>
+      </select>
+      <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">בדוחות/במאזן שיק נספר יחד עם בנק</div>
+    </div>
+    <button class="btn-primary" onclick="saveOtherIncome()">💾 שמור</button>
+    <button class="btn-icon" id="btn-delete-other-income" style="display:none;width:100%;margin-top:8px;color:#d33;border-color:#d33;" onclick="deleteOtherIncome()">🗑️ מחק הכנסה</button>
+    <button class="btn-secondary" onclick="closeModal('modal-other-income-edit')">ביטול</button>
+  </div>
+</div>
+
 <!-- Admin Finance Modal -->
 <div class="modal-overlay" id="modal-admin-finance">
   <div class="modal">
@@ -1236,6 +1293,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openAddExpense();">➕ הוסף הוצאה</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCategoryPayments();">🔌 רשימת גבייה חריגה של דיירים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openSpecialCollectionsList();">🔧 גבייה מיוחדת לכל הדיירים</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openOtherIncomeList()">💹 הכנסות נוספות</button>
       <button class="btn-primary" onclick="closeAdminFinance();openCashDeposit()">🏦 הפקד מזומן לבנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openLog();">📋 יומן פעולות</button>
       <button class="btn-primary" onclick="closeAdminFinance();openPaymentReminders();">🔔 תזכורות תשלום</button>
@@ -2138,6 +2196,20 @@ const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי
 // previously duplicated 3x in the file with identical contents.
 const EXPENSE_CATEGORY_ICONS = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
 
+// קטגוריות "הכנסות נוספות" (other-income-cat) — כל הכנסה שאינה דמי ועד
+// שוטפים, חוב עבר (גבייה חריגה), או גבייה חד-פעמית לשיפוץ/טעינה חשמלית.
+// משותף בין openOtherIncomeEditModal()/renderOtherIncomeList()/renderBalance().
+const OTHER_INCOME_CATEGORY_ICONS = {
+  'השכרת שטחים ומשאבים משותפים': '🏠',
+  'השכרת תשתיות ושטחי פרסום': '📢',
+  'מערכת סולארית - מכירת חשמל': '☀️',
+  'החזרים, שיפויים ופיצויים': '↩️',
+  'מענקים ותמיכות רשמיות': '🏛️',
+  'מכירת ציוד ושירותים נלווים': '📦',
+  'הכנסות מימוניות': '💹',
+  'העברות שונות': '🔀'
+};
+
 // Shared across renderHistoryGrid(), renderPayments() (pay-paid-list ותצוגת דייר) ו-po-table —
 // אותם אייקונים בדיוק כמו ב-dropdown של p-method/r-payment-method
 const PAYMENT_METHOD_ICONS = { transfer: '💳', standingOrder: '🔁', cash: '💰', check: '🧾' };
@@ -2336,14 +2408,22 @@ function descWithNoteHtml(e) {
 // reduces the balance while the matching income never added it, creating
 // an artificial deficit. Defaults to [] so any call site not yet updated
 // still works (just without the special-collection amounts included).
-function computeBalanceFigures(payments, expenses, deposits, openingBalance, cashOpeningBalance, specialPayments = []) {
+//
+// otherIncome (הכנסות נוספות — הכנסה שאינה דמי ועד, חוב עבר, או גבייה
+// חריגה/מיוחדת: השכרת שטחים, פרסום, סולארי, החזרים/פיצויים, מענקים,
+// מכירת ציוד, הכנסות מימוניות, העברות שונות) is an optional 7th param,
+// same reasoning as specialPayments — real money that enters the bank
+// account/cash box and must be folded into the same totals, or it would
+// silently vanish from the balance. Defaults to [] for the same
+// backward-compatibility reason.
+function computeBalanceFigures(payments, expenses, deposits, openingBalance, cashOpeningBalance, specialPayments = [], otherIncome = []) {
   // totalCollected/cashCollected/transferCollected למטה מכסים את כל הכסף
   // שנכנס בפועל (ללא קשר לקטגוריה) — כי יתרת הבנק/מזומן האמיתית לא מבחינה
-  // בין דמי ועד שוטפים לטעינה חשמלית/גבייה חריגה/גבייה מיוחדת לתיקונים:
-  // כסף הוא כסף, לפי אמצעי התשלום בלבד. הפילוח התצוגתי לפי קטגוריה
-  // (vaadTransferCollected וכו') למטה משמש רק להצגה (לדוגמה בטאב "מאזן"),
-  // ואינו משנה את חישוב bankBalance/cashBalance בעצמו.
-  const allCollected = payments.concat(specialPayments);
+  // בין דמי ועד שוטפים לטעינה חשמלית/גבייה חריגה/גבייה מיוחדת לתיקונים/
+  // הכנסות נוספות: כסף הוא כסף, לפי אמצעי התשלום בלבד. הפילוח התצוגתי לפי
+  // קטגוריה (vaadTransferCollected וכו') למטה משמש רק להצגה (לדוגמה בטאב
+  // "מאזן"), ואינו משנה את חישוב bankBalance/cashBalance בעצמו.
+  const allCollected = payments.concat(specialPayments).concat(otherIncome);
   const totalCollected = allCollected.reduce((s,p) => s + (p.amount||0), 0);
   const cashCollected = allCollected.filter(p => p.method === 'cash').reduce((s,p) => s + (p.amount||0), 0);
   const transferCollected = totalCollected - cashCollected;
@@ -2368,6 +2448,7 @@ function computeBalanceFigures(payments, expenses, deposits, openingBalance, cas
   const exceptionalRenterPayments = payments.filter(p => p.category === 'exceptional' && p.payerType === 'renter');
   const { cash: exceptionalRenterCashCollected, bank: exceptionalRenterTransferCollected, total: exceptionalRenterCollected } = splitCashBank(exceptionalRenterPayments);
   const { cash: specialCashCollected, bank: specialTransferCollected, total: specialCollected } = splitCashBank(specialPayments);
+  const { cash: otherIncomeCashCollected, bank: otherIncomeTransferCollected, total: otherIncomeCollected } = splitCashBank(otherIncome);
 
   const totalExpenses = expenses.reduce((s,e) => s + (e.amount||0), 0);
   const cashExpenses = expenses.filter(e => e.method === 'cash').reduce((s,e) => s + (e.amount||0), 0);
@@ -2385,6 +2466,7 @@ function computeBalanceFigures(payments, expenses, deposits, openingBalance, cas
     exceptionalOwnerCollected, exceptionalOwnerCashCollected, exceptionalOwnerTransferCollected,
     exceptionalRenterCollected, exceptionalRenterCashCollected, exceptionalRenterTransferCollected,
     specialCollected, specialCashCollected, specialTransferCollected,
+    otherIncomeCollected, otherIncomeCashCollected, otherIncomeTransferCollected,
     totalExpenses, cashExpenses, bankExpenses,
     totalDeposits, bankBalance, cashBalance,
     balance: bankBalance + cashBalance
@@ -2559,7 +2641,7 @@ window.confirmDeleteBuilding = async () => {
     showToast('מוחק...');
 
     // מחק תת-אוספים של הבניין הנוכחי בלבד
-    const subs = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
+    const subs = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments','otherIncome'];
     for (const sub of subs) {
       const subSnap = await getDocs(collection(db, 'buildings', buildingId, sub));
       for (const d of subSnap.docs) await deleteDoc(d.ref);
@@ -2590,7 +2672,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.85'; // *** שינוי מהותי, המשך ל-v2.15.84 *** — עכשיו גם דוחות ה-PDF/אקסל (שנתי/חודשי/חצי-שנתי/exportExcel) משייכים "ועד בית שוטף" לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' — עקבי עם טאב "מאזן" (v2.15.84) ועם "גבייה חריגה" שכבר עבדה כך. נוסף fetchAllVaadPayments() (מקביל ל-fetchAllExceptionalPayments) ששולף את כל תשלומי הועד בבניין ומסנן ב-JS (isVaadPayment, כדי לתפוס גם תשלומים ישנים בלי שדה category כלל — שאילתת Firestore לפי category=='vaad' הייתה מפספסת אותם). splitPaymentsForPeriod() עודכן לקבל allVaadPayments כפרמטר רביעי אופציונלי (עם fallback לתאימות לאחור אם לא סופק) ומחליף גם תשלומי ועד, לא רק גבייה חריגה, בגרסה המסוננת-לפי-paidAt בחישובי היתרה המצטברת. *** מה לא השתנה בכוונה: *** טבלת ה-✓/- (כיסוי חודשי לכל דירה, resident×month) בכל שלושת דוחות ה-PDF וגיליון "תשלומים" באקסל ממשיכים להתבסס אך ורק על 'month' כרגיל (paymentMap) — זו שאלת "מי שילם עבור איזה חודש", לא נוגעים בה; רק הסיכומים הפיננסיים (סה"כ גבייה, פילוח בנק/מזומן, יתרות מצטברות) עברו ל-paidAt. "טעינה חשמלית" עדיין לפי 'month' בכל מקום, לא שונתה.
+const APP_VERSION = '2.15.86'; // *** שינוי מהותי, המשך ל-v2.15.84 *** — עכשיו גם דוחות ה-PDF/אקסל (שנתי/חודשי/חצי-שנתי/exportExcel) משייכים "ועד בית שוטף" לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' — עקבי עם טאב "מאזן" (v2.15.84) ועם "גבייה חריגה" שכבר עבדה כך. נוסף fetchAllVaadPayments() (מקביל ל-fetchAllExceptionalPayments) ששולף את כל תשלומי הועד בבניין ומסנן ב-JS (isVaadPayment, כדי לתפוס גם תשלומים ישנים בלי שדה category כלל — שאילתת Firestore לפי category=='vaad' הייתה מפספסת אותם). splitPaymentsForPeriod() עודכן לקבל allVaadPayments כפרמטר רביעי אופציונלי (עם fallback לתאימות לאחור אם לא סופק) ומחליף גם תשלומי ועד, לא רק גבייה חריגה, בגרסה המסוננת-לפי-paidAt בחישובי היתרה המצטברת. *** מה לא השתנה בכוונה: *** טבלת ה-✓/- (כיסוי חודשי לכל דירה, resident×month) בכל שלושת דוחות ה-PDF וגיליון "תשלומים" באקסל ממשיכים להתבסס אך ורק על 'month' כרגיל (paymentMap) — זו שאלת "מי שילם עבור איזה חודש", לא נוגעים בה; רק הסיכומים הפיננסיים (סה"כ גבייה, פילוח בנק/מזומן, יתרות מצטברות) עברו ל-paidAt. "טעינה חשמלית" עדיין לפי 'month' בכל מקום, לא שונתה. *** v2.15.86: פיצ'ר חדש — "הכנסות נוספות" *** — כל הכנסה שאינה דמי ועד שוטפים/חוב עבר/גבייה חד-פעמית לשיפוץ/טעינה: השכרת שטחים ומשאבים משותפים, השכרת תשתיות ושטחי פרסום, מערכת סולארית (מכירת חשמל), החזרים/שיפויים/פיצויים, מענקים ותמיכות רשמיות, מכירת ציוד ושירותים נלווים, הכנסות מימוניות, העברות שונות. אוסף Firestore חדש buildings/{id}/otherIncome (category/description/amount/date/method — מבנה זהה במכוון ל-expenses, "הכנסה כהוצאה הפוכה"). כפתור חדש "💹 הכנסות נוספות" בניהול כספים פותח רשימה עם הוספה/עריכה/מחיקה (modal-other-income-list/modal-other-income-edit). computeBalanceFigures() קיבל פרמטר שביעי אופציונלי otherIncome=[] (בדיוק כמו specialPayments) — מתווסף לסה"כ הגבייה וליתרת הבנק/מזומן, אחרת ההכנסה הזו הייתה "נעלמת" מהמאזן. עודכנו כל קריאות ה-computeBalanceFigures הרלוונטיות: renderBalance (טאב מאזן — שורות "הכנסות נוספות" בפירוט גבייה + כרטיס "פירוט הכנסות שונות" מתחת ליתרת הפתיחה לתקופה, לחיצה על שורה פותחת לעריכה), openCashDeposit/saveCashDeposit ובדיקת יתרה זמינה ב-saveExpense (כדי שהיתרה הזמינה לבדיקה תשקף גם הכנסות אלה), renderForecast (יתרה נוכחית), ו-4 פונקציות הדוחות (רק ה"יתרה בחשבון הבנק/מזומן הנוכחית" המוצגת בתחתית כל דוח — לא נוספה עדיין פריצת "הכנסות נוספות" מפורטת בתוך גוף הדוחות עצמם, בהתאם לתחום הבקשה). כן נוסף לרשימות הגיבוי/שחזור/איפוס/מחיקת-בניין (exportData/importData/executeResetData/confirmDeleteBuilding/backupSelectedBuildings/executeRestoreBuilding). לא נדרש עדכון ל-Firestore Security Rules — האוסף החדש מכוסה אוטומטית ע"י כלל ה-{subcollection} הגורף הקיים.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3099,7 +3181,7 @@ window.backupSelectedBuildings = async () => {
   if (!selected.length) return;
 
   showToast(`מגבה ${selected.length} בניינים...`);
-  const cols = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
+  const cols = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments','otherIncome'];
   const dateStr = new Date().toISOString().slice(0,10);
   let done = 0;
 
@@ -3216,7 +3298,7 @@ window.executeRestoreBuilding = async (event) => {
     const newBuildingId = newBuildingRef.id;
 
     // 3. ייבא את כל הנתונים לבניין החדש
-    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments','otherIncome'];
     let imported = 0;
     for (const colName of collections) {
       const items = data[colName];
@@ -3709,11 +3791,12 @@ window.openCashDeposit = async () => {
   note.textContent = 'טוען יתרת מזומן זמינה...';
   openModal('modal-cash-deposit');
   try {
-    const [paySnap, expSnap, depSnap, specialPaySnap] = await Promise.all([
+    const [paySnap, expSnap, depSnap, specialPaySnap, otherIncomeSnap] = await Promise.all([
       getDocs(collection(db, 'buildings', buildingId, 'payments')),
       getDocs(collection(db, 'buildings', buildingId, 'expenses')),
       getDocs(collection(db, 'buildings', buildingId, 'cashDeposits')),
-      getDocs(collection(db, 'buildings', buildingId, 'specialPayments'))
+      getDocs(collection(db, 'buildings', buildingId, 'specialPayments')),
+      getDocs(collection(db, 'buildings', buildingId, 'otherIncome'))
     ]);
     const { cashBalance } = computeBalanceFigures(
       paySnap.docs.map(d => d.data()),
@@ -3721,7 +3804,8 @@ window.openCashDeposit = async () => {
       depSnap.docs.map(d => d.data()),
       buildingData?.openingBalance || 0,
       buildingData?.cashOpeningBalance || 0,
-      specialPaySnap.docs.map(d => d.data())
+      specialPaySnap.docs.map(d => d.data()),
+      otherIncomeSnap.docs.map(d => d.data())
     );
     note.textContent = `💵 יתרת מזומן זמינה כרגע: ${fmtCurrency(cashBalance)}`;
   } catch(e) {
@@ -3841,11 +3925,12 @@ window.saveCashDeposit = async () => {
     // עוד לא להיות טעונים אם המנהל פתח "הפקד מזומן" ישירות מתפריט הכספים
     // בלי לבקר קודם בלשונית "מאזן") כדי לוודא שההפקדה לא עולה על מה שבאמת
     // קיים בקופה כרגע, ולמנוע יתרת מזומן שלילית מלאכותית.
-    const [paySnap, expSnap, depSnap, specialPaySnap] = await Promise.all([
+    const [paySnap, expSnap, depSnap, specialPaySnap, otherIncomeSnap] = await Promise.all([
       getDocs(collection(db, 'buildings', buildingId, 'payments')),
       getDocs(collection(db, 'buildings', buildingId, 'expenses')),
       getDocs(collection(db, 'buildings', buildingId, 'cashDeposits')),
-      getDocs(collection(db, 'buildings', buildingId, 'specialPayments'))
+      getDocs(collection(db, 'buildings', buildingId, 'specialPayments')),
+      getDocs(collection(db, 'buildings', buildingId, 'otherIncome'))
     ]);
     const { cashBalance } = computeBalanceFigures(
       paySnap.docs.map(d => d.data()),
@@ -3853,7 +3938,8 @@ window.saveCashDeposit = async () => {
       depSnap.docs.map(d => d.data()),
       buildingData?.openingBalance || 0,
       buildingData?.cashOpeningBalance || 0,
-      specialPaySnap.docs.map(d => d.data())
+      specialPaySnap.docs.map(d => d.data()),
+      otherIncomeSnap.docs.map(d => d.data())
     );
     // בעריכת הפקדה קיימת: "מחזירים" תחילה את הסכום הישן שלה עצמה אל היתרה
     // הזמינה לפני ההשוואה — אחרת ההפקדה הקיימת (שעדיין לא עודכנה ב-Firestore
@@ -3898,11 +3984,12 @@ window.saveCashDeposit = async () => {
     await renderDepositList();
     // רענן גם את הערת יתרת המזומן הזמינה בראש המודל, שעדיין פתוח
     try {
-      const [paySnap2, expSnap2, depSnap2, specialPaySnap2] = await Promise.all([
+      const [paySnap2, expSnap2, depSnap2, specialPaySnap2, otherIncomeSnap2] = await Promise.all([
         getDocs(collection(db, 'buildings', buildingId, 'payments')),
         getDocs(collection(db, 'buildings', buildingId, 'expenses')),
         getDocs(collection(db, 'buildings', buildingId, 'cashDeposits')),
-        getDocs(collection(db, 'buildings', buildingId, 'specialPayments'))
+        getDocs(collection(db, 'buildings', buildingId, 'specialPayments')),
+        getDocs(collection(db, 'buildings', buildingId, 'otherIncome'))
       ]);
       const { cashBalance: freshCashBalance } = computeBalanceFigures(
         paySnap2.docs.map(d => d.data()),
@@ -3910,7 +3997,8 @@ window.saveCashDeposit = async () => {
         depSnap2.docs.map(d => d.data()),
         buildingData?.openingBalance || 0,
         buildingData?.cashOpeningBalance || 0,
-        specialPaySnap2.docs.map(d => d.data())
+        specialPaySnap2.docs.map(d => d.data()),
+        otherIncomeSnap2.docs.map(d => d.data())
       );
       document.getElementById('deposit-available-note').textContent = `💵 יתרת מזומן זמינה כרגע: ${fmtCurrency(freshCashBalance)}`;
     } catch(e) { /* לא קריטי */ }
@@ -3946,7 +4034,7 @@ window.executeResetData = async () => {
     // cashDeposits נוסף לרשימה — לפני התיקון הזה איפוס נתונים לא ניקה את
     // הפקדות המזומן שכבר נרשמו, כך שהן המשיכו להשפיע על יתרת הבנק/מזומן
     // המחושבת (computeBalanceFigures) גם אחרי "איפוס מלא" של הבניין.
-    const collections = ['residents','payments','expenses','issues','announcements','specialCollections','specialPayments','cashDeposits'];
+    const collections = ['residents','payments','expenses','issues','announcements','specialCollections','specialPayments','cashDeposits','otherIncome'];
     for (const colName of collections) {
       const snap = await getDocs(collection(db, 'buildings', buildingId, colName));
       for (const d of snap.docs) await deleteDoc(d.ref);
@@ -3975,7 +4063,7 @@ window.executeResetData = async () => {
 window.exportData = async () => {
   try {
     showToast('מייצא נתונים...');
-    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments','otherIncome'];
     const data = {};
     for (const colName of collections) {
       const snap = await getDocs(collection(db, 'buildings', buildingId, colName));
@@ -4027,7 +4115,7 @@ window.importData = async (event) => {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
-    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments'];
+    const collections = ['residents','payments','expenses','issues','announcements','paymentLog','cashDeposits','specialCollections','specialPayments','otherIncome'];
     let totalDocs = 0;
     for (const colName of collections) {
       if (Array.isArray(data[colName])) totalDocs += data[colName].length;
@@ -7142,11 +7230,12 @@ window.saveExpense = async () => {
   // היתרה הזמינה לעריכה של עצמה (למשל: אי אפשר להעלות סכום של הוצאת בנק
   // קיימת אפילו בלי שום שינוי אמיתי ביתרה).
   try {
-    const [paySnapChk, expSnapChk, depSnapChk, specialPaySnapChk] = await Promise.all([
+    const [paySnapChk, expSnapChk, depSnapChk, specialPaySnapChk, otherIncomeSnapChk] = await Promise.all([
       getDocs(collection(db, 'buildings', buildingId, 'payments')),
       getDocs(collection(db, 'buildings', buildingId, 'expenses')),
       getDocs(collection(db, 'buildings', buildingId, 'cashDeposits')),
-      getDocs(collection(db, 'buildings', buildingId, 'specialPayments'))
+      getDocs(collection(db, 'buildings', buildingId, 'specialPayments')),
+      getDocs(collection(db, 'buildings', buildingId, 'otherIncome'))
     ]);
     const { cashBalance, bankBalance } = computeBalanceFigures(
       paySnapChk.docs.map(d => d.data()),
@@ -7154,7 +7243,8 @@ window.saveExpense = async () => {
       depSnapChk.docs.map(d => d.data()),
       buildingData?.openingBalance || 0,
       buildingData?.cashOpeningBalance || 0,
-      specialPaySnapChk.docs.map(d => d.data())
+      specialPaySnapChk.docs.map(d => d.data()),
+      otherIncomeSnapChk.docs.map(d => d.data())
     );
     let cashAvailable = cashBalance, bankAvailable = bankBalance;
     if (id) {
@@ -7308,6 +7398,168 @@ window.deleteExpense = async (id) => {
   loadBalance();
 };
 
+// ===== OTHER INCOME (הכנסות נוספות) =====
+// הכנסה בונה בונה שאינה קשורה לדירה ספציפית (בשונה מ-payments/specialPayments) —
+// לכן נשמרת באוסף נפרד, ללא apt/name/payerType. מבנה זהה במכוון למבנה
+// expenses (category/description/amount/date/method) כדי להשתמש באותם
+// כלים/מוסכמות (splitCashBank, fmtDateDMY וכו') — "הכנסה" היא במידה רבה
+// "הוצאה הפוכה" מבחינת המודל.
+let allOtherIncome = [];
+let unsubOtherIncome = null;
+let otherIncomeListenerBuildingId = null;
+
+function ensureOtherIncomeListener() {
+  if (otherIncomeListenerBuildingId === buildingId && unsubOtherIncome) return;
+  if (unsubOtherIncome) unsubOtherIncome();
+  otherIncomeListenerBuildingId = buildingId;
+  unsubOtherIncome = onSnapshot(
+    query(collection(db, 'buildings', buildingId, 'otherIncome'), orderBy('date','desc')),
+    (snap) => {
+      allOtherIncome = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderOtherIncomeList();
+      renderBalance();
+    }
+  );
+}
+
+window.openOtherIncomeList = () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const container = document.getElementById('other-income-list-content');
+  if (!(otherIncomeListenerBuildingId === buildingId && unsubOtherIncome)) {
+    container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  }
+  openModal('modal-other-income-list');
+  ensureOtherIncomeListener();
+};
+
+function renderOtherIncomeList() {
+  const container = document.getElementById('other-income-list-content');
+  if (!container) return;
+  if (!allOtherIncome.length) {
+    container.innerHTML = '<div class="card-empty">אין עדיין הכנסות נוספות רשומות</div>';
+    return;
+  }
+  const total = allOtherIncome.reduce((s,e) => s + (e.amount||0), 0);
+  container.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 12px;">'
+    + '<span style="font-size:14px;font-weight:700;">סה"כ הכנסות נוספות</span>'
+    + '<span style="font-size:17px;font-weight:800;color:var(--green);">'+fmtCurrency(total)+'</span>'
+    + '</div>'
+    + allOtherIncome.map(e => {
+        const icon = OTHER_INCOME_CATEGORY_ICONS[e.category] || '💹';
+        return '<div class="card" style="margin-bottom:8px;">'
+          + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+          + '<div style="flex:1;">'
+          + '<div style="font-size:14px;font-weight:700;">'+icon+' '+(e.description||'')+'</div>'
+          + '<div style="font-size:12px;color:var(--gray-400);margin-top:2px;">'+(e.category||'')+' • '+fmtDateDMY(e.date)+'</div>'
+          + '</div>'
+          + '<div style="font-size:16px;font-weight:700;color:var(--green);white-space:nowrap;">'+fmtCurrency(e.amount||0)+' '+({bank:'🏦',cash:'💵',check:'🧾'}[e.method]||'')+'</div>'
+          + '</div>'
+          + '<div style="display:flex;gap:8px;border-top:1px solid var(--gray-100);padding-top:10px;margin-top:10px;">'
+          + '<button class="btn-icon" style="flex:1;padding:8px;font-size:13px;" onclick="openOtherIncomeEdit(\''+e.id+'\')">✏️ ערוך</button>'
+          + '<button class="btn-danger" style="flex:1;padding:8px;font-size:13px;" onclick="deleteOtherIncomeConfirm(\''+e.id+'\')">🗑 מחק</button>'
+          + '</div></div>';
+      }).join('');
+}
+
+window.openOtherIncomeEdit = (id) => {
+  const catSelect = document.getElementById('oi-category');
+  catSelect.innerHTML = Object.keys(OTHER_INCOME_CATEGORY_ICONS).map(cat =>
+    `<option value="${cat}">${OTHER_INCOME_CATEGORY_ICONS[cat]} ${cat}</option>`
+  ).join('');
+
+  if (id) {
+    const e = allOtherIncome.find(x => x.id === id);
+    if (!e) return;
+    document.getElementById('modal-other-income-edit-title').textContent = 'עריכת הכנסה נוספת';
+    document.getElementById('edit-other-income-id').value = id;
+    catSelect.value = e.category || Object.keys(OTHER_INCOME_CATEGORY_ICONS)[0];
+    document.getElementById('oi-desc').value = e.description || '';
+    document.getElementById('oi-amount').value = e.amount || '';
+    document.getElementById('oi-date').value = e.date || '';
+    document.getElementById('oi-method').value = e.method || 'bank';
+    document.getElementById('btn-delete-other-income').style.display = '';
+  } else {
+    document.getElementById('modal-other-income-edit-title').textContent = 'הכנסה נוספת חדשה';
+    document.getElementById('edit-other-income-id').value = '';
+    catSelect.selectedIndex = 0;
+    document.getElementById('oi-desc').value = '';
+    document.getElementById('oi-amount').value = '';
+    document.getElementById('oi-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('oi-method').value = 'bank';
+    document.getElementById('btn-delete-other-income').style.display = 'none';
+  }
+  openModal('modal-other-income-edit');
+};
+
+window.saveOtherIncome = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const id = document.getElementById('edit-other-income-id').value;
+  const category = document.getElementById('oi-category').value;
+  const description = document.getElementById('oi-desc').value.trim();
+  const amount = parseFloat(document.getElementById('oi-amount').value);
+  const date = document.getElementById('oi-date').value;
+  const method = document.getElementById('oi-method').value;
+  if (!category || !description || !amount || amount <= 0 || !date) {
+    showToast('חובה למלא קטגוריה, תיאור, סכום ותאריך'); return;
+  }
+  const data = { category, description, amount, date, method, updatedAt: serverTimestamp() };
+  try {
+    const batch = writeBatch(db);
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    if (id) {
+      batch.update(doc(db, 'buildings', buildingId, 'otherIncome', id), data);
+      batch.set(logRef, {
+        type: 'otherIncome', action: 'other_income_updated', category, description, amount, method,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
+      showToast('✅ ההכנסה עודכנה');
+    } else {
+      data.createdAt = serverTimestamp();
+      data.createdBy = currentUser.uid;
+      const incomeRef = doc(collection(db, 'buildings', buildingId, 'otherIncome'));
+      batch.set(incomeRef, data);
+      batch.set(logRef, {
+        type: 'otherIncome', action: 'other_income_added', category, description, amount, method,
+        at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+      });
+      await batch.commit();
+      showToast('✅ ההכנסה נשמרה');
+    }
+    closeModal('modal-other-income-edit');
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
+// כפתור "מחק" ברשימה (modal-other-income-list) — פותח את מודל העריכה
+// כדי לא לשכפל את בדיקת ההרשאה/הצגת הפרטים, ואז deleteOtherIncome() (הכפתור
+// בתוך מודל העריכה עצמו) מבצע את המחיקה בפועל אחרי אישור.
+window.deleteOtherIncomeConfirm = (id) => {
+  openOtherIncomeEdit(id);
+};
+
+window.deleteOtherIncome = async () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const id = document.getElementById('edit-other-income-id').value;
+  if (!id) return;
+  const e = allOtherIncome.find(x => x.id === id);
+  const ok = await customConfirm('למחוק הכנסה זו' + (e ? ' ('+fmtCurrency(e.amount||0)+')' : '') + '? פעולה זו אינה הפיכה.');
+  if (!ok) return;
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'buildings', buildingId, 'otherIncome', id));
+    const logRef = doc(collection(db, 'buildings', buildingId, 'paymentLog'));
+    batch.set(logRef, {
+      type: 'otherIncome', action: 'other_income_deleted', category: e?.category || '', description: e?.description || '', amount: e?.amount || 0,
+      at: serverTimestamp(), by: currentUser.uid, byName: currentUser.name || currentUser.email
+    });
+    await batch.commit();
+    showToast('🗑 ההכנסה נמחקה');
+    closeModal('modal-other-income-edit');
+    loadBalance();
+  } catch(e) { showToast('שגיאה: ' + e.message); }
+};
+
 // ===== BALANCE =====
 let balPaymentsAll = [];      // cache: all payments ever recorded (for balance calc)
 let balDepositsAll = [];      // cache: all cash deposits ever recorded
@@ -7317,6 +7569,7 @@ let balanceListenersBuildingId = null; // which building the above listeners are
 function ensureBalanceListeners() {
   ensureExpensesListener(); // shared with the expenses tab — one listener, not two
   ensureSpecialPaymentsListener(); // כדי שסכום "גבייה מיוחדת לתיקונים" יהיה זמין במאזן גם בלי לפתוח קודם את המודל הייעודי
+  ensureOtherIncomeListener(); // כדי שסכום "הכנסות נוספות" יהיה זמין במאזן גם בלי לפתוח קודם את המודל הייעודי
   if (balanceListenersBuildingId === buildingId && unsubBalPayments) return; // already listening for this building
   if (unsubBalPayments) unsubBalPayments();
   if (unsubBalDeposits) unsubBalDeposits();
@@ -7490,8 +7743,9 @@ function renderBalance() {
   const preExpenses = allExpenses.filter(e => (e.date||'') < periodFromDateStr);
   const preDeposits = balDepositsAll.filter(d => (d.date||'') < periodFromDateStr);
   const preSpecialPayments = specialPaymentsInYmRange(allSpecialPayments, '0000-01', monthBeforeFrom);
+  const preOtherIncome = allOtherIncome.filter(e => (e.date||'') < periodFromDateStr);
   const { bankBalance: bankBalanceStart, cashBalance: cashBalanceStart } = computeBalanceFigures(
-    prePayments, preExpenses, preDeposits, openingBalance, cashOpeningBalance, preSpecialPayments
+    prePayments, preExpenses, preDeposits, openingBalance, cashOpeningBalance, preSpecialPayments, preOtherIncome
   );
 
   // יתרת סגירה (="יתרת בנק/מזומן" המוצגת) = מצטבר מתחילת הבניין עד סוף
@@ -7500,8 +7754,9 @@ function renderBalance() {
   const cumExpenses = allExpenses.filter(e => (e.date||'') <= periodToDateStr);
   const cumDeposits = balDepositsAll.filter(d => (d.date||'') <= periodToDateStr);
   const cumSpecialPayments = specialPaymentsInYmRange(allSpecialPayments, '0000-01', periodTo);
+  const cumOtherIncome = allOtherIncome.filter(e => (e.date||'') <= periodToDateStr);
   const { bankBalance, cashBalance, balance } = computeBalanceFigures(
-    cumPayments, cumExpenses, cumDeposits, openingBalance, cashOpeningBalance, cumSpecialPayments
+    cumPayments, cumExpenses, cumDeposits, openingBalance, cashOpeningBalance, cumSpecialPayments, cumOtherIncome
   );
   const balColor = balance >= 0 ? 'var(--green)' : 'var(--red)';
   const balIcon = balance >= 0 ? '📈' : '📉';
@@ -7513,6 +7768,7 @@ function renderBalance() {
   const periodExpenses = allExpenses.filter(e => (e.date||'') >= periodFromDateStr && (e.date||'') <= periodToDateStr);
   const periodDeposits = balDepositsAll.filter(d => (d.date||'') >= periodFromDateStr && (d.date||'') <= periodToDateStr);
   const periodSpecialPayments = specialPaymentsInYmRange(allSpecialPayments, periodFrom, periodTo);
+  const periodOtherIncome = allOtherIncome.filter(e => (e.date||'') >= periodFromDateStr && (e.date||'') <= periodToDateStr);
   const {
     totalCollected, cashCollected, transferCollected,
     vaadCollected, vaadCashCollected, vaadTransferCollected,
@@ -7520,9 +7776,10 @@ function renderBalance() {
     exceptionalOwnerCollected, exceptionalOwnerCashCollected, exceptionalOwnerTransferCollected,
     exceptionalRenterCollected, exceptionalRenterCashCollected, exceptionalRenterTransferCollected,
     specialCollected, specialCashCollected, specialTransferCollected,
+    otherIncomeCollected, otherIncomeCashCollected, otherIncomeTransferCollected,
     totalExpenses, cashExpenses, bankExpenses,
     totalDeposits
-  } = computeBalanceFigures(periodPayments, periodExpenses, periodDeposits, 0, 0, periodSpecialPayments);
+  } = computeBalanceFigures(periodPayments, periodExpenses, periodDeposits, 0, 0, periodSpecialPayments, periodOtherIncome);
 
   // ===== גבייה מראש / באיחור עבור "ועד בית שוטף" — פירוט בלבד =====
   // *** עדכון: מ-v2.15.84, periodPayments (למעלה) כבר מסנן תשלומי ועד לפי
@@ -7678,8 +7935,14 @@ function renderBalance() {
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
     + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(גבייה מיוחדת)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
     + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(גבייה מיוחדת)</span></span><span style="font-weight:700;color:var(--gray-600);">₪'+specialCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100);">'
+    + '<span style="font-size:13px;">💳 הועבר לבנק <span style="color:var(--gray-400);">(הכנסות נוספות)</span></span><span style="font-weight:700;color:var(--green);">₪'+otherIncomeTransferCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
+    + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;">'
+    + '<span style="font-size:13px;">💵 מזומן שנגבה <span style="color:var(--gray-400);">(הכנסות נוספות)</span></span><span style="font-weight:700;color:var(--green);">₪'+otherIncomeCashCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:4px;border-top:2px solid var(--gray-200);">'
     + '<span style="font-size:13px;font-weight:700;">סה"כ</span><span style="font-weight:800;">₪'+totalCollected.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
@@ -7744,6 +8007,34 @@ function renderBalance() {
     + '<span>💵 מזומן: ₪'+cashBalanceStart.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</span>'
     + '</div>'
     + '</div>';
+
+  // פירוט הכנסות שונות — טבלת שורות בודדות (לא רק הסכום המצטבר שכבר מוצג
+  // למעלה תחת "הכנסות נוספות" בפירוט גבייה) עבור periodOtherIncome, מוגבל
+  // לתקופה הנבחרת. מוצג רק כשיש בפועל הכנסה כזו בתקופה. ניתן לערוך/למחוק
+  // רשומה ישירות מכאן (פותח את אותו מודל עריכה כמו ברשימה הייעודית).
+  if (periodOtherIncome.length) {
+    const sortedOtherIncome = [...periodOtherIncome].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    html += '<div class="card" style="margin-bottom:16px;">'
+      + '<div style="font-weight:700;margin-bottom:10px;">פירוט הכנסות שונות</div>'
+      + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + '<thead><tr style="background-color:var(--green);color:white;">'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:right;">קטגוריה</th>'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:right;">תיאור</th>'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:center;">סכום</th>'
+      + '<th style="border:1px solid #ddd;padding:7px;text-align:center;">תאריך</th>'
+      + '</tr></thead><tbody>'
+      + sortedOtherIncome.map(e => (
+          '<tr style="cursor:pointer;" onclick="openOtherIncomeEdit(\''+e.id+'\')">'
+          + '<td style="border:1px solid #ddd;padding:7px;text-align:right;">'+(OTHER_INCOME_CATEGORY_ICONS[e.category]||'')+' '+(e.category||'').replace(/ /g,'\u00A0')+'</td>'
+          + '<td style="border:1px solid #ddd;padding:7px;text-align:right;">'+(e.description||'')+'</td>'
+          + '<td style="border:1px solid #ddd;padding:7px;text-align:center;font-weight:700;color:var(--green);">₪'+(e.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})+'</td>'
+          + '<td style="border:1px solid #ddd;padding:7px;text-align:center;">'+fmtDateDMY(e.date)+'</td>'
+          + '</tr>'
+        )).join('')
+      + '</tbody></table></div>'
+      + '<div style="font-size:11px;color:var(--gray-400);margin-top:8px;">לחיצה על שורה פותחת אותה לעריכה/מחיקה.</div>'
+      + '</div>';
+  }
 
   // סה"כ הוצאות — כותרת בפני עצמה, ומתחתיה הפילוח בנק/מזומן
   html += '<div class="card" style="margin-bottom:10px;text-align:center;">'
@@ -7976,7 +8267,7 @@ function renderForecast() {
   const { recurringMonthlyAvg, oneOffMonthlyAvg } = computeRecurringMonthlyAverage();
   const openingBalance = buildingData?.openingBalance || 0;
   const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
-  const { balance: currentBalance } = computeBalanceFigures(balPaymentsAll, allExpenses, balDepositsAll, openingBalance, cashOpeningBalance, allSpecialPayments);
+  const { balance: currentBalance } = computeBalanceFigures(balPaymentsAll, allExpenses, balDepositsAll, openingBalance, cashOpeningBalance, allSpecialPayments, allOtherIncome);
   const series = buildForecastSeries(currentBalance, monthlyIncome, recurringMonthlyAvg);
   const allBalances = [currentBalance, ...series.map(s => s.balance)];
   const maxBalance = Math.max(...allBalances);
@@ -8334,12 +8625,14 @@ window.exportExcel = async (year) => {
     const allPaySnapBal = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
     const allExpSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
     const depositSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
+    const allOtherIncomeSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'otherIncome'));
     const { bankBalance: bankBalanceAll, cashBalance: cashBalanceAll, balance } = computeBalanceFigures(
       allPaySnapBal.docs.map(d => d.data()),
       allExpSnapBal.docs.map(d => d.data()),
       depositSnapBal.docs.map(d => d.data()),
       openingBalance, cashOpeningBalance,
-      allSpecialPaymentsData
+      allSpecialPaymentsData,
+      allOtherIncomeSnapBal.docs.map(d => d.data())
     );
 
     // פירוט חודשי הוצאות
@@ -8784,12 +9077,14 @@ async function createPDFReport(year) {
   const allPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
   const allExpSnap = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
   const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
+  const allOtherIncomeSnap = await getDocs(collection(db, 'buildings', buildingId, 'otherIncome'));
   const { bankBalance, cashBalance, totalDeposits } = computeBalanceFigures(
     allPaySnap.docs.map(d => d.data()),
     allExpSnap.docs.map(d => d.data()),
     depositSnap.docs.map(d => d.data()),
     openingBalance, cashOpeningBalance,
-    allSpecialPaymentsData
+    allSpecialPaymentsData,
+    allOtherIncomeSnap.docs.map(d => d.data())
   );
 
 
@@ -9113,6 +9408,7 @@ async function createMonthlyPDFReport(ym) {
   const cumPaySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','<=', ym)));
   const cumExpSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<=', ym + '-31')));
   const cumDepSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<=', ym + '-31')));
+  const cumOtherIncomeSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','<=', ym + '-31')));
   // מחליפים את תשלומי ה"גבייה חריגה" שהגיעו מהשאילתה לפי 'month' (למעלה)
   // בגרסה המסוננת לפי paidAt <= סוף החודש הנבחר — כדי שהיתרה המצטברת תשקף
   // מתי הכסף באמת נכנס לחשבון, לא אילו חודשים התשלום מכסה.
@@ -9122,7 +9418,8 @@ async function createMonthlyPDFReport(ym) {
     cumExpSnap.docs.map(d => d.data()),
     cumDepSnap.docs.map(d => d.data()),
     openingBalance, cashOpeningBalance,
-    cumSpecialPaymentsData
+    cumSpecialPaymentsData,
+    cumOtherIncomeSnap.docs.map(d => d.data())
   );
   // מאזן החודש חייב לשקף את כל הכסף שנכנס בפועל (ועד שוטף + טעינה + גבייה
   // חריגה + גבייה מיוחדת לתיקונים), לא רק את דמי הועד השוטפים — אחרת "מאזן
@@ -9399,6 +9696,7 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   const prePaySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','<', fromYm)));
   const preExpSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<', fromDate)));
   const preDepSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<', fromDate)));
+  const preOtherIncomeSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','<', fromDate)));
   // מחליפים את תשלומי ה"גבייה חריגה" שהגיעו מהשאילתה לפי 'month' בגרסה
   // המסוננת לפי paidAt < תחילת התקופה — כדי שיתרת הפתיחה תשקף מתי הכסף
   // באמת נכנס לחשבון, לא אילו חודשים התשלום מכסה.
@@ -9408,19 +9706,22 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
     preExpSnap.docs.map(d => d.data()),
     preDepSnap.docs.map(d => d.data()),
     openingBalance, cashOpeningBalance,
-    preSpecialPaymentsData
+    preSpecialPaymentsData,
+    preOtherIncomeSnap.docs.map(d => d.data())
   );
 
   const cumPaySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','<=', toYm)));
   const cumExpSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<=', toDateLastDay)));
   const cumDepSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<=', toDateLastDay)));
+  const cumOtherIncomeSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','<=', toDateLastDay)));
   const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= toDateEndObj, allVaadPayments);
   const { bankBalance: bankBalanceEnd, cashBalance: cashBalanceEnd, totalDeposits: totalDepositsEnd } = computeBalanceFigures(
     cumCombinedPayments,
     cumExpSnap.docs.map(d => d.data()),
     cumDepSnap.docs.map(d => d.data()),
     openingBalance, cashOpeningBalance,
-    cumSpecialPaymentsData
+    cumSpecialPaymentsData,
+    cumOtherIncomeSnap.docs.map(d => d.data())
   );
 
   const periodNet = totalCollectedAllHalf - totalExpenses;
