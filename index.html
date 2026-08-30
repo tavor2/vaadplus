@@ -2672,7 +2672,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.86'; // *** שינוי מהותי, המשך ל-v2.15.84 *** — עכשיו גם דוחות ה-PDF/אקסל (שנתי/חודשי/חצי-שנתי/exportExcel) משייכים "ועד בית שוטף" לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' — עקבי עם טאב "מאזן" (v2.15.84) ועם "גבייה חריגה" שכבר עבדה כך. נוסף fetchAllVaadPayments() (מקביל ל-fetchAllExceptionalPayments) ששולף את כל תשלומי הועד בבניין ומסנן ב-JS (isVaadPayment, כדי לתפוס גם תשלומים ישנים בלי שדה category כלל — שאילתת Firestore לפי category=='vaad' הייתה מפספסת אותם). splitPaymentsForPeriod() עודכן לקבל allVaadPayments כפרמטר רביעי אופציונלי (עם fallback לתאימות לאחור אם לא סופק) ומחליף גם תשלומי ועד, לא רק גבייה חריגה, בגרסה המסוננת-לפי-paidAt בחישובי היתרה המצטברת. *** מה לא השתנה בכוונה: *** טבלת ה-✓/- (כיסוי חודשי לכל דירה, resident×month) בכל שלושת דוחות ה-PDF וגיליון "תשלומים" באקסל ממשיכים להתבסס אך ורק על 'month' כרגיל (paymentMap) — זו שאלת "מי שילם עבור איזה חודש", לא נוגעים בה; רק הסיכומים הפיננסיים (סה"כ גבייה, פילוח בנק/מזומן, יתרות מצטברות) עברו ל-paidAt. "טעינה חשמלית" עדיין לפי 'month' בכל מקום, לא שונתה. *** v2.15.86: פיצ'ר חדש — "הכנסות נוספות" *** — כל הכנסה שאינה דמי ועד שוטפים/חוב עבר/גבייה חד-פעמית לשיפוץ/טעינה: השכרת שטחים ומשאבים משותפים, השכרת תשתיות ושטחי פרסום, מערכת סולארית (מכירת חשמל), החזרים/שיפויים/פיצויים, מענקים ותמיכות רשמיות, מכירת ציוד ושירותים נלווים, הכנסות מימוניות, העברות שונות. אוסף Firestore חדש buildings/{id}/otherIncome (category/description/amount/date/method — מבנה זהה במכוון ל-expenses, "הכנסה כהוצאה הפוכה"). כפתור חדש "💹 הכנסות נוספות" בניהול כספים פותח רשימה עם הוספה/עריכה/מחיקה (modal-other-income-list/modal-other-income-edit). computeBalanceFigures() קיבל פרמטר שביעי אופציונלי otherIncome=[] (בדיוק כמו specialPayments) — מתווסף לסה"כ הגבייה וליתרת הבנק/מזומן, אחרת ההכנסה הזו הייתה "נעלמת" מהמאזן. עודכנו כל קריאות ה-computeBalanceFigures הרלוונטיות: renderBalance (טאב מאזן — שורות "הכנסות נוספות" בפירוט גבייה + כרטיס "פירוט הכנסות שונות" מתחת ליתרת הפתיחה לתקופה, לחיצה על שורה פותחת לעריכה), openCashDeposit/saveCashDeposit ובדיקת יתרה זמינה ב-saveExpense (כדי שהיתרה הזמינה לבדיקה תשקף גם הכנסות אלה), renderForecast (יתרה נוכחית), ו-4 פונקציות הדוחות (רק ה"יתרה בחשבון הבנק/מזומן הנוכחית" המוצגת בתחתית כל דוח — לא נוספה עדיין פריצת "הכנסות נוספות" מפורטת בתוך גוף הדוחות עצמם, בהתאם לתחום הבקשה). כן נוסף לרשימות הגיבוי/שחזור/איפוס/מחיקת-בניין (exportData/importData/executeResetData/confirmDeleteBuilding/backupSelectedBuildings/executeRestoreBuilding). לא נדרש עדכון ל-Firestore Security Rules — האוסף החדש מכוסה אוטומטית ע"י כלל ה-{subcollection} הגורף הקיים.
+const APP_VERSION = '2.15.87'; // *** שינוי מהותי, המשך ל-v2.15.86 *** — טאב "מאזן" (renderBalance/paymentsInYmRange) כעת משייך גם תשלומי "טעינה חשמלית" לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' — עקבי עם "ועד בית שוטף" ו"גבייה חריגה" שכבר עבדו כך (v2.15.84-86). paymentsInYmRange() פושטה: כל שלוש הקטגוריות (ועד/חריגה/טעינה) עוברות עכשיו דרך אותו מסלול paidAt יחיד, ההסתעפות הישנה בין קטגוריות הוסרה לגמרי. *** מה לא השתנה בכוונה: *** דוחות PDF/אקסל (יומי/חודשי/חצי-שנתי/שנתי — createPDFReport/createMonthlyPDFReport/createSemiAnnualPDFReport/exportExcel) ממשיכים לחשב "טעינה חשמלית" לפי 'month' כרגיל, לא עודכנו בשלב זה. גם רשת ההיסטוריה של דייר, מסכי "סקירה"/"רשימה", בדיקת כפילות, הדרופדאון העליון של מסך "כספים", ורשימת "חריגים וטעינה חשמלית" (openCategoryPayments) — לא נוגעים בזה, ממשיכים כרגיל לפי 'month'. השפעת השינוי מוגבלת לחלוטין לטאב "מאזן" בלבד (paymentsInYmRange נקראת אך ורק מ-renderBalance).
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -7614,12 +7614,12 @@ function lastDayOfMonthStr(ym) {
 // מחזירה את תת-הקבוצה של payments ששייכת לטווח [fromYm, toYm] (כולל בשני
 // הקצוות) — לצורך חישובי "מאזן" (יתרת בנק/מזומן, סה"כ גבייה לתקופה).
 //
-// *** שינוי מהותי (ראה תיעוד מפורט למטה): תשלומי "ועד בית" משויכים כעת
-// לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' (החודש שהתשלום מכסה) —
-// בדיוק כמו "גבייה חריגה" שכבר עבדה כך. ***
-//
-// תשלומי "טעינה חשמלית" עדיין משויכים לפי 'month' בלבד — לא שונו בשלב הזה
-// (לא התבקש; אם יתבקש בעתיד, אותו שינוי בדיוק).
+// *** שינוי מהותי: כל שלוש קטגוריות התשלום (ועד בית שוטף, גבייה חריגה,
+// טעינה חשמלית) משויכות כעת לפי paidAt (תאריך ההעברה בפועל), לא לפי
+// 'month' (החודש/ים שהתשלום מכסה). עד v2.15.86 "טעינה חשמלית" הייתה
+// היחידה שנשארה לפי 'month' בלבד — מ-v2.15.87 גם היא עברה לאותו מסלול,
+// ולכן ההסתעפות הישנה בין קטגוריות הוסרה: כל תשלום, מכל קטגוריה, מסונן
+// עכשיו באותה צורה בדיוק לפי paidAt. ***
 //
 // למה השינוי הזה בוצע: יתרת הבנק/מזומן המוצגת במאזן אמורה לשקף את מה
 // שבאמת יש בחשבון הבנק בפועל, נכון לתאריך מסוים — לא את "מה שאמור להיות
@@ -7628,24 +7628,27 @@ function lastDayOfMonthStr(ym) {
 // ביתרת הבנק/מזומן שמוצגת עד סוף יוני — למרות שהכסף כבר פיזית נמצא בבנק!
 // ולהפך: תשלום שהתקבל באיחור (למשל: מכסה את ינואר, אבל בפועל שולם רק
 // במרץ) נספר "כאילו" הוא כבר בבנק כבר בינואר-פברואר, לפני שהכסף באמת
-// הגיע — מנפח מלאכותית את היתרה המוצגת ביחס למה שבאמת יש בבנק.
+// הגיע — מנפח מלאכותית את היתרה המוצגת ביחס למה שבאמת יש בבנק. אותה
+// בעיה בדיוק קיימת עבור גבייה מרוכזת של כמה חודשי טעינה חשמלית מראש/
+// באיחור (התומכת בטווח חודשים+תאריך העברה בפועל משלה, ר' savePayment) —
+// לכן אותו תיקון חל עכשיו גם עליה.
 //
-// *** מה לא השתנה (בכוונה) — היסטוריית תשלומי הדיירים: *** רשת ההיסטוריה
-// של דייר (renderHistoryGrid), מסכי "סקירה"/"רשימה" (renderPayments),
-// בדיקת הכפילות (checkExistingVaadPayment), הדרופדאון העליון של מסך
-// "כספים" (payment-month-select) — כל אלה ממשיכים להסתמך אך ורק על שדה
-// 'month' כרגיל, בלי שום שינוי. פונקציה זו (paymentsInYmRange) נקראת אך
-// ורק מתוך renderBalance() — כך שההשפעה של השינוי מוגבלת לחלוטין לטאב
-// "מאזן" בלבד, ואינה נוגעת כלל בשאלה "האם דירה X שילמה עבור חודש Y".
+// *** מה לא השתנה (בכוונה) — היסטוריית תשלומי הדיירים ודוחות PDF/אקסל: ***
+// רשת ההיסטוריה של דייר (renderHistoryGrid), מסכי "סקירה"/"רשימה"
+// (renderPayments), בדיקת הכפילות (checkExistingVaadPayment), הדרופדאון
+// העליון של מסך "כספים" (payment-month-select), וגם 4 מחוללי הדוחות
+// (createPDFReport/createMonthlyPDFReport/createSemiAnnualPDFReport/
+// exportExcel) — כל אלה ממשיכים לחשב "טעינה חשמלית" לפי 'month' כרגיל
+// (chargingPaymentsYear/chargingPaymentsMonth/chargingPaymentsHalf/
+// chargingPaymentsYearXl), בלי שינוי. פונקציה זו (paymentsInYmRange)
+// נקראת אך ורק מתוך renderBalance() — כך שההשפעה של השינוי מוגבלת
+// לחלוטין לטאב "מאזן" בלבד.
 function paymentsInYmRange(payments, fromYm, toYm) {
   const fromDateObj = new Date(fromYm + '-01T00:00:00');
   const toDateObj = new Date(lastDayOfMonthStr(toYm) + 'T23:59:59.999');
   return payments.filter(p => {
-    if (p.category === 'exceptional' || isVaadPayment(p)) {
-      const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
-      return d && d >= fromDateObj && d <= toDateObj;
-    }
-    return p.month >= fromYm && p.month <= toYm; // טעינה חשמלית — עדיין לפי 'month', לא שונה בשלב זה
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return d && d >= fromDateObj && d <= toDateObj;
   });
 }
 
