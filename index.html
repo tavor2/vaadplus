@@ -944,6 +944,18 @@
     <div class="form-group">
       <label class="form-label">שם מלא *</label>
       <input class="form-input" id="r-name" placeholder="ישראל ישראלי"/>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <input type="checkbox" id="r-replacement" style="width:18px;height:18px;cursor:pointer;flex-shrink:0;" onchange="onReplacementToggle()"/>
+        <label for="r-replacement" style="font-size:12px;color:var(--gray-600);cursor:pointer;">🔄 החלפת דייר (דייר חדש נכנס במקום דייר קודם)</label>
+      </div>
+      <div id="r-replacement-fields" style="display:none;margin-top:10px;padding:10px;background:var(--gray-50);border-radius:10px;">
+        <label class="form-label">שם הדייר הקודם</label>
+        <input class="form-input" id="r-prev-name" placeholder="שם הדייר שעזב"/>
+        <label class="form-label" style="margin-top:10px;">תאריך עזיבה</label>
+        <input class="form-input" id="r-prev-departure-date" type="date"/>
+        <label class="form-label" style="margin-top:10px;">טלפון (דייר קודם)</label>
+        <input class="form-input" id="r-prev-phone" type="tel" placeholder="050-0000000"/>
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">טלפון</label>
@@ -2710,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.91'; // *** שינוי טקסט בלבד, המשך ל-v2.15.90 *** — כפתור "🏦 תנועות בנק" בניהול כספים שונה ל-"🏦 מעקב תנועות מול הבנק". אין שינוי בפונקציונליות (openBankLedger/renderBankLedger).
+const APP_VERSION = '2.15.92'; // *** תוספת חדשה, המשך ל-v2.15.91 *** — טופס דייר (modal-resident): נוסף checkbox "🔄 החלפת דייר" מתחת לשדה "שם מלא", שבסימונו פותח שלושה שדות תיעודיים אופציונליים לדייר הקודם שעזב — שם, תאריך עזיבה, טלפון (r-replacement-fields). נשמר על כרטיס הדייר החדש עצמו כאובייקט replacementInfo (previousName/previousPhone/departureDate) ולא כרשומה נפרדת — מידע היסטורי בלבד, בלי תשלומים/היסטוריה משלו. onReplacementToggle() חדש (מקביל ל-onOwnershipChange) מציג/מסתיר את השדות; openAddResident() מאפס אותם, editResident() טוען replacementInfo קיים אם יש; saveResident() מאמת פורמט טלפון (10 ספרות, כמו r-phone) אם הוזן ושומר את האובייקט. לא נדרש שינוי ב-exportData/importData/backup — הם כבר מעתיקים את כל שדות מסמך הדייר במלואם.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -3689,6 +3701,17 @@ window.onOwnershipChange = () => {
   document.getElementById('r-owner-fields').style.display = isRenter ? '' : 'none';
 };
 
+// מציג/מסתיר את שדות "שם הדייר הקודם"/"תאריך עזיבה"/"טלפון" לפי סימון
+// checkbox "החלפת דייר" — משמש לתעד דייר חדש שנכנס במקום דייר קודם שעזב
+// (למשל דירה שנמכרה/הושכרה מחדש), בלי לאבד את פרטי הדייר הקודם. נשמר על
+// כרטיס הדייר החדש עצמו (data.replacementInfo — ראה saveResident) ולא
+// כרשומה נפרדת, כי זהו מידע היסטורי/תיעודי בלבד ואינו זקוק לתשלומים/
+// היסטוריה משלו כמו דייר ממשי.
+window.onReplacementToggle = () => {
+  const checked = document.getElementById('r-replacement').checked;
+  document.getElementById('r-replacement-fields').style.display = checked ? '' : 'none';
+};
+
 // ===== SPLIT APARTMENT CHECKBOX + LETTER PICKER =====
 // UI חלופי להזנת סיומת אות בדירה מפוצלת (5א, 5ב...) שאינו נוגע למקלדת
 // המכשיר בשום צורה — לעולם לא לשנות inputmode/type של r-apt, כדי לא ליצור
@@ -3757,6 +3780,11 @@ window.openAddResident = () => {
   // 4 דירות לקומה, קומה 0 ריקה מדירות (קומה 1 = דירות 1-4, קומה 2 = דירות 5-8 וכו')
   document.getElementById('r-floor').value = Math.ceil(newApt / 4);
   document.getElementById('r-name').value = '';
+  document.getElementById('r-replacement').checked = false;
+  document.getElementById('r-prev-name').value = '';
+  document.getElementById('r-prev-departure-date').value = '';
+  document.getElementById('r-prev-phone').value = '';
+  onReplacementToggle();
   document.getElementById('r-phone').value = '';
   document.getElementById('r-email').value = '';
   document.getElementById('r-ownership').value = 'owner';
@@ -3786,6 +3814,12 @@ window.editResident = (id) => {
   if (aptParsed.suffix) highlightAptSuffixButton(aptParsed.suffix); else clearAptSuffixHighlight();
   document.getElementById('r-floor').value = r.floor !== undefined ? r.floor : '';
   document.getElementById('r-name').value = r.name || '';
+  const replacementInfo = r.replacementInfo || null;
+  document.getElementById('r-replacement').checked = !!replacementInfo;
+  document.getElementById('r-prev-name').value = replacementInfo?.previousName || '';
+  document.getElementById('r-prev-departure-date').value = replacementInfo?.departureDate || '';
+  document.getElementById('r-prev-phone').value = replacementInfo?.previousPhone || '';
+  onReplacementToggle();
   document.getElementById('r-phone').value = r.phone || '';
   document.getElementById('r-email').value = r.email || '';
   document.getElementById('r-ownership').value = r.ownershipType || 'owner';
@@ -4272,6 +4306,26 @@ window.saveResident = async () => {
     }
   }
 
+  // "החלפת דייר" — שדות תיעודיים לדייר קודם שעזב (שם/תאריך עזיבה/טלפון),
+  // נשמרים על כרטיס הדייר החדש עצמו (replacementInfo) ולא כרשומה נפרדת —
+  // מידע היסטורי בלבד, לא זקוק לתשלומים/היסטוריה משלו כמו דייר ממשי. כל
+  // שלושת השדות אופציונליים (גם כש-checkbox מסומן) — רק פורמט הטלפון
+  // מאומת אם הוזן, באותו כלל כמו r-phone (10 ספרות בדיוק, ישראלי).
+  let replacementInfo = null;
+  if (document.getElementById('r-replacement').checked) {
+    const prevName = document.getElementById('r-prev-name').value.trim();
+    const prevPhone = document.getElementById('r-prev-phone').value.trim();
+    const prevDeparture = document.getElementById('r-prev-departure-date').value || null;
+    if (prevPhone) {
+      const prevPhoneDigits = prevPhone.replace(/\D/g, '');
+      if (prevPhoneDigits.length !== 10) {
+        showToast('⚠️ טלפון הדייר הקודם חייב להכיל בדיוק 10 ספרות (לדוגמה: 050-1234567)');
+        return;
+      }
+    }
+    replacementInfo = { previousName: prevName || null, previousPhone: prevPhone || null, departureDate: prevDeparture };
+  }
+
   // סטטוס מגורים — בעלים (ברירת מחדל) או שכירות. בשכירות שם הבעלים חובה
   // (כדי שיהיה אפשר ליצור איתו קשר במקרה הצורך), הטלפון אופציונלי אך
   // מאומת בפורמט אם הוזן.
@@ -4315,6 +4369,7 @@ window.saveResident = async () => {
     floor: parseInt(document.getElementById('r-floor').value) || 0,
     name, email, role,
     phone,
+    replacementInfo,
     ownershipType, ownerName, ownerPhone,
     chargingStation: document.getElementById('r-charging').value || 'none',
     paymentMethod: document.getElementById('r-payment-method').value,
