@@ -1302,6 +1302,7 @@
       <button class="btn-primary" onclick="closeAdminFinance();openSemiAnnualPDFSelector();">📆 הפק PDF חצי שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openExcelYearlySelector();">📊 ייצוא לאקסל שנתי</button>
       <button class="btn-primary" onclick="closeAdminFinance();openDistributionReport();">📊 דוח התפלגות תשלומים</button>
+      <button class="btn-primary" onclick="closeAdminFinance();openBankLedger();">🏦 תנועות בנק</button>
       <button class="btn-primary" onclick="closeAdminFinance();openDuplicatePayments();">🔍 איתור תשלומים כפולים</button>
       <button class="btn-primary" onclick="closeAdminFinance();openOrphanPayments();">🔍 איתור תשלומים יתומים (דירה לא קיימת)</button>
       <hr style="border:none;border-top:1px solid #eee;margin:4px 0;"/>
@@ -1475,6 +1476,38 @@
     <button class="btn-primary" onclick="renderDistributionReport()">📊 הצג דוח</button>
     <div id="distribution-report-content" style="margin-top:16px;"></div>
     <button class="btn-secondary" style="margin-top:12px;" onclick="closeModal('modal-distribution-report')">סגור</button>
+  </div>
+</div>
+
+<!-- Bank Ledger (תנועות בנק) Modal — chronological ledger of every money
+     movement that actually affected the bank account (transfer/standingOrder/
+     check — not cash), with a running balance shown after each transaction,
+     filterable by month range (מחודש/עד חודש). Reads across payments/
+     specialPayments/otherIncome/cashDeposits/expenses — cash deposits always
+     count (they move money INTO the bank from the cash box), everything
+     else is included only when its own method isn't 'cash'. Opened directly
+     from the ניהול כספים menu (after closeAdminFinance()), same pattern as
+     modal-distribution-report — not layered over another open modal, so no
+     DOM-order/z-index stacking concern here. -->
+<div class="modal-overlay" id="modal-bank-ledger">
+  <div class="modal">
+    <div class="modal-title">🏦 תנועות בנק</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.6;">
+      כל התנועות שהשפיעו בפועל על חשבון הבנק (העברות/הוראות קבע/שיקים — לא כולל תשלומים/הוצאות במזומן) — לפי סדר כרונולוגי, החדש ביותר למעלה, עם יתרת בנק מצטברת מוצגת אחרי כל תנועה.
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">מחודש</label>
+        <select class="form-select" id="bl-from-month"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">עד חודש (כולל)</label>
+        <select class="form-select" id="bl-to-month"></select>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="renderBankLedger()">🏦 הצג תנועות</button>
+    <div id="bank-ledger-content" style="margin-top:16px;"></div>
+    <button class="btn-secondary" style="margin-top:12px;" onclick="closeModal('modal-bank-ledger')">סגור</button>
   </div>
 </div>
 
@@ -2192,6 +2225,11 @@ function aptEquals(a, b) {
 // and renderHistoryGrid() — was previously duplicated 5x in the file.
 const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
+// גרסה מקוצרת (חודש עברי בן 3-4 אותיות, עם גרש בסוף כשמתאים) — משמשת אך
+// ורק ב"תנועות בנק" (renderBankLedger), שם כל תנועה מוצגת בשתי שורות
+// (יום+תיאור+סכום, ואז חודש+יתרה) ולא נדרש שם החודש המלא.
+const HEBREW_MONTHS_SHORT = ['ינו\'','פבר\'','מרץ','אפר\'','מאי','יונ\'','יול\'','אוג\'','ספט\'','אוק\'','נוב\'','דצמ\''];
+
 // Shared across renderExpenses(), renderBalance() and openLog() — was
 // previously duplicated 3x in the file with identical contents.
 const EXPENSE_CATEGORY_ICONS = { חשמל:'⚡', מים:'💧', ניקיון:'🧹', מעלית:'🛗', ביטוח:'🛡️', 'כיבוי אש':'🚒', 'עמלות בנק':'🏦', תיקון:'🔧', גינון:'🌿', אחר:'📋' };
@@ -2672,7 +2710,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.87'; // *** שינוי מהותי, המשך ל-v2.15.86 *** — טאב "מאזן" (renderBalance/paymentsInYmRange) כעת משייך גם תשלומי "טעינה חשמלית" לתקופה לפי paidAt (תאריך ההעברה בפועל), לא לפי 'month' — עקבי עם "ועד בית שוטף" ו"גבייה חריגה" שכבר עבדו כך (v2.15.84-86). paymentsInYmRange() פושטה: כל שלוש הקטגוריות (ועד/חריגה/טעינה) עוברות עכשיו דרך אותו מסלול paidAt יחיד, ההסתעפות הישנה בין קטגוריות הוסרה לגמרי. *** מה לא השתנה בכוונה: *** דוחות PDF/אקסל (יומי/חודשי/חצי-שנתי/שנתי — createPDFReport/createMonthlyPDFReport/createSemiAnnualPDFReport/exportExcel) ממשיכים לחשב "טעינה חשמלית" לפי 'month' כרגיל, לא עודכנו בשלב זה. גם רשת ההיסטוריה של דייר, מסכי "סקירה"/"רשימה", בדיקת כפילות, הדרופדאון העליון של מסך "כספים", ורשימת "חריגים וטעינה חשמלית" (openCategoryPayments) — לא נוגעים בזה, ממשיכים כרגיל לפי 'month'. השפעת השינוי מוגבלת לחלוטין לטאב "מאזן" בלבד (paymentsInYmRange נקראת אך ורק מ-renderBalance).
+const APP_VERSION = '2.15.88'; // *** שינוי קטן, המשך ל-v2.15.87 *** — דוח "התפלגות תשלומים" (renderDistributionReport, modal-distribution-report): כותרות עמודות הטבלה שונו לניסוח ברור יותר ופוצלו לשתי שורות (<br/>) כדי לצמצם את רוחב העמודות — "מס' בהעברה"→"מספר דיירים בבנק", "סכום בהעברה"→"סכום העברה לבנק", "מס' במזומן"→"מספר דיירים במזומן", "סכום מזומן"→"סכום גבייה במזומן". שינוי תצוגה בלבד, אין שינוי בלוגיקת החישוב.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -4900,7 +4938,7 @@ window.renderDistributionReport = async () => {
     });
 
     const tableHtml = '<div style="overflow-x:auto;"><table class="po-table"><thead><tr>'
-      + '<th>חודש</th><th>מס\' בהעברה</th><th>סכום בהעברה</th><th>מס\' במזומן</th><th>סכום מזומן</th><th>סה"כ החודש</th>'
+      + '<th>חודש</th><th>מספר דיירים<br/>בבנק</th><th>סכום העברה<br/>לבנק</th><th>מספר דיירים<br/>במזומן</th><th>סכום גבייה<br/>במזומן</th><th>סה"כ החודש</th>'
       + '</tr></thead><tbody>'
       + rows.map(r => '<tr>'
           + '<td>' + monthLabel(r.ym) + '</td>'
@@ -4924,6 +4962,160 @@ window.renderDistributionReport = async () => {
     logAnalyticsEvent('distribution_report_viewed');
   } catch(e) {
     container.innerHTML = '<div class="card-empty">שגיאה בהפקת הדוח: ' + e.message + '</div>';
+  }
+};
+
+// ===== BANK LEDGER (תנועות בנק) =====
+// יומן כרונולוגי של כל תנועה שהשפיעה בפועל על חשבון הבנק (לא קופת המזומן),
+// עם יתרת בנק מצטברת מוצגת אחרי כל תנועה — בדיוק כמו דף תנועות בנק אמיתי.
+// "בנק" כאן = כל מה שאינו method==='cash' (העברה/הוראת קבע/שיק — אותו
+// עיקרון בדיוק כמו splitCashBank()/computeBalanceFigures() בכל שאר האפליקציה),
+// בתוספת הפקדות מזומן לבנק (cashDeposits — תמיד נכללות, כי הן בעצם הכסף
+// שעבר מהקופה לחשבון). מרכיב את הרשימה מחמישה מקורות: payments (ועד/טעינה/
+// גבייה חריגה יחד — כל תשלום בבניין), specialPayments (גבייה מיוחדת),
+// otherIncome (הכנסות נוספות), cashDeposits (הפקדות), expenses (הוצאות,
+// תמיד בסימן מינוס). שולף כל אוסף במלואו (getDocs רגיל, לא query לפי טווח)
+// כי payments/specialPayments משויכים לפי paidAt (Timestamp) לא לפי שדה
+// תאריך-מחרוזת — אותו דפוס בדיוק כמו openDuplicatePayments/renderBalance
+// במקומות אחרים בקובץ.
+window.openBankLedger = () => {
+  if (!isAdmin) { showToast('אין הרשאה'); return; }
+  const optsHtml = buildWideMonthOptionsHtml(36, 6);
+  const now = new Date();
+  const currentYm = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const yearStartYm = now.getFullYear() + '-01';
+  document.getElementById('bl-from-month').innerHTML = optsHtml;
+  document.getElementById('bl-to-month').innerHTML = optsHtml;
+  document.getElementById('bl-from-month').value = yearStartYm;
+  document.getElementById('bl-to-month').value = currentYm;
+  document.getElementById('bank-ledger-content').innerHTML = '';
+  openModal('modal-bank-ledger');
+};
+
+window.renderBankLedger = async () => {
+  const fromYm = document.getElementById('bl-from-month').value;
+  const toYm = document.getElementById('bl-to-month').value;
+  const container = document.getElementById('bank-ledger-content');
+  if (!fromYm || !toYm) { showToast('יש לבחור טווח חודשים'); return; }
+  if (fromYm > toYm) { showToast('"מחודש" חייב להיות מוקדם מ-"עד חודש" (או שווה לו)'); return; }
+
+  container.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    const fromDateStr = fromYm + '-01';
+    const toDateStr = lastDayOfMonthStr(toYm);
+    const fromDateObj = new Date(fromDateStr + 'T00:00:00');
+    const toDateObj = new Date(toDateStr + 'T23:59:59.999');
+
+    const [paySnap, specialPaySnap, otherIncomeSnap, depositsSnap, expSnap] = await Promise.all([
+      getDocs(collection(db, 'buildings', buildingId, 'payments')),
+      getDocs(collection(db, 'buildings', buildingId, 'specialPayments')),
+      getDocs(collection(db, 'buildings', buildingId, 'otherIncome')),
+      getDocs(collection(db, 'buildings', buildingId, 'cashDeposits')),
+      getDocs(collection(db, 'buildings', buildingId, 'expenses'))
+    ]);
+    const allPayments = paySnap.docs.map(d => d.data());
+    const allSpecialPaymentsData = specialPaySnap.docs.map(d => d.data());
+    const allOtherIncomeData = otherIncomeSnap.docs.map(d => d.data());
+    const allDeposits = depositsSnap.docs.map(d => d.data());
+    const allExpensesData = expSnap.docs.map(d => d.data());
+
+    // יתרת בנק נכון לרגע שלפני תחילת התקופה (fromDateObj) — נקודת הפתיחה
+    // לחישוב היתרה המצטברת בתוך התקופה. משתמש ב-computeBalanceFigures()
+    // הקיים (מחשב cash/bank יחד) ומוציא ממנו רק את bankBalance.
+    const prePayments = allPayments.filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d < fromDateObj; });
+    const preSpecial = allSpecialPaymentsData.filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d < fromDateObj; });
+    const preOtherIncome = allOtherIncomeData.filter(e => (e.date||'') < fromDateStr);
+    const preDeposits = allDeposits.filter(d => (d.date||'') < fromDateStr);
+    const preExpenses = allExpensesData.filter(e => (e.date||'') < fromDateStr);
+    const { bankBalance: openingBankBalance } = computeBalanceFigures(
+      prePayments, preExpenses, preDeposits,
+      buildingData?.openingBalance || 0, buildingData?.cashOpeningBalance || 0,
+      preSpecial, preOtherIncome
+    );
+
+    // תנועות בפועל בתוך התקופה — רק אלה שהשפיעו על הבנק (method!=='cash',
+    // הפקדות תמיד נכללות). כל תנועה: תאריך, סכום עם סימן (+/-), תיאור.
+    const txns = [];
+
+    allPayments.forEach(p => {
+      if (p.method === 'cash') return;
+      const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+      if (!d || d < fromDateObj || d > toDateObj) return;
+      let desc;
+      if (isVaadPayment(p)) desc = 'תשלום ועד בית - דירה ' + p.apt;
+      else if (p.category === 'charging') desc = '🔌 טעינה חשמלית - דירה ' + p.apt;
+      else desc = '👑 גבייה חריגה (' + (p.payerType === 'renter' ? 'שוכרים' : 'בעלים') + ') - דירה ' + p.apt;
+      txns.push({ dateObj: d, amount: p.amount || 0, desc });
+    });
+
+    allSpecialPaymentsData.forEach(p => {
+      if (p.method === 'cash') return;
+      const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+      if (!d || d < fromDateObj || d > toDateObj) return;
+      txns.push({ dateObj: d, amount: p.amount || 0, desc: '🔧 גבייה מיוחדת - דירה ' + p.apt });
+    });
+
+    allOtherIncomeData.forEach(e => {
+      if (e.method === 'cash') return;
+      if ((e.date||'') < fromDateStr || (e.date||'') > toDateStr) return;
+      const icon = OTHER_INCOME_CATEGORY_ICONS[e.category] || '💹';
+      txns.push({ dateObj: new Date(e.date + 'T00:00:00'), amount: e.amount || 0, desc: icon + ' ' + (e.description || e.category || '') });
+    });
+
+    allDeposits.forEach(d => {
+      if ((d.date||'') < fromDateStr || (d.date||'') > toDateStr) return;
+      txns.push({ dateObj: new Date(d.date + 'T00:00:00'), amount: d.amount || 0, desc: '🏦 הפקדת מזומן לבנק' + (d.note ? ' - ' + d.note : '') });
+    });
+
+    allExpensesData.forEach(e => {
+      if (e.method === 'cash') return;
+      if ((e.date||'') < fromDateStr || (e.date||'') > toDateStr) return;
+      const icon = EXPENSE_CATEGORY_ICONS[e.category] || '📋';
+      txns.push({ dateObj: new Date(e.date + 'T00:00:00'), amount: -(e.amount || 0), desc: icon + ' ' + descWithNote(e) });
+    });
+
+    if (!txns.length) {
+      container.innerHTML = '<div class="card-empty">אין תנועות בנק בטווח התקופה שנבחר</div>';
+      return;
+    }
+
+    // ממיינים עולה (מהישן לחדש) כדי לחשב יתרה מצטברת נכונה צעד-צעד, ורק
+    // אחרי החישוב הופכים לתצוגה (החדש ביותר למעלה — כמו דף בנק אמיתי).
+    // ה-balanceAfter שכבר חושב על כל תנועה נשאר צמוד אליה גם אחרי ההיפוך.
+    txns.sort((a,b) => a.dateObj - b.dateObj);
+    let running = openingBankBalance;
+    txns.forEach(t => { running += t.amount; t.balanceAfter = running; });
+    const closingBankBalance = running;
+    txns.reverse();
+
+    const fmtAmt = n => Math.abs(n).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2});
+
+    const summaryHtml = '<div class="card" style="margin-bottom:12px;">'
+      + '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;color:var(--gray-600);"><span>יתרת בנק לפני התקופה</span><span style="font-weight:700;">₪' + fmtAmt(openingBankBalance) + '</span></div>'
+      + '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;color:var(--gray-600);"><span>יתרת בנק בסוף התקופה</span><span style="font-weight:700;color:' + (closingBankBalance>=0?'var(--green)':'var(--red)') + ';">₪' + fmtAmt(closingBankBalance) + '</span></div>'
+      + '</div>';
+
+    const rowsHtml = txns.map(t => {
+      const day = t.dateObj.getDate();
+      const monthShort = HEBREW_MONTHS_SHORT[t.dateObj.getMonth()];
+      const isIncome = t.amount >= 0;
+      const amountColor = isIncome ? 'var(--green)' : 'var(--red)';
+      const amountStr = fmtAmt(t.amount) + (isIncome ? '+' : '-');
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--gray-100);">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+        + '<div style="font-size:14px;flex:1;"><span style="font-weight:700;">' + day + '.</span>&nbsp;&nbsp;' + t.desc + '</div>'
+        + '<div style="font-weight:700;color:' + amountColor + ';white-space:nowrap;">' + amountStr + '</div>'
+        + '</div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">'
+        + '<span style="font-size:11px;color:var(--gray-400);">' + monthShort + '</span>'
+        + '<span style="font-size:12px;color:var(--gray-500);">יתרה&nbsp;₪' + fmtAmt(t.balanceAfter) + '</span>'
+        + '</div></div>';
+    }).join('');
+
+    container.innerHTML = summaryHtml + rowsHtml;
+    logAnalyticsEvent('bank_ledger_viewed');
+  } catch(e) {
+    container.innerHTML = '<div class="card-empty">שגיאה בהצגת תנועות הבנק: ' + e.message + '</div>';
   }
 };
 
