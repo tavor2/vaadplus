@@ -2722,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.97'; // *** תוספת חדשה, המשך ל-v2.15.96 *** — תיקון באג עקביות: זוהה פער בין "פירוט גבייה" בטאב "מאזן" לבין הדוחות (שנתי/חצי-שנתי/חודשי/Excel) — הסיבה: טעינה חשמלית (category==='charging') הייתה הקטגוריה היחידה שנשארה משויכת לתקופה לפי 'month' בדוחות, בעוד גבייה חריגה/ועד שוטף/גבייה מיוחדת כבר עברו ל-paidAt (תאריך העברה בפועל) בגרסאות קודמות, וטאב "מאזן" (paymentsInYmRange) ממילא מסנן הכל אחיד לפי paidAt בלי הבחנה בין קטגוריות. אם תשלום טעינה שולם בפועל בחודש/שנה שונים מהחודש שהוא מכסה — הדוח והמאזן הראו סכומי "טעינה חשמלית שנגבתה בתקופה" שונים. תוקן: פונקציית עזר חדשה fetchAllChargingPayments() (מקבילה ל-fetchAllVaadPayments/fetchAllExceptionalPayments) + splitPaymentsForPeriod() מקבלת כעת פרמטר חמישי אופציונלי allChargingPayments ומטפלת בטעינה בדיוק כמו בועד שוטף (מוציאה מ-monthScoped, מוסיפה לפי paidAt). עודכנו כל ארבעת מקומות החישוב: chargingPaymentsYear/Month/Half (createPDFReport/createMonthlyPDFReport/createSemiAnnualPDFReport/exportExcel) עברו לחישוב לפי paidAt; וכל חמש קריאות splitPaymentsForPeriod (יתרות מצטברות בכל הדוחות + exportExcel) מקבלות כעת גם allChargingPayments, כך שגם היתרה המצטברת בבנק/מזומן בדוחות עקבית לחלוטין עם טאב "מאזן" לכל הקטגוריות. לא נדרש AAB חדש — שינוי לוגיקה בדוחות בלבד, git push בלבד.
+const APP_VERSION = '2.15.99'; // *** תוספת חדשה, המשך ל-v2.15.98 *** — מעקב תנועות מול הבנק (openBankLedger/renderBankLedger): תשלומי ועד בית/גבייה חריגה/טעינה חשמלית שנשמרו כמה רשומות נפרדות (רשומה אחת לכל חודש) אך שולמו למעשה בהעברה בנקאית אחת, הוצגו עד כה כמה שורות נפרדות באותו תאריך — לא תואם לדף הבנק האמיתי, שם רואים תנועה אחת. תוקן: לפני בניית רשימת התנועות, תשלומים שאינם במזומן מקובצים לפי groupKeyFor() הקיים (דירה+קטגוריה+סוג משלם+תאריך העברה — כבר בשימוש בטבלאות הפירוט בדוחות מ-v2.15.94), כך שכל קבוצה הופכת לשורת תנועה אחת עם הסכום הכולל (בדיוק כמו שבאמת עבר בבנק) ותוספת "(X חודשים)" בתיאור כשמדובר ביותר מרשומה אחת. גבייה מיוחדת/הכנסות נוספות/הפקדות/הוצאות לא שונו — אלה כבר רשומה אחת = תנועה אחת מטבעם. לא נדרש AAB חדש — שינוי תצוגה בלבד, git push בלבד.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5092,15 +5092,28 @@ window.renderBankLedger = async () => {
     // הפקדות תמיד נכללות). כל תנועה: תאריך, סכום עם סימן (+/-), תיאור.
     const txns = [];
 
-    allPayments.forEach(p => {
-      if (p.method === 'cash') return;
+    // תשלומי ועד/חריגה/טעינה — מקובצים לפי groupKeyFor (דירה+קטגוריה+סוג
+    // משלם+תאריך העברה, כבר בשימוש בטבלאות הפירוט בדוחות) כך שהעברה
+    // בנקאית אחת שכיסתה כמה חודשים (או כמה רשומות תשלום) מוצגת כאן כשורה
+    // אחת עם הסכום הכולל שבאמת עבר בבנק — בדיוק כמו שיראה במעקב מול הבנק
+    // האמיתי — ולא כשורה נפרדת לכל חודש/רשומה כמו קודם.
+    const bankPayments = allPayments.filter(p => {
+      if (p.method === 'cash') return false;
       const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
-      if (!d || d < fromDateObj || d > toDateObj) return;
+      return d && d >= fromDateObj && d <= toDateObj;
+    });
+    const paymentGroups = {};
+    bankPayments.forEach(p => { const k = groupKeyFor(p); (paymentGroups[k] = paymentGroups[k] || []).push(p); });
+    Object.values(paymentGroups).forEach(items => {
+      const first = items[0];
+      const total = items.reduce((s,p) => s + (p.amount||0), 0);
+      const d = first.paidAt.toDate();
+      const monthsSuffix = items.length > 1 ? ' (' + items.length + ' חודשים)' : '';
       let desc;
-      if (isVaadPayment(p)) desc = 'תשלום ועד בית - דירה ' + p.apt;
-      else if (p.category === 'charging') desc = '🔌 טעינה חשמלית - דירה ' + p.apt;
-      else desc = '👑 גבייה חריגה (' + (p.payerType === 'renter' ? 'שוכרים' : 'בעלים') + ') - דירה ' + p.apt;
-      txns.push({ dateObj: d, amount: p.amount || 0, desc });
+      if (isVaadPayment(first)) desc = 'תשלום ועד בית - דירה ' + first.apt + monthsSuffix;
+      else if (first.category === 'charging') desc = '🔌 טעינה חשמלית - דירה ' + first.apt + monthsSuffix;
+      else desc = '👑 גבייה חריגה (' + (first.payerType === 'renter' ? 'שוכרים' : 'בעלים') + ') - דירה ' + first.apt + monthsSuffix;
+      txns.push({ dateObj: d, amount: total, desc });
     });
 
     allSpecialPaymentsData.forEach(p => {
@@ -8799,14 +8812,20 @@ window.exportExcel = async (year) => {
       specialByMonth[m] = (specialByMonth[m]||0) + (p.amount||0);
     });
 
+    // הכנסות נוספות (otherIncome) — ראה תיעוד מלא ב-createPDFReport. date
+    // הוא מחרוזת רגילה, לכן שאילתת טווח ישירה.
+    const otherIncomeYearXlSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','>=', `${year}-01-01`), where('date','<=', `${year}-12-31`)));
+    const otherIncomeYearXl = otherIncomeYearXlSnap.docs.map(d => d.data());
+    const { cash: otherIncomeCashCollectedYear, bank: otherIncomeBankCollectedYear, total: otherIncomeCollectedYear } = splitCashBank(otherIncomeYearXl);
+
     // פילוח בנק/מזומן עבור "ועד בית שוטף" — מ-v2.15.85 מבוסס על
     // yearVaadPaymentsByPaidAt (paidAt בתוך השנה, ללא תלות ב'month' שהתשלום
     // מכסה), עקבי עם טאב "מאזן". שונה במכוון מגיליון "תשלומים" (paymentMap),
     // שממשיך לענות על "מי שילם עבור איזה חודש" (שאלת כיסוי), לא "כמה כסף
     // פיזית נכנס השנה" (שאלה פיננסית) — ראה תיעוד מורחב ב-createPDFReport.
     const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(yearVaadPaymentsByPaidAt);
-    const totalBankCollectedYear = vaadBankCollectedYear + exceptionalOwnerBankCollectedYear + exceptionalRenterBankCollectedYear + chargingBankCollectedYear + specialBankCollectedYear;
-    const totalCashCollectedYear = vaadCashCollectedYear + exceptionalOwnerCashCollectedYear + exceptionalRenterCashCollectedYear + chargingCashCollectedYear + specialCashCollectedYear;
+    const totalBankCollectedYear = vaadBankCollectedYear + exceptionalOwnerBankCollectedYear + exceptionalRenterBankCollectedYear + chargingBankCollectedYear + specialBankCollectedYear + otherIncomeBankCollectedYear;
+    const totalCashCollectedYear = vaadCashCollectedYear + exceptionalOwnerCashCollectedYear + exceptionalRenterCashCollectedYear + chargingCashCollectedYear + specialCashCollectedYear + otherIncomeCashCollectedYear;
     const totalCollectedAllYear = totalBankCollectedYear + totalCashCollectedYear;
 
     const expSnap = await getDocs(query(
@@ -8978,6 +8997,8 @@ window.exportExcel = async (year) => {
       ['💵 מזומן שנגבה (טעינה חשמלית)', chargingCashCollectedYear],
       ['💳 הועבר לבנק (גבייה מיוחדת)', specialBankCollectedYear],
       ['💵 מזומן שנגבה (גבייה מיוחדת)', specialCashCollectedYear],
+      ['💳 הועבר לבנק (הכנסות נוספות)', otherIncomeBankCollectedYear],
+      ['💵 מזומן שנגבה (הכנסות נוספות)', otherIncomeCashCollectedYear],
       [`סה"כ גבייה (${year})`, totalCollectedAllYear],
       [`מתוכן הועבר לבנק (${year})`, totalBankCollectedYear],
       [`מתוכן במזומן (${year})`, totalCashCollectedYear],
@@ -9324,6 +9345,33 @@ function buildSpecialPaymentDetailTableHtml(specialPayments, titleById) {
     </table></div>`;
 }
 
+// בונה טבלת "פירוט" עבור הכנסות נוספות (otherIncome — כל הכנסה שאינה דמי
+// ועד/גבייה חריגה/מיוחדת, למשל ריבית בנק, השכרת שטח משותף וכו'). בשונה
+// מהשלוש האחרות, לכל רשומה יש שדה 'date' רגיל (מחרוזת) ולא paidAt
+// (Timestamp) — ואין קיבוץ רב-חודשי, כל רשומה עומדת בפני עצמה, כמו
+// buildSpecialPaymentDetailTableHtml.
+function buildOtherIncomeDetailTableHtml(otherIncomeList) {
+  const title = '💹 פירוט&nbsp;הכנסות&nbsp;נוספות';
+  if (!otherIncomeList.length) {
+    return `<div class="detail-section"><h2>${title}</h2><table style="width:100%;"><tbody><tr><td style="text-align:center;border:1px solid #ddd;padding:8px;">אין&nbsp;הכנסות&nbsp;בתקופה&nbsp;זו</td></tr></tbody></table></div>`;
+  }
+  const rows = [...otherIncomeList].sort((a,b) => (a.date||'').localeCompare(b.date||'')).map(p => {
+    const methodLabel = p.method === 'cash' ? 'מזומן' : 'בנק';
+    return `<tr>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(p.category||'').replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(p.description||'').replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${fmtDateDMY(p.date)}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="detail-section"><h2>${title}</h2>
+    <table style="width:100%;table-layout:fixed;font-size:12px;">
+      <thead><tr><th>קטגוריה</th><th>תיאור</th><th>סכום</th><th>תאריך</th><th>אמצעי</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
 async function createPDFReport(year) {
   // year מגיע כעת כפרמטר מפורש מהמודל modal-yearly-select
   // (openYearlyPDFSelector/confirmYearlyPDF) — לא נגזר יותר בשקט מהחודש
@@ -9396,6 +9444,15 @@ async function createPDFReport(year) {
   const specialCollectionTitleById = {};
   specialCollectionsSnapForTitles.docs.forEach(d => { specialCollectionTitleById[d.id] = d.data().title || 'גבייה מיוחדת'; });
 
+  // הכנסות נוספות (otherIncome) — עד v2.15.97 היו כלולות רק ביתרת הבנק/
+  // מזומן המצטברת (cumOtherIncomeSnap למטה, לחישוב computeBalanceFigures),
+  // אבל לא הופיעו בשורת "סה"כ גבייה:בתקופה" ולא הייתה להן טבלת פירוט —
+  // בניגוד לוועד שוטף/גבייה חריגה/טעינה/גבייה מיוחדת שכולן משויכות לתקופה
+  // הזו. otherIncome.date הוא שדה תאריך רגיל (מחרוזת), לא paidAt.
+  const otherIncomeYearSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','>=', `${year}-01-01`), where('date','<=', `${year}-12-31`)));
+  const otherIncomeYear = otherIncomeYearSnap.docs.map(d => d.data());
+  const { cash: otherIncomeCashCollectedYear, bank: otherIncomeBankCollectedYear, total: otherIncomeCollectedYear } = splitCashBank(otherIncomeYear);
+
   const months = HEBREW_MONTHS;
   
   // Load expenses
@@ -9459,8 +9516,8 @@ async function createPDFReport(year) {
   // פיזית נכנס לבנק/לקופה השנה" (שאלה פיננסית) — שתי שאלות שונות שיכולות
   // להניב סכומים שונים כשיש גבייה מראש/באיחור, בדיוק כמו בטאב "מאזן".
   const { cash: vaadCashCollectedYear, bank: vaadBankCollectedYear } = splitCashBank(yearVaadPaymentsByPaidAt);
-  const totalBankCollectedYear = vaadBankCollectedYear + exceptionalOwnerBankCollectedYear + exceptionalRenterBankCollectedYear + chargingBankCollectedYear + specialBankCollectedYear;
-  const totalCashCollectedYear = vaadCashCollectedYear + exceptionalOwnerCashCollectedYear + exceptionalRenterCashCollectedYear + chargingCashCollectedYear + specialCashCollectedYear;
+  const totalBankCollectedYear = vaadBankCollectedYear + exceptionalOwnerBankCollectedYear + exceptionalRenterBankCollectedYear + chargingBankCollectedYear + specialBankCollectedYear + otherIncomeBankCollectedYear;
+  const totalCashCollectedYear = vaadCashCollectedYear + exceptionalOwnerCashCollectedYear + exceptionalRenterCashCollectedYear + chargingCashCollectedYear + specialCashCollectedYear + otherIncomeCashCollectedYear;
   const totalCollectedAllYear = totalBankCollectedYear + totalCashCollectedYear;
 
   // חישוב יתרות לדוח — מצטבר נכון לסוף השנה המדווחת (31/12/year), לא "כל
@@ -9532,6 +9589,8 @@ async function createPDFReport(year) {
       ${buildCategoryDetailTableHtml('🔌&nbsp;פירוט&nbsp;גבייה&nbsp;לטעינה&nbsp;חשמלית', chargingPaymentsYear, false)}
 
       ${buildSpecialPaymentDetailTableHtml(specialPaymentsYear, specialCollectionTitleById)}
+
+      ${buildOtherIncomeDetailTableHtml(otherIncomeYear)}
       <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
       <table style="width:100%;table-layout:fixed;">
         <thead>
@@ -9590,6 +9649,8 @@ async function createPDFReport(year) {
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💳 הועבר לבנק הכנסות נוספות</span><span dir="ltr">₪${otherIncomeBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span>💵 מזומן שנגבה הכנסות נוספות</span><span dir="ltr">₪${otherIncomeCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;"><span class="total">סה"כ גבייה:</span><span dir="ltr">₪${totalCollectedAllYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="display:flex;direction:rtl;gap:5px;padding-right:16px;font-size:14px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedYear.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
@@ -9762,6 +9823,12 @@ async function createMonthlyPDFReport(ym) {
   });
   const { cash: chargingCashCollectedMonth, bank: chargingBankCollectedMonth, total: chargingCollectedMonth } = splitCashBank(chargingPaymentsMonth);
 
+  // הכנסות נוספות (otherIncome) — ראה תיעוד מלא ב-createPDFReport. date הוא
+  // מחרוזת רגילה, לכן שאילתת טווח ישירה.
+  const otherIncomeMonthSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','>=', ym + '-01'), where('date','<=', ym + '-31')));
+  const otherIncomeMonth = otherIncomeMonthSnap.docs.map(d => d.data());
+  const { cash: otherIncomeCashCollectedMonth, bank: otherIncomeBankCollectedMonth, total: otherIncomeCollectedMonth } = splitCashBank(otherIncomeMonth);
+
   const residents = [...allResidents].sort((a,b) => aptCompare(a.apt, b.apt));
   let totalCollected = 0, paidCount = 0;
   const residentRows = residents.map(r => {
@@ -9788,8 +9855,8 @@ async function createMonthlyPDFReport(ym) {
   // "כמה כסף פיזית נכנס החודש") — ראה תיעוד מורחב באותה נקודה בדוח השנתי
   // (createPDFReport).
   const { cash: cashCollectedMonth, bank: bankCollectedMonth } = splitCashBank(monthVaadPaymentsByPaidAt);
-  const totalBankCollectedMonth = bankCollectedMonth + exceptionalOwnerBankCollectedMonth + exceptionalRenterBankCollectedMonth + chargingBankCollectedMonth + specialBankCollectedMonth;
-  const totalCashCollectedMonth = cashCollectedMonth + exceptionalOwnerCashCollectedMonth + exceptionalRenterCashCollectedMonth + chargingCashCollectedMonth + specialCashCollectedMonth;
+  const totalBankCollectedMonth = bankCollectedMonth + exceptionalOwnerBankCollectedMonth + exceptionalRenterBankCollectedMonth + chargingBankCollectedMonth + specialBankCollectedMonth + otherIncomeBankCollectedMonth;
+  const totalCashCollectedMonth = cashCollectedMonth + exceptionalOwnerCashCollectedMonth + exceptionalRenterCashCollectedMonth + chargingCashCollectedMonth + specialCashCollectedMonth + otherIncomeCashCollectedMonth;
   const totalCollectedAllMonth = totalBankCollectedMonth + totalCashCollectedMonth;
 
   // הוצאות החודש
@@ -9888,6 +9955,8 @@ async function createMonthlyPDFReport(ym) {
         <div class="summary-line"><span>💵 מזומן שנגבה טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span>💳 הועבר לבנק גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span>💵 מזומן שנגבה גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק הכנסות נוספות</span><span dir="ltr">₪${otherIncomeBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה הכנסות נוספות</span><span dir="ltr">₪${otherIncomeCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה החודש:</span><span dir="ltr">₪${totalCollectedAllMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:13px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedMonth.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
@@ -10029,6 +10098,13 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   const specialCollectionsSnapForTitles = await getDocs(collection(db, 'buildings', buildingId, 'specialCollections'));
   const specialCollectionTitleById = {};
   specialCollectionsSnapForTitles.docs.forEach(d => { specialCollectionTitleById[d.id] = d.data().title || 'גבייה מיוחדת'; });
+
+  // הכנסות נוספות (otherIncome) — ראה תיעוד מלא ב-createPDFReport. date הוא
+  // מחרוזת רגילה, לכן שאילתת טווח ישירה (לא סינון client-side).
+  const otherIncomeHalfSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','>=', fromDate), where('date','<=', toDateLastDay)));
+  const otherIncomeHalf = otherIncomeHalfSnap.docs.map(d => d.data());
+  const { cash: otherIncomeCashCollectedHalf, bank: otherIncomeBankCollectedHalf, total: otherIncomeCollectedHalf } = splitCashBank(otherIncomeHalf);
+
   const preSpecialPaymentsData = allSpecialPaymentsData
     .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d < fromDateObj; });
   const cumSpecialPaymentsData = allSpecialPaymentsData
@@ -10091,8 +10167,8 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   // להתבסס על paymentMap/'month' — עונה על "מי שילם עבור התקופה הזו", לא
   // "כמה כסף פיזית נכנס בתקופה") — ראה תיעוד מורחב באותה נקודה בדוח השנתי.
   const { cash: vaadCashCollectedHalf, bank: vaadBankCollectedHalf } = splitCashBank(halfVaadPaymentsByPaidAt);
-  const totalBankCollectedHalf = vaadBankCollectedHalf + exceptionalOwnerBankCollectedHalf + exceptionalRenterBankCollectedHalf + chargingBankCollectedHalf + specialBankCollectedHalf;
-  const totalCashCollectedHalf = vaadCashCollectedHalf + exceptionalOwnerCashCollectedHalf + exceptionalRenterCashCollectedHalf + chargingCashCollectedHalf + specialCashCollectedHalf;
+  const totalBankCollectedHalf = vaadBankCollectedHalf + exceptionalOwnerBankCollectedHalf + exceptionalRenterBankCollectedHalf + chargingBankCollectedHalf + specialBankCollectedHalf + otherIncomeBankCollectedHalf;
+  const totalCashCollectedHalf = vaadCashCollectedHalf + exceptionalOwnerCashCollectedHalf + exceptionalRenterCashCollectedHalf + chargingCashCollectedHalf + specialCashCollectedHalf + otherIncomeCashCollectedHalf;
   const totalCollectedAllHalf = totalBankCollectedHalf + totalCashCollectedHalf;
 
   // הוצאות התקופה
@@ -10198,6 +10274,8 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
       ${buildCategoryDetailTableHtml('🔌&nbsp;פירוט&nbsp;גבייה&nbsp;לטעינה&nbsp;חשמלית', chargingPaymentsHalf, false)}
 
       ${buildSpecialPaymentDetailTableHtml(specialPaymentsHalf, specialCollectionTitleById)}
+
+      ${buildOtherIncomeDetailTableHtml(otherIncomeHalf)}
       <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
       <table style="width:100%;table-layout:fixed;">
         <thead>
@@ -10253,6 +10331,8 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
         <div class="summary-line"><span>💵 מזומן שנגבה טעינה חשמלית</span><span dir="ltr">₪${chargingCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span>💳 הועבר לבנק גבייה מיוחדת</span><span dir="ltr">₪${specialBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span>💵 מזומן שנגבה גבייה מיוחדת</span><span dir="ltr">₪${specialCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💳 הועבר לבנק הכנסות נוספות</span><span dir="ltr">₪${otherIncomeBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
+        <div class="summary-line"><span>💵 מזומן שנגבה הכנסות נוספות</span><span dir="ltr">₪${otherIncomeCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line"><span class="total">סה"כ גבייה בתקופה:</span><span dir="ltr">₪${totalCollectedAllHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן הועבר לבנק:</span><span dir="ltr">₪${totalBankCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
         <div class="summary-line" style="padding-right:16px;font-size:14px;color:#555;"><span>מתוכן במזומן:</span><span dir="ltr">₪${totalCashCollectedHalf.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</span></div>
