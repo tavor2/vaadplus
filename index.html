@@ -2722,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.94'; // *** תוספת חדשה, המשך ל-v2.15.93 *** — בדוח השנתי (createPDFReport) ובדוח החצי-שנתי (createSemiAnnualPDFReport) נוספו שלוש טבלאות "פירוט" חדשות מתחת לטבלת ✓/- הראשית (תשלומי ועד בית שוטף לפי דירה/חודש): "👑 פירוט גבייה חריגה" (בעלים+שוכרים יחד, עם עמודת "סוג" להבחנה), "🔌 פירוט גבייה לטעינה חשמלית", ו-"🔧 פירוט גבייה מיוחדת לתיקונים". שתי פונקציות עזר חדשות: buildCategoryDetailTableHtml() — לגבייה חריגה/טעינה, מקבצת תשלומים לפי groupKeyFor() הקיים (כך שהעברה אחת שכיסתה כמה חודשים מוצגת כשורה אחת עם טווח חודשים, לא שורה לכל חודש) ומציגה דירה/שם/[סוג]/חודשים/סכום/תאריך העברה בפועל/אמצעי תשלום; buildSpecialPaymentDetailTableHtml() — לגבייה מיוחדת, שורה לכל תשלום (אין קיבוץ רב-חודשי) עם כותרת הגבייה (נשלפת ממיפוי collectionId→title חדש, specialCollectionTitleById, שנטען ישירות מ-Firestore בתוך כל אחת משתי הפונקציות — לא מהמטמון הגלובלי allSpecialCollections שאינו בהכרח טעון בזמן הפקת דוח). שתי הפונקציות מטפלות גם במקרה של "אין תשלומים בתקופה" בהודעה מתאימה. לא נגעתי בדוח החודשי (createMonthlyPDFReport) — לטבלה שלו אין ריבועים ירוקים (סטטוס טקסטואלי לכל דייר), לא זו שהתבקשה. לא נדרש AAB חדש — שינוי תצוגה בדוחות בלבד, git push בלבד.
+const APP_VERSION = '2.15.96'; // *** תוספת חדשה, המשך ל-v2.15.95 *** — בטאב "מאזן" (renderBalance) נוסף כרטיס "יתרה כוללת (בנק + מזומן)" ברוחב מלא, מתחת לשני כרטיסי "יתרת בנק"/"יתרת מזומן" הקיימים — מציג את סכום שניהם יחד (משתנה balance, כבר מחושב באותה קריאה ל-computeBalanceFigures יחד עם bankBalance/cashBalance, כך שאין סיכון לאי-התאמה בין הכרטיסים), עם אותם balColor/balIcon (ירוק/📈 או אדום/📉) שכבר משמשים במקום אחר בטאב הזה לפי סימן היתרה.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -8104,6 +8104,16 @@ function renderBalance() {
     + '<div class="stat-card"><div class="stat-value" style="color:'+(cashBalance>=0?'var(--green)':'var(--red)')+';">₪'+cashBalance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div><div class="stat-label" style="font-weight:600;color:var(--gray-600);">💵 יתרת מזומן</div></div>'
     + '</div>';
 
+  // יתרה כוללת — סכום יתרת הבנק ויתרת המזומן יחד (=balance, כבר מחושב
+  // למעלה יחד עם bankBalance/cashBalance מאותה קריאה ל-computeBalanceFigures,
+  // כך שאין סיכון לאי-התאמה בין הכרטיסים). כרטיס נפרד ברוחב מלא מתחת לשני
+  // כרטיסי יתרת בנק/מזומן, לבקשת הוועד — כדי לראות במבט אחד גם את הפירוט
+  // וגם את הסכום הכולל, בלי לחשב בראש.
+  html += '<div class="card" style="margin-bottom:10px;text-align:center;">'
+    + '<div style="font-size:14px;color:var(--gray-600);margin-bottom:8px;">'+balIcon+' יתרה כוללת (בנק + מזומן)</div>'
+    + '<div style="font-size:32px;font-weight:800;color:'+balColor+';">₪'+balance.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</div>'
+    + '</div>';
+
   // הפקדות מזומן לבנק — כרטיס מאוחד אחד (סה"כ + הסבר + רשימת התנועות
   // עצמן), מוצג רק כשיש בפועל הפקדה אחת לפחות. קיים גם כדי להסביר בצורה
   // מפורשת פער נפוץ שמבלבל: יתרת המזומן יכולה להיות נמוכה בהרבה מ"סה"כ
@@ -9215,7 +9225,7 @@ window.generatePDF = async (year) => {
 // רק לגבייה חריגה, לא לטעינה חשמלית (שאין לה payerType כלל).
 function buildCategoryDetailTableHtml(title, payments, includePayerType) {
   if (!payments.length) {
-    return `<h2>${title}</h2><table style="width:100%;"><tbody><tr><td style="text-align:center;border:1px solid #ddd;padding:8px;">אין&nbsp;תשלומים&nbsp;בתקופה&nbsp;זו</td></tr></tbody></table>`;
+    return `<div class="detail-section"><h2>${title}</h2><table style="width:100%;"><tbody><tr><td style="text-align:center;border:1px solid #ddd;padding:8px;">אין&nbsp;תשלומים&nbsp;בתקופה&nbsp;זו</td></tr></tbody></table></div>`;
   }
   const groups = {};
   payments.forEach(p => { const k = groupKeyFor(p); (groups[k] = groups[k]||[]).push(p); });
@@ -9242,11 +9252,11 @@ function buildCategoryDetailTableHtml(title, payments, includePayerType) {
       </tr>` };
   }).sort((a,b) => a.dateMs - b.dateMs).map(r => r.html).join('');
   const headerCols = '<th>דירה</th><th>שם</th>' + (includePayerType ? '<th>סוג</th>' : '') + '<th>חודש/ים</th><th>סכום</th><th>תאריך&nbsp;העברה</th><th>אמצעי</th>';
-  return `<h2>${title}</h2>
+  return `<div class="detail-section"><h2>${title}</h2>
     <table style="width:100%;table-layout:fixed;font-size:12px;">
       <thead><tr>${headerCols}</tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table></div>`;
 }
 
 // בונה טבלת "פירוט" עבור גבייה מיוחדת לתיקונים (specialPayments) — בשונה
@@ -9259,7 +9269,7 @@ function buildCategoryDetailTableHtml(title, payments, includePayerType) {
 function buildSpecialPaymentDetailTableHtml(specialPayments, titleById) {
   const title = '🔧 פירוט&nbsp;גבייה&nbsp;מיוחדת&nbsp;לתיקונים';
   if (!specialPayments.length) {
-    return `<h2>${title}</h2><table style="width:100%;"><tbody><tr><td style="text-align:center;border:1px solid #ddd;padding:8px;">אין&nbsp;תשלומים&nbsp;בתקופה&nbsp;זו</td></tr></tbody></table>`;
+    return `<div class="detail-section"><h2>${title}</h2><table style="width:100%;"><tbody><tr><td style="text-align:center;border:1px solid #ddd;padding:8px;">אין&nbsp;תשלומים&nbsp;בתקופה&nbsp;זו</td></tr></tbody></table></div>`;
   }
   const rows = [...specialPayments].sort((a,b) => {
     const dA = a.paidAt?.toMillis ? a.paidAt.toMillis() : 0;
@@ -9279,11 +9289,11 @@ function buildSpecialPaymentDetailTableHtml(specialPayments, titleById) {
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
     </tr>`;
   }).join('');
-  return `<h2>${title}</h2>
+  return `<div class="detail-section"><h2>${title}</h2>
     <table style="width:100%;table-layout:fixed;font-size:12px;">
       <thead><tr><th>גבייה</th><th>דירה</th><th>שם</th><th>סכום</th><th>תאריך</th><th>אמצעי</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table></div>`;
 }
 
 async function createPDFReport(year) {
@@ -9581,13 +9591,18 @@ async function createPDFReport(year) {
   // דירות×חודשים + רשימת הוצאות שנתית מלאה + סיכום ארוך) עלול להיות גבוה
   // מאוד; ב-scale קבוע 2 זה חתך בפועל את סוף הדוח (כולל שורות יתרת בנק/
   // מזומן) במכשירים ניידים עם תקרת גובה canvas נמוכה יותר מדסקטופ.
+  // .detail-section (v2.15.95): buildCategoryDetailTableHtml/buildSpecialPaymentDetailTableHtml
+  // עוטפות כל כותרת+טבלת-פירוט יחד ב-div אחד — כדי שמפריד עמוד לא ייפול
+  // בדיוק בין ה-h2 (שכבר "avoid" בפני עצמו) לבין הטבלה שאחריו, ויתום את
+  // הכותרת בתחתית עמוד אחד בזמן שהטבלה עצמה מתחילה בעמוד הבא (זה בדיוק מה
+  // שקרה בשטח לפני התיקון).
   const opt = {
     margin: 10,
     filename: `vaad_bait_${year}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: computeSafeHtml2CanvasScale(element) },
     jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
-    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
+    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2', '.detail-section'] }
   };
 
   await html2pdf().set(opt).from(element).save();
@@ -10229,7 +10244,7 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: computeSafeHtml2CanvasScale(element) },
     jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
-    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2'] }
+    pagebreak: { mode: ['css'], avoid: ['tr', '.summary-line', 'h2', '.detail-section'] }
   };
 
   await html2pdf().set(opt).from(element).save();
