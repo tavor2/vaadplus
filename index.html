@@ -2722,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.15.92'; // *** תוספת חדשה, המשך ל-v2.15.91 *** — טופס דייר (modal-resident): נוסף checkbox "🔄 החלפת דייר" מתחת לשדה "שם מלא", שבסימונו פותח שלושה שדות תיעודיים אופציונליים לדייר הקודם שעזב — שם, תאריך עזיבה, טלפון (r-replacement-fields). נשמר על כרטיס הדייר החדש עצמו כאובייקט replacementInfo (previousName/previousPhone/departureDate) ולא כרשומה נפרדת — מידע היסטורי בלבד, בלי תשלומים/היסטוריה משלו. onReplacementToggle() חדש (מקביל ל-onOwnershipChange) מציג/מסתיר את השדות; openAddResident() מאפס אותם, editResident() טוען replacementInfo קיים אם יש; saveResident() מאמת פורמט טלפון (10 ספרות, כמו r-phone) אם הוזן ושומר את האובייקט. לא נדרש שינוי ב-exportData/importData/backup — הם כבר מעתיקים את כל שדות מסמך הדייר במלואם.
+const APP_VERSION = '2.15.94'; // *** תוספת חדשה, המשך ל-v2.15.93 *** — בדוח השנתי (createPDFReport) ובדוח החצי-שנתי (createSemiAnnualPDFReport) נוספו שלוש טבלאות "פירוט" חדשות מתחת לטבלת ✓/- הראשית (תשלומי ועד בית שוטף לפי דירה/חודש): "👑 פירוט גבייה חריגה" (בעלים+שוכרים יחד, עם עמודת "סוג" להבחנה), "🔌 פירוט גבייה לטעינה חשמלית", ו-"🔧 פירוט גבייה מיוחדת לתיקונים". שתי פונקציות עזר חדשות: buildCategoryDetailTableHtml() — לגבייה חריגה/טעינה, מקבצת תשלומים לפי groupKeyFor() הקיים (כך שהעברה אחת שכיסתה כמה חודשים מוצגת כשורה אחת עם טווח חודשים, לא שורה לכל חודש) ומציגה דירה/שם/[סוג]/חודשים/סכום/תאריך העברה בפועל/אמצעי תשלום; buildSpecialPaymentDetailTableHtml() — לגבייה מיוחדת, שורה לכל תשלום (אין קיבוץ רב-חודשי) עם כותרת הגבייה (נשלפת ממיפוי collectionId→title חדש, specialCollectionTitleById, שנטען ישירות מ-Firestore בתוך כל אחת משתי הפונקציות — לא מהמטמון הגלובלי allSpecialCollections שאינו בהכרח טעון בזמן הפקת דוח). שתי הפונקציות מטפלות גם במקרה של "אין תשלומים בתקופה" בהודעה מתאימה. לא נגעתי בדוח החודשי (createMonthlyPDFReport) — לטבלה שלו אין ריבועים ירוקים (סטטוס טקסטואלי לכל דייר), לא זו שהתבקשה. לא נדרש AAB חדש — שינוי תצוגה בדוחות בלבד, git push בלבד.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -8871,18 +8871,29 @@ window.exportExcel = async (year) => {
     const openingBalance = buildingData?.openingBalance || 0;
     const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
 
-    // מאזן אמיתי (כל הזמנים, לא רק השנה הנוכחית)
-    const allPaySnapBal = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
-    const allExpSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
-    const depositSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-    const allOtherIncomeSnapBal = await getDocs(collection(db, 'buildings', buildingId, 'otherIncome'));
+    // מאזן מצטבר נכון לסוף השנה המדווחת (31/12/year) — לא "כל הזמנים עד
+    // היום" כמו קודם. השינוי הזה קריטי: דוח עבור שנה שעברה חייב להראות
+    // את היתרה שהייתה בפועל בסוף אותה שנה, לא את היתרה הנוכחית של היום
+    // (שכוללת גם תנועות שקרו אחרי השנה המדווחת) — אחרת הדוח לא תואם את
+    // מה שהטאב "מאזן" מציג כשבוחרים שם את אותה תקופה. אותו דפוס בדיוק כמו
+    // ב-createMonthlyPDFReport/createSemiAnnualPDFReport (cumCombinedPayments
+    // + splitPaymentsForPeriod, ששני אלה כבר עשו נכון). allExceptionalPayments/
+    // allVaadPayments/allSpecialPaymentsData כבר נשלפו למעלה בפונקציה הזו.
+    const yearEndDateStr = `${year}-12-31`;
+    const yearEndDateObj = new Date(year, 11, 31, 23, 59, 59, 999);
+    const cumPaySnapBal = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','<=', `${year}-12`)));
+    const cumExpSnapBal = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<=', yearEndDateStr)));
+    const cumDepSnapBal = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<=', yearEndDateStr)));
+    const cumOtherIncomeSnapBal = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','<=', yearEndDateStr)));
+    const cumSpecialPaymentsYearEnd = allSpecialPaymentsData.filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d <= yearEndDateObj; });
+    const cumCombinedPaymentsBal = splitPaymentsForPeriod(cumPaySnapBal.docs.map(d => d.data()), allExceptionalPayments, d => d <= yearEndDateObj, allVaadPayments);
     const { bankBalance: bankBalanceAll, cashBalance: cashBalanceAll, balance } = computeBalanceFigures(
-      allPaySnapBal.docs.map(d => d.data()),
-      allExpSnapBal.docs.map(d => d.data()),
-      depositSnapBal.docs.map(d => d.data()),
+      cumCombinedPaymentsBal,
+      cumExpSnapBal.docs.map(d => d.data()),
+      cumDepSnapBal.docs.map(d => d.data()),
       openingBalance, cashOpeningBalance,
-      allSpecialPaymentsData,
-      allOtherIncomeSnapBal.docs.map(d => d.data())
+      cumSpecialPaymentsYearEnd,
+      cumOtherIncomeSnapBal.docs.map(d => d.data())
     );
 
     // פירוט חודשי הוצאות
@@ -8910,13 +8921,13 @@ window.exportExcel = async (year) => {
     }
 
     const balSheetData = [
-      ['סיכום מאזן (כל הזמנים)', `${year}`],
+      ['סיכום מאזן (נכון לסוף השנה)', `${year}`],
       [],
       ['יתרת פתיחה בבנק', openingBalance, buildingData?.openingBalanceDate ? `נכון ל-${fmtDateDMY(buildingData.openingBalanceDate)}` : ''],
       ['יתרת פתיחה מזומן', cashOpeningBalance, buildingData?.cashOpeningBalanceDate ? `נכון ל-${fmtDateDMY(buildingData.cashOpeningBalanceDate)}` : ''],
       [],
-      ['יתרה בחשבון הבנק (נוכחי)', bankBalanceAll],
-      ['יתרת קופת מזומן (נוכחית)', cashBalanceAll],
+      ['יתרה בחשבון הבנק (31/12)', bankBalanceAll],
+      ['יתרת קופת מזומן (31/12)', cashBalanceAll],
       ['יתרה כוללת', balance],
       [], [],
       ['💳 הועבר לבנק (ועד שוטף)', vaadBankCollectedYear],
@@ -9196,6 +9207,85 @@ window.generatePDF = async (year) => {
   }
 };
 
+// בונה טבלת "פירוט" עבור תשלומי טעינה חשמלית / גבייה חריגה (שתיהן: יש
+// להן 'month' ו-paidAt, ועשויות לכסות כמה חודשים בהעברה אחת) — מקבצת לפי
+// groupKeyFor (כבר קיים, ראה openCategoryPayments/renderCategoryPaymentsList
+// למעלה) כדי שהעברה אחת שכיסתה כמה חודשים תוצג כשורה אחת, לא שורה נפרדת
+// לכל חודש. includePayerType מוסיף עמודת "סוג" (בעלים/שוכרים) — רלוונטי
+// רק לגבייה חריגה, לא לטעינה חשמלית (שאין לה payerType כלל).
+function buildCategoryDetailTableHtml(title, payments, includePayerType) {
+  if (!payments.length) {
+    return `<h2>${title}</h2><table style="width:100%;"><tbody><tr><td style="text-align:center;border:1px solid #ddd;padding:8px;">אין&nbsp;תשלומים&nbsp;בתקופה&nbsp;זו</td></tr></tbody></table>`;
+  }
+  const groups = {};
+  payments.forEach(p => { const k = groupKeyFor(p); (groups[k] = groups[k]||[]).push(p); });
+  const rows = Object.values(groups).map(items => {
+    const first = items[0];
+    const total = items.reduce((s,p) => s + (p.amount||0), 0);
+    const months = [...new Set(items.map(p => p.month))].sort();
+    const monthsLabel = months.length > 1
+      ? (monthLabel(months[0]) + ' – ' + monthLabel(months[months.length-1]) + ' (' + months.length + ' חודשים)')
+      : monthLabel(months[0]);
+    const d = first.paidAt?.toDate ? first.paidAt.toDate() : null;
+    const dateLabel = d ? d.toLocaleDateString('he-IL') : '-';
+    const methodLabel = first.method === 'cash' ? 'מזומן' : 'בנק';
+    const payerLabel = first.payerType === 'renter' ? 'שוכרים' : 'בעלים';
+    return { dateMs: d ? d.getTime() : 0, html:
+      `<tr>
+        <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptDisplay(first.apt)}</td>
+        <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(first.name||'').replace(/ /g,'\u00A0')}</td>
+        ${includePayerType ? `<td style="border:1px solid #ddd;padding:8px;text-align:center;">${payerLabel}</td>` : ''}
+        <td style="border:1px solid #ddd;padding:8px;text-align:center;">${monthsLabel.replace(/ /g,'\u00A0')}</td>
+        <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${total.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+        <td style="border:1px solid #ddd;padding:8px;text-align:center;">${dateLabel}</td>
+        <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      </tr>` };
+  }).sort((a,b) => a.dateMs - b.dateMs).map(r => r.html).join('');
+  const headerCols = '<th>דירה</th><th>שם</th>' + (includePayerType ? '<th>סוג</th>' : '') + '<th>חודש/ים</th><th>סכום</th><th>תאריך&nbsp;העברה</th><th>אמצעי</th>';
+  return `<h2>${title}</h2>
+    <table style="width:100%;table-layout:fixed;font-size:12px;">
+      <thead><tr>${headerCols}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// בונה טבלת "פירוט" עבור גבייה מיוחדת לתיקונים (specialPayments) — בשונה
+// מטעינה/גבייה חריגה, לכל רשומה אין 'month' וגם אין קיבוץ רב-חודשי (כל
+// רשומה = תשלום בודד של יחידת חיוב אחת עבור גבייה מיוחדת אחת), כך שאין
+// צורך ב-groupKeyFor כאן — כל רשומה מוצגת כשורה משלה. titleById ממפה
+// collectionId לכותרת הגבייה (sc.title) — מגיע כפרמטר כדי שהפונקציה לא
+// תצטרך לגשת בעצמה ל-Firestore/למטמון הגלובלי allSpecialCollections (שאינו
+// בהכרח טעון בזמן הפקת דוח).
+function buildSpecialPaymentDetailTableHtml(specialPayments, titleById) {
+  const title = '🔧 פירוט&nbsp;גבייה&nbsp;מיוחדת&nbsp;לתיקונים';
+  if (!specialPayments.length) {
+    return `<h2>${title}</h2><table style="width:100%;"><tbody><tr><td style="text-align:center;border:1px solid #ddd;padding:8px;">אין&nbsp;תשלומים&nbsp;בתקופה&nbsp;זו</td></tr></tbody></table>`;
+  }
+  const rows = [...specialPayments].sort((a,b) => {
+    const dA = a.paidAt?.toMillis ? a.paidAt.toMillis() : 0;
+    const dB = b.paidAt?.toMillis ? b.paidAt.toMillis() : 0;
+    return dA - dB;
+  }).map(p => {
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    const dateLabel = d ? d.toLocaleDateString('he-IL') : '-';
+    const methodLabel = p.method === 'cash' ? 'מזומן' : 'בנק';
+    const collTitle = titleById[p.collectionId] || 'גבייה מיוחדת';
+    return `<tr>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${collTitle.replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptDisplay(p.apt)}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(p.name||'').replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${dateLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+    </tr>`;
+  }).join('');
+  return `<h2>${title}</h2>
+    <table style="width:100%;table-layout:fixed;font-size:12px;">
+      <thead><tr><th>גבייה</th><th>דירה</th><th>שם</th><th>סכום</th><th>תאריך</th><th>אמצעי</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 async function createPDFReport(year) {
   // year מגיע כעת כפרמטר מפורש מהמודל modal-yearly-select
   // (openYearlyPDFSelector/confirmYearlyPDF) — לא נגזר יותר בשקט מהחודש
@@ -9253,6 +9343,12 @@ async function createPDFReport(year) {
   const specialPaymentsYear = allSpecialPaymentsData
     .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d.getFullYear() === year; });
   const { cash: specialCashCollectedYear, bank: specialBankCollectedYear, total: specialCollectedYear } = splitCashBank(specialPaymentsYear);
+  // מיפוי collectionId -> כותרת הגבייה, לטבלת "פירוט גבייה מיוחדת" למטה
+  // (buildSpecialPaymentDetailTableHtml) — נשלף ישירות מ-Firestore ולא
+  // מהמטמון הגלובלי allSpecialCollections, כי זה לא בהכרח טעון בזמן הפקת דוח.
+  const specialCollectionsSnapForTitles = await getDocs(collection(db, 'buildings', buildingId, 'specialCollections'));
+  const specialCollectionTitleById = {};
+  specialCollectionsSnapForTitles.docs.forEach(d => { specialCollectionTitleById[d.id] = d.data().title || 'גבייה מיוחדת'; });
 
   const months = HEBREW_MONTHS;
   
@@ -9321,20 +9417,29 @@ async function createPDFReport(year) {
   const totalCashCollectedYear = vaadCashCollectedYear + exceptionalOwnerCashCollectedYear + exceptionalRenterCashCollectedYear + chargingCashCollectedYear + specialCashCollectedYear;
   const totalCollectedAllYear = totalBankCollectedYear + totalCashCollectedYear;
 
-  // חישוב יתרות לדוח
+  // חישוב יתרות לדוח — מצטבר נכון לסוף השנה המדווחת (31/12/year), לא "כל
+  // הזמנים עד היום" כמו קודם. אותה בעיה בדיוק שתוקנה ב-exportExcel: דוח
+  // עבור שנה שעברה חייב להראות את היתרה שהייתה בפועל בסוף אותה שנה, לא את
+  // היתרה הנוכחית של היום — אחרת לא תואם את הטאב "מאזן" כשבוחרים שם את
+  // אותה תקופה. אותו דפוס בדיוק כמו ב-createMonthlyPDFReport/
+  // createSemiAnnualPDFReport (cumCombinedPayments + splitPaymentsForPeriod).
   const openingBalance = buildingData?.openingBalance || 0;
   const cashOpeningBalance = buildingData?.cashOpeningBalance || 0;
-  const allPaySnap = await getDocs(collection(db, 'buildings', buildingId, 'payments'));
-  const allExpSnap = await getDocs(collection(db, 'buildings', buildingId, 'expenses'));
-  const depositSnap = await getDocs(collection(db, 'buildings', buildingId, 'cashDeposits'));
-  const allOtherIncomeSnap = await getDocs(collection(db, 'buildings', buildingId, 'otherIncome'));
+  const yearEndDateStr = `${year}-12-31`;
+  const yearEndDateObj = new Date(year, 11, 31, 23, 59, 59, 999);
+  const cumPaySnap = await getDocs(query(collection(db, 'buildings', buildingId, 'payments'), where('month','<=', `${year}-12`)));
+  const cumExpSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'expenses'), where('date','<=', yearEndDateStr)));
+  const cumDepSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'cashDeposits'), where('date','<=', yearEndDateStr)));
+  const cumOtherIncomeSnap = await getDocs(query(collection(db, 'buildings', buildingId, 'otherIncome'), where('date','<=', yearEndDateStr)));
+  const cumSpecialPaymentsYearEnd = allSpecialPaymentsData.filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d <= yearEndDateObj; });
+  const cumCombinedPayments = splitPaymentsForPeriod(cumPaySnap.docs.map(d => d.data()), allExceptionalPayments, d => d <= yearEndDateObj, allVaadPayments);
   const { bankBalance, cashBalance, totalDeposits } = computeBalanceFigures(
-    allPaySnap.docs.map(d => d.data()),
-    allExpSnap.docs.map(d => d.data()),
-    depositSnap.docs.map(d => d.data()),
+    cumCombinedPayments,
+    cumExpSnap.docs.map(d => d.data()),
+    cumDepSnap.docs.map(d => d.data()),
     openingBalance, cashOpeningBalance,
-    allSpecialPaymentsData,
-    allOtherIncomeSnap.docs.map(d => d.data())
+    cumSpecialPaymentsYearEnd,
+    cumOtherIncomeSnap.docs.map(d => d.data())
   );
 
 
@@ -9376,6 +9481,11 @@ async function createPDFReport(year) {
         </tbody>
       </table>
 
+      ${buildCategoryDetailTableHtml('👑&nbsp;פירוט&nbsp;גבייה&nbsp;חריגה', exceptionalOwnerPaymentsYear.concat(exceptionalRenterPaymentsYear), true)}
+
+      ${buildCategoryDetailTableHtml('🔌&nbsp;פירוט&nbsp;גבייה&nbsp;לטעינה&nbsp;חשמלית', chargingPaymentsYear, false)}
+
+      ${buildSpecialPaymentDetailTableHtml(specialPaymentsYear, specialCollectionTitleById)}
       <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
       <table style="width:100%;table-layout:fixed;">
         <thead>
@@ -9858,6 +9968,11 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
   const specialPaymentsHalf = allSpecialPaymentsData
     .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d >= fromDateObj && d <= toDateEndObj; });
   const { cash: specialCashCollectedHalf, bank: specialBankCollectedHalf, total: specialCollectedHalf } = splitCashBank(specialPaymentsHalf);
+  // מיפוי collectionId -> כותרת הגבייה, לטבלת "פירוט גבייה מיוחדת" למטה —
+  // ראה אותו תיעוד ב-createPDFReport.
+  const specialCollectionsSnapForTitles = await getDocs(collection(db, 'buildings', buildingId, 'specialCollections'));
+  const specialCollectionTitleById = {};
+  specialCollectionsSnapForTitles.docs.forEach(d => { specialCollectionTitleById[d.id] = d.data().title || 'גבייה מיוחדת'; });
   const preSpecialPaymentsData = allSpecialPaymentsData
     .filter(p => { const d = p.paidAt?.toDate ? p.paidAt.toDate() : null; return d && d < fromDateObj; });
   const cumSpecialPaymentsData = allSpecialPaymentsData
@@ -10013,6 +10128,11 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
         </tbody>
       </table>
 
+      ${buildCategoryDetailTableHtml('👑&nbsp;פירוט&nbsp;גבייה&nbsp;חריגה', exceptionalOwnerPaymentsHalf.concat(exceptionalRenterPaymentsHalf), true)}
+
+      ${buildCategoryDetailTableHtml('🔌&nbsp;פירוט&nbsp;גבייה&nbsp;לטעינה&nbsp;חשמלית', chargingPaymentsHalf, false)}
+
+      ${buildSpecialPaymentDetailTableHtml(specialPaymentsHalf, specialCollectionTitleById)}
       <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
       <table style="width:100%;table-layout:fixed;">
         <thead>
