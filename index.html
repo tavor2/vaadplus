@@ -2722,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.16.1'; // *** תוספת חדשה, המשך ל-v2.16.0 *** — נוספה שורת "סה"כ" בתחתית כל טבלאות הפירוט בדוחות: buildCategoryDetailTableHtml (גבייה חריגה + טעינה חשמלית), buildSpecialPaymentDetailTableHtml (גבייה מיוחדת), buildOtherIncomeDetailTableHtml (הכנסות נוספות) — כל אחת עם שורת סיכום מודגשת (רקע אפור, bold) בעמודת הסכום. גם טבלת "סיכום הוצאות לפי קטגוריה" (בשלושת הדוחות — שנתי/חצי-שנתי/חודשי) קיבלה שורת "סה"כ" בתחתית (100%), לצד הפריטים לפי קטגוריה. לא נדרש AAB חדש — שינוי תצוגה בדוחות בלבד, git push בלבד.
+const APP_VERSION = '2.17.1'; // *** תוספת חדשה, המשך ל-v2.17.0 *** — מעקב תנועות מול הבנק (renderBankLedger): שם הדייר נוסף ליד מספר הדירה בתיאור כל תנועה (תשלום ועד בית/טעינה חשמלית/גבייה חריגה/גבייה מיוחדת), פורמט "דירה X - שם" — כדי להקל על השוואה ויזואלית מול דף הבנק האמיתי, ששם מופיע שם המשלם ולא מספר דירה. מוצג רק אם יש שם ברשומה (first.name/p.name), אחרת נשאר כמו קודם. לא נדרש AAB חדש — שינוי תצוגה בלבד, git push בלבד.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -5110,9 +5110,9 @@ window.renderBankLedger = async () => {
       const d = first.paidAt.toDate();
       const monthsSuffix = items.length > 1 ? ' (' + items.length + ' חודשים)' : '';
       let desc;
-      if (isVaadPayment(first)) desc = 'תשלום ועד בית - דירה ' + first.apt + monthsSuffix;
-      else if (first.category === 'charging') desc = '🔌 טעינה חשמלית - דירה ' + first.apt + monthsSuffix;
-      else desc = '👑 גבייה חריגה (' + (first.payerType === 'renter' ? 'שוכרים' : 'בעלים') + ') - דירה ' + first.apt + monthsSuffix;
+      if (isVaadPayment(first)) desc = 'תשלום ועד בית - דירה ' + first.apt + (first.name ? ' - ' + first.name : '') + monthsSuffix;
+      else if (first.category === 'charging') desc = '🔌 טעינה חשמלית - דירה ' + first.apt + (first.name ? ' - ' + first.name : '') + monthsSuffix;
+      else desc = '👑 גבייה חריגה (' + (first.payerType === 'renter' ? 'שוכרים' : 'בעלים') + ') - דירה ' + first.apt + (first.name ? ' - ' + first.name : '') + monthsSuffix;
       txns.push({ dateObj: d, amount: total, desc });
     });
 
@@ -5120,7 +5120,7 @@ window.renderBankLedger = async () => {
       if (p.method === 'cash') return;
       const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
       if (!d || d < fromDateObj || d > toDateObj) return;
-      txns.push({ dateObj: d, amount: p.amount || 0, desc: '🔧 גבייה מיוחדת - דירה ' + p.apt });
+      txns.push({ dateObj: d, amount: p.amount || 0, desc: '🔧 גבייה מיוחדת - דירה ' + p.apt + (p.name ? ' - ' + p.name : '') });
     });
 
     allOtherIncomeData.forEach(e => {
@@ -9295,18 +9295,17 @@ function buildCategoryDetailTableHtml(title, payments, includePayerType) {
         <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(first.name||'').replace(/ /g,'\u00A0')}</td>
         ${includePayerType ? `<td style="border:1px solid #ddd;padding:8px;text-align:center;">${payerLabel}</td>` : ''}
         <td style="border:1px solid #ddd;padding:8px;text-align:center;">${monthsLabel.replace(/ /g,'\u00A0')}</td>
-        <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${total.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
         <td style="border:1px solid #ddd;padding:8px;text-align:center;">${dateLabel}</td>
         <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+        <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${total.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
       </tr>` };
   }).sort((a,b) => a.dateMs - b.dateMs).map(r => r.html).join('');
-  const headerCols = '<th>דירה</th><th>שם</th>' + (includePayerType ? '<th>סוג</th>' : '') + '<th>חודש/ים</th><th>סכום</th><th>תאריך&nbsp;העברה</th><th>אמצעי</th>';
+  const headerCols = '<th>דירה</th><th>שם</th>' + (includePayerType ? '<th>סוג</th>' : '') + '<th>חודש/ים</th><th>תאריך&nbsp;העברה</th><th>אמצעי</th><th>סכום</th>';
   const grandTotal = payments.reduce((s,p) => s + (p.amount||0), 0);
-  const colspanBeforeTotal = includePayerType ? 4 : 3;
+  const colspanBeforeTotal = includePayerType ? 5 : 4;
   const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
     <td colspan="${colspanBeforeTotal}" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
     <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${grandTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
-    <td colspan="2" style="border:1px solid #ddd;padding:8px;"></td>
   </tr>`;
   return `<div class="detail-section"><h2>${title}</h2>
     <table style="width:100%;table-layout:fixed;font-size:12px;">
@@ -9340,20 +9339,19 @@ function buildSpecialPaymentDetailTableHtml(specialPayments, titleById) {
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${collTitle.replace(/ /g,'\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptDisplay(p.apt)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(p.name||'').replace(/ /g,'\u00A0')}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${dateLabel}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
     </tr>`;
   }).join('');
   const grandTotal = specialPayments.reduce((s,p) => s + (p.amount||0), 0);
   const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
-    <td colspan="3" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
+    <td colspan="5" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
     <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${grandTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
-    <td colspan="2" style="border:1px solid #ddd;padding:8px;"></td>
   </tr>`;
   return `<div class="detail-section"><h2>${title}</h2>
     <table style="width:100%;table-layout:fixed;font-size:12px;">
-      <thead><tr><th>גבייה</th><th>דירה</th><th>שם</th><th>סכום</th><th>תאריך</th><th>אמצעי</th></tr></thead>
+      <thead><tr><th>גבייה</th><th>דירה</th><th>שם</th><th>תאריך</th><th>אמצעי</th><th>סכום</th></tr></thead>
       <tbody>${rows}${totalRow}</tbody>
     </table></div>`;
 }
@@ -9373,65 +9371,78 @@ function buildOtherIncomeDetailTableHtml(otherIncomeList) {
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(p.category||'').replace(/ /g,'\u00A0')}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(p.description||'').replace(/ /g,'\u00A0')}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${fmtDateDMY(p.date)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
     </tr>`;
   }).join('');
   const grandTotal = otherIncomeList.reduce((s,p) => s + (p.amount||0), 0);
   const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
-    <td colspan="2" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
+    <td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
     <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${grandTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
-    <td colspan="2" style="border:1px solid #ddd;padding:8px;"></td>
   </tr>`;
   return `<div class="detail-section"><h2>${title}</h2>
     <table style="width:100%;table-layout:fixed;font-size:12px;">
-      <thead><tr><th>קטגוריה</th><th>תיאור</th><th>סכום</th><th>תאריך</th><th>אמצעי</th></tr></thead>
+      <thead><tr><th>קטגוריה</th><th>תיאור</th><th>תאריך</th><th>אמצעי</th><th>סכום</th></tr></thead>
       <tbody>${rows}${totalRow}</tbody>
     </table></div>`;
 }
 
-// בונה טבלת פירוט בודדת (מראש או באיחור בלבד — הקורא מפעיל פעמיים) עבור
-// תשלומי ועד בית שהתקבלו בפועל בתקופת הדוח אך משויכים לחודש-כיסוי שמחוץ
-// לתקופה. עמודות: דירה/סכום/אמצעי/חודש מכוסה/תאריך גבייה בפועל — אותו
-// מבנה בדיוק כמו buildAdvanceLateTable בטאב "מאזן" (renderBalance), רק
-// בעיצוב טבלאות ה-PDF של הדוחות. מחזירה מחרוזת ריקה אם הרשימה ריקה (כדי
-// שהקורא יוכל לשרשר שתי קריאות בלי לבדוק בעצמו).
-function buildAdvanceLateDetailTableHtml(title, list) {
-  if (!list.length) return '';
-  const sorted = [...list].sort((a,b) => aptCompare(a.apt, b.apt));
-  const rows = sorted.map(p => {
+// בונה שורות טבלה עבור פריטי מראש/באיחור/"שולם מחוץ לתקופה" (ראה
+// buildVaadTimingSectionHtml). items הוא מערך {p, kind} כאשר kind אחד מ-
+// 'advance'/'late'/'pending'. עמודות: דירה, שם, סוג, חודש מכוסה, תאריך
+// תשלום בפועל, אמצעי, סכום (אחרון).
+function buildAdvanceLateDetailTableHtml(items) {
+  const sorted = [...items].sort((a,b) => aptCompare(a.p.apt, b.p.apt));
+  return sorted.map(({p, kind}) => {
     const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
     const dateLabel = d ? d.toLocaleDateString('he-IL') : '-';
     const methodLabel = p.method === 'cash' ? 'מזומן' : 'בנק';
+    const kindLabel = kind === 'advance' ? '🔵&nbsp;מראש' : kind === 'late' ? '🟠&nbsp;באיחור' : '⏳&nbsp;שולם&nbsp;מחוץ&nbsp;לתקופה';
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">${aptDisplay(p.apt)}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:right;">${(p.name||'').replace(/ /g,'\u00A0')}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${kindLabel}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${p.month ? monthLabel(p.month) : '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${dateLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(p.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
     </tr>`;
   }).join('');
-  return `<div style="font-size:13px;font-weight:700;margin:10px 0 6px;">${title}&nbsp;(${list.length})</div>
-    <table style="width:100%;table-layout:fixed;font-size:12px;">
-      <thead><tr><th>דירה</th><th>סכום</th><th>אמצעי</th><th>חודש&nbsp;מכוסה</th><th>תאריך&nbsp;גבייה</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
 }
 
-// בונה את כל הסקשן "פירוט תשלומי ועד מראש/באיחור" (כותרת + הערה + שתי
-// הטבלאות + שורת "סה"כ גבייה בפועל") שמופיע מיד אחרי טבלת ה-✓/- הראשית.
-// actualTotal הוא vaadBankCollected+vaadCashCollected של התקופה (paidAt-
-// based, כבר מחושב למעלה בכל דוח) — הסכום שבאמת נכנס לבנק/לקופה, לצורך
-// השוואה מול "סה"כ גבייה" (מבוסס-חודש) שמוצג מעל טבלת ה-✓/-.
-function buildVaadTimingSectionHtml(advancePayments, latePayments, actualTotal) {
+// בונה את הסקשן "פירוט תשלומי ועד מראש/באיחור" — טבלה אחודה אחת (לא שתי
+// טבלאות נפרדות כמו קודם) עם שלוש קטגוריות אפשריות בעמודת "סוג":
+// 🔵 מראש  — שולם בפועל בתוך התקופה, אך משויך לחודש אחרי סוף התקופה.
+// 🟠 באיחור — שולם בפועל בתוך התקופה, אך משויך לחודש לפני תחילת התקופה.
+// ⏳ שולם מחוץ לתקופה — ההפך המדויק: משויך לחודש *בתוך* התקופה (ולכן כבר
+//    נספר ב"סה"כ גבייה לפי הטבלה" מעל טבלת ה-✓/-), אך שולם בפועל מחוץ
+//    לתקופה (כמעט תמיד אחרי סיום התקופה — למשל שולם ב-1.7 עבור אפריל,
+//    כשהתקופה המדווחת היא ינואר-יוני). זו הקטגוריה שהייתה חסרה עד
+//    v2.16.1 וגרמה לפער בין "סה"כ גבייה לפי הטבלה" ל"סה"כ גבייה בפועל"
+//    בלי שום הסבר גלוי — עכשיו היא כלולה, כך שהפער תמיד ניתן להסבר מלא:
+//    סה"כ-לפי-הטבלה − ⏳-שולם-מחוץ-לתקופה + (🔵-מראש + 🟠-באיחור) = סה"כ-בפועל.
+// ההערה על המשמעות של כל סוג משולבת כשורה ראשונה בגוף הטבלה עצמה (לא
+// כ-div נפרד לפני/אחרי), ושורת "סה"כ גבייה בפועל" היא השורה האחרונה של
+// אותה טבלה ממש — לפי הבקשה לאחד הערות/סיכומים לתוך הטבלאות.
+function buildVaadTimingSectionHtml(advancePayments, latePayments, pendingPayments, actualTotal) {
   const title = '📋&nbsp;פירוט&nbsp;תשלומי&nbsp;ועד&nbsp;מראש/באיחור';
-  const noteHtml = '<div style="font-size:11px;color:#999;margin-bottom:8px;">תשלומי ועד בית שהתקבלו בפועל בתקופה זו, אך משויכים לחודש שמחוץ לתקופה (גבייה מראש/באיחור) — הם כבר נכללים ב"סה"כ גבייה בפועל" למטה; הרשימה כאן היא פירוט בלבד, לא סכום נוסף.</div>';
-  const bodyHtml = (advancePayments.length || latePayments.length)
-    ? (buildAdvanceLateDetailTableHtml('🔵 גבייה מראש', advancePayments) + buildAdvanceLateDetailTableHtml('🟠 גבייה באיחור', latePayments))
-    : '<div style="font-size:13px;color:#999;text-align:center;padding:10px;">אין גבייה מראש/באיחור בתקופה זו</div>';
-  const totalHtml = `<div class="summary-line" style="display:flex;direction:rtl;gap:5px;margin-top:10px;padding-top:8px;border-top:1px solid #ddd;"><span class="total">סה"כ גבייה בפועל (ועד בית שוטף):</span><span dir="ltr">₪${actualTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>`;
-  return `<div class="detail-section"><h2>${title}</h2>${noteHtml}${bodyHtml}${totalHtml}</div>`;
+  const items = [
+    ...advancePayments.map(p => ({p, kind:'advance'})),
+    ...latePayments.map(p => ({p, kind:'late'})),
+    ...pendingPayments.map(p => ({p, kind:'pending'}))
+  ];
+  const noteRow = `<tr><td colspan="7" style="border:1px solid #ddd;padding:8px;background:#fafafa;font-size:11px;color:#777;text-align:right;">💡 🔵&nbsp;מראש/🟠&nbsp;באיחור כבר נכללים ב"סה"כ גבייה בפועל" למטה (שולמו בתוך התקופה, עבור חודש שמחוץ לה). ⏳&nbsp;שולם&nbsp;מחוץ&nbsp;לתקופה הוא ההפך — משויך לחודש בתוך התקופה (כבר נספר ב"סה"כ גבייה לפי הטבלה" מעל), אך שולם בפועל מחוץ לתקופה, ולכן <b>לא</b> נכלל ב"סה"כ גבייה בפועל" למטה — זה בדיוק ההפרש בין שתי שורות הסיכום.</td></tr>`;
+  const bodyRows = items.length ? buildAdvanceLateDetailTableHtml(items) : `<tr><td colspan="7" style="text-align:center;border:1px solid #ddd;padding:10px;color:#999;">אין גבייה מראש/באיחור/שולמה מחוץ לתקופה עבור ועד בית שוטף</td></tr>`;
+  const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
+    <td colspan="6" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ&nbsp;גבייה&nbsp;בפועל&nbsp;(ועד&nbsp;בית&nbsp;שוטף):</td>
+    <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${actualTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
+  </tr>`;
+  return `<div class="detail-section"><h2>${title}</h2>
+    <table style="width:100%;table-layout:fixed;font-size:12px;">
+      <thead><tr><th>דירה</th><th>שם</th><th>סוג</th><th>חודש&nbsp;מכוסה</th><th>תאריך&nbsp;תשלום&nbsp;בפועל</th><th>אמצעי</th><th>סכום</th></tr></thead>
+      <tbody>${noteRow}${bodyRows}${totalRow}</tbody>
+    </table></div>`;
 }
 
 async function createPDFReport(year) {
@@ -9506,6 +9517,16 @@ async function createPDFReport(year) {
   const vaadLatePaymentsYear = allVaadPayments.filter(p => {
     const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
     return d && d >= yearStartDateObj && d <= yearEndDateObjForTiming && p.month < `${year}-01`;
+  });
+  // "שולם מחוץ לתקופה" — ההפך המדויק: תשלום המשויך לחודש *בתוך* השנה
+  // (ולכן כבר נספר ב-totalCollected/"סה"כ גבייה לפי הטבלה"), אך ה-paidAt
+  // שלו נופל *מחוץ* לשנה (כמעט תמיד אחרי סוף השנה — נגבה בפועל בשנה
+  // הבאה). בלי הקטגוריה הזו, הפער בין "סה"כ גבייה לפי הטבלה" ל"סה"כ גבייה
+  // בפועל" לא ניתן להסבר מהדוח עצמו. ראה תיעוד מלא ב-buildVaadTimingSectionHtml.
+  const vaadPendingPaymentsYear = allVaadPayments.filter(p => {
+    if (!(p.month >= `${year}-01` && p.month <= `${year}-12`)) return false;
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return !d || d < yearStartDateObj || d > yearEndDateObjForTiming;
   });
 
   // specialPayments (גבייה מיוחדת לתיקונים) — אין להם שדה 'month', לכן
@@ -9659,13 +9680,12 @@ async function createPDFReport(year) {
         </thead>
         <tbody>
           ${tableRows}
+          <tr><td colspan="${months.length + 2}" style="border:1px solid #ddd;padding:6px 8px;background:#fafafa;font-size:10px;color:#888;text-align:right;">💡&nbsp;סכום&nbsp;זה&nbsp;לא&nbsp;בהכרח&nbsp;מה&nbsp;שהועבר&nbsp;בפועל&nbsp;לבנק&nbsp;עקב&nbsp;גבייה&nbsp;מראש/באיחור</td></tr>
+          <tr style="background:#f5f5f5;font-weight:bold;"><td colspan="${months.length + 1}" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ&nbsp;גבייה&nbsp;(לפי&nbsp;הטבלה)</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>
         </tbody>
       </table>
 
-      <div class="summary-line" style="display:flex;direction:rtl;gap:5px;margin-top:8px;"><span class="total">סה"כ גבייה (לפי הטבלה):</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-      <div style="font-size:11px;color:#999;margin:2px 0 14px;">💡 סכום זה מבוסס על שיוך חודשי (איזו דירה שילמה עבור איזה חודש בטבלה) — ולא בהכרח זהה לסכום שהועבר בפועל לבנק/נגבה במזומן בשנה זו (ר' "סה"כ גבייה בפועל" למטה ובסיכום הגבייה בהמשך הדוח).</div>
-
-      ${buildVaadTimingSectionHtml(vaadAdvancePaymentsYear, vaadLatePaymentsYear, vaadBankCollectedYear + vaadCashCollectedYear)}
+      ${buildVaadTimingSectionHtml(vaadAdvancePaymentsYear, vaadLatePaymentsYear, vaadPendingPaymentsYear, vaadBankCollectedYear + vaadCashCollectedYear)}
 
       ${buildCategoryDetailTableHtml('👑&nbsp;פירוט&nbsp;גבייה&nbsp;חריגה', exceptionalOwnerPaymentsYear.concat(exceptionalRenterPaymentsYear), true)}
 
@@ -9679,8 +9699,8 @@ async function createPDFReport(year) {
         <thead>
           <tr>
             <th style="width:50%;">קטגוריה</th>
-            <th style="width:30%;">סכום</th>
             <th style="width:20%;">אחוז</th>
+            <th style="width:30%;">סכום</th>
           </tr>
         </thead>
         <tbody>
@@ -9695,13 +9715,13 @@ async function createPDFReport(year) {
               .map(([cat, sum]) => {
                 const pct = totalExpenses ? Math.round(sum/totalExpenses*100) : 0;
                 return '<tr><td style="text-align:right;border:1px solid #ddd;padding:8px;">'+cat.replace(/ /g,'\u00A0')+'</td>'
-                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪'+sum.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td>'
-                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">'+pct+'%</td></tr>';
+                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">'+pct+'%</td>'
+                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪'+sum.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td></tr>';
               }).join('');
             if (!catRows) return '<tr><td colspan="3" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות</td></tr>';
             const totalRow = '<tr style="background:#f5f5f5;font-weight:bold;"><td style="text-align:right;border:1px solid #ddd;padding:8px;">סה"כ</td>'
-              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">₪'+totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td>'
-              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">100%</td></tr>';
+              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">100%</td>'
+              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">₪'+totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td></tr>';
             return catRows + totalRow;
           })()}
         </tbody>
@@ -9971,11 +9991,11 @@ async function createMonthlyPDFReport(ym) {
   const catRowsOnly = Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).map(([cat,sum]) => {
     const pct = totalExpenses ? Math.round(sum/totalExpenses*100) : 0;
     return `<tr><td style="text-align:right;border:1px solid #ddd;padding:8px;">${cat.replace(/ /g,'\u00A0')}</td>
-      <td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪${sum.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
-      <td style="text-align:center;border:1px solid #ddd;padding:8px;">${pct}%</td></tr>`;
+      <td style="text-align:center;border:1px solid #ddd;padding:8px;">${pct}%</td>
+      <td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪${sum.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>`;
   }).join('');
   const catRowsHtml = catRowsOnly
-    ? catRowsOnly + `<tr style="background:#f5f5f5;font-weight:bold;"><td style="text-align:right;border:1px solid #ddd;padding:8px;">סה"כ</td><td style="text-align:center;border:1px solid #ddd;padding:8px;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td><td style="text-align:center;border:1px solid #ddd;padding:8px;">100%</td></tr>`
+    ? catRowsOnly + `<tr style="background:#f5f5f5;font-weight:bold;"><td style="text-align:right;border:1px solid #ddd;padding:8px;">סה"כ</td><td style="text-align:center;border:1px solid #ddd;padding:8px;">100%</td><td style="text-align:center;border:1px solid #ddd;padding:8px;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>`
     : '<tr><td colspan="3" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות</td></tr>';
 
   // מאזן מצטבר נכון לסוף החודש הנבחר (לא רק החודש הזה) — עקבי עם computeBalanceFigures
@@ -10032,7 +10052,7 @@ async function createMonthlyPDFReport(ym) {
       </tr></thead><tbody>${expenseRows || '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות החודש</td></tr>'}</tbody></table>
 
       <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
-      <table style="table-layout:fixed;"><thead><tr><th style="width:50%;">קטגוריה</th><th style="width:30%;">סכום</th><th style="width:20%;">אחוז</th></tr></thead>
+      <table style="table-layout:fixed;"><thead><tr><th style="width:50%;">קטגוריה</th><th style="width:20%;">אחוז</th><th style="width:30%;">סכום</th></tr></thead>
       <tbody>${catRowsHtml}</tbody></table>
 
       <div class="summary">
@@ -10234,6 +10254,14 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
     const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
     return d && d >= fromDateObj && d <= toDateEndObj && p.month < fromYm;
   });
+  // "שולם מחוץ לתקופה" — ההפך המדויק: תשלום המשויך לחודש *בתוך* המחצית,
+  // אך ה-paidAt שלו נופל *מחוץ* לה (כמעט תמיד אחרי סוף המחצית). ראה תיעוד
+  // מלא ב-buildVaadTimingSectionHtml ובדוח השנתי (createPDFReport).
+  const vaadPendingPaymentsHalf = allVaadPayments.filter(p => {
+    if (!(p.month >= fromYm && p.month <= toYm)) return false;
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return !d || d < fromDateObj || d > toDateEndObj;
+  });
 
   // "טעינה חשמלית" — מ-v2.15.97 משויכת לתקופה לפי paidAt גם היא, עקבי עם
   // השאר למעלה וטאב "מאזן" — ראה fetchAllChargingPayments.
@@ -10370,13 +10398,12 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
         </thead>
         <tbody>
           ${tableRows}
+          <tr><td colspan="${monthsInHalf.length + 2}" style="border:1px solid #ddd;padding:6px 8px;background:#fafafa;font-size:10px;color:#888;text-align:right;">💡&nbsp;סכום&nbsp;זה&nbsp;לא&nbsp;בהכרח&nbsp;מה&nbsp;שהועבר&nbsp;בפועל&nbsp;לבנק&nbsp;עקב&nbsp;גבייה&nbsp;מראש/באיחור</td></tr>
+          <tr style="background:#f5f5f5;font-weight:bold;"><td colspan="${monthsInHalf.length + 1}" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ&nbsp;גבייה&nbsp;(לפי&nbsp;הטבלה)</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>
         </tbody>
       </table>
 
-      <div class="summary-line" style="display:flex;direction:rtl;gap:5px;margin-top:8px;"><span class="total">סה"כ גבייה (לפי הטבלה):</span><span dir="ltr">₪${totalCollected.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</span></div>
-      <div style="font-size:11px;color:#999;margin:2px 0 14px;">💡 סכום זה מבוסס על שיוך חודשי (איזו דירה שילמה עבור איזה חודש בטבלה) — ולא בהכרח זהה לסכום שהועבר בפועל לבנק/נגבה במזומן במחצית זו (ר' "סה"כ גבייה בפועל" למטה ובסיכום הגבייה בהמשך הדוח).</div>
-
-      ${buildVaadTimingSectionHtml(vaadAdvancePaymentsHalf, vaadLatePaymentsHalf, vaadBankCollectedHalf + vaadCashCollectedHalf)}
+      ${buildVaadTimingSectionHtml(vaadAdvancePaymentsHalf, vaadLatePaymentsHalf, vaadPendingPaymentsHalf, vaadBankCollectedHalf + vaadCashCollectedHalf)}
 
       ${buildCategoryDetailTableHtml('👑&nbsp;פירוט&nbsp;גבייה&nbsp;חריגה', exceptionalOwnerPaymentsHalf.concat(exceptionalRenterPaymentsHalf), true)}
 
@@ -10390,8 +10417,8 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
         <thead>
           <tr>
             <th style="width:50%;">קטגוריה</th>
-            <th style="width:30%;">סכום</th>
             <th style="width:20%;">אחוז</th>
+            <th style="width:30%;">סכום</th>
           </tr>
         </thead>
         <tbody>
@@ -10406,13 +10433,13 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
               .map(([cat, sum]) => {
                 const pct = totalExpenses ? Math.round(sum/totalExpenses*100) : 0;
                 return '<tr><td style="text-align:right;border:1px solid #ddd;padding:8px;">'+cat.replace(/ /g,'\u00A0')+'</td>'
-                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪'+sum.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td>'
-                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">'+pct+'%</td></tr>';
+                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">'+pct+'%</td>'
+                  +'<td style="text-align:center;border:1px solid #ddd;padding:8px;font-weight:bold;">₪'+sum.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td></tr>';
               }).join('');
             if (!catRows) return '<tr><td colspan="3" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות</td></tr>';
             const totalRow = '<tr style="background:#f5f5f5;font-weight:bold;"><td style="text-align:right;border:1px solid #ddd;padding:8px;">סה"כ</td>'
-              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">₪'+totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td>'
-              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">100%</td></tr>';
+              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">100%</td>'
+              +'<td style="text-align:center;border:1px solid #ddd;padding:8px;">₪'+totalExpenses.toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})+'</td></tr>';
             return catRows + totalRow;
           })()}
         </tbody>
