@@ -2722,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.17.3'; // *** תוספת חדשה, המשך ל-v2.17.2 *** — תיקון: בכל שורת "סה"כ" שבה תווית הטקסט יושבת ב-td עם colspan (buildCategoryDetailTableHtml — גבייה חריגה+טעינה חשמלית, buildSpecialPaymentDetailTableHtml, buildVaadTimingSectionHtml, טבלת "פירוט הוצאות" המפורטת בשלושת הדוחות), הטקסט היה text-align:right — ב-RTL זה ממקם אותו בקצה הימני *של תא ה-colspan עצמו*, כלומר רחוק מאוד מעמודת הסכום (בקצה השני של השורה), ולא ליד הסכום כמו שנראה בשורות הנתונים הרגילות מעליו. תוקן ל-text-align:left, כך שהתווית "סה"כ" יושבת צמוד לעמודת הסכום, בדיוק כמו בשורות הנתונים. (buildOtherIncomeDetailTableHtml כבר היה תקין כי אין לו colspan גדול מ-1 שמצריך זאת בפועל — נבדק, לא נגעתי). לא נדרש AAB חדש — שינוי תצוגה בלבד, git push בלבד.
+const APP_VERSION = '2.17.4'; // *** תוספת חדשה, המשך ל-v2.17.3 *** — תיקון באג אמיתי (לא רק עיצוב): ב-buildCategoryDetailTableHtml (גבייה חריגה + טעינה חשמלית) שורת "סה"כ" חושבה עם colspan חסר עמודה אחת — colspanBeforeTotal היה includePayerType?5:4 במקום includePayerType?6:5 (הטבלה כוללת 7 עמודות עם includePayerType/6 בלעדיה, ולא 6/5 כפי שהונח). כתוצאה מכך שורת הסה"כ כיסתה פחות עמודות ממה שהיה צריך, וה-<td> של הסכום בשורה הזו לא היה מיושר עם עמודת הסכום בשורות הנתונים מעליה — זה מה שנראה כ"לא מתחת לעמודת הסכומים" גם אחרי תיקון ה-text-align ב-v2.17.3 (שתיקן רק את המיקום האופקי של הטקסט בתוך התא, לא את מספר העמודות שהתא מכסה). נבדק ותוקן ש-buildSpecialPaymentDetailTableHtml (colspan=5, 6 עמודות בסה"כ) ו-buildOtherIncomeDetailTableHtml (colspan=4, 5 עמודות) כבר היו נכונים מלכתחילה — הבאג היה ספציפי לפונקציה המשותפת לגבייה חריגה/טעינה. לא נדרש AAB חדש — תיקון תצוגה בלבד, git push בלבד.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -9317,7 +9317,7 @@ function buildCategoryDetailTableHtml(title, payments, includePayerType) {
   }).sort((a,b) => a.dateMs - b.dateMs).map(r => r.html).join('');
   const headerCols = '<th>דירה</th><th>שם</th>' + (includePayerType ? '<th>סוג</th>' : '') + '<th>חודש/ים</th><th>תאריך&nbsp;העברה</th><th>אמצעי</th><th>סכום</th>';
   const grandTotal = payments.reduce((s,p) => s + (p.amount||0), 0);
-  const colspanBeforeTotal = includePayerType ? 5 : 4;
+  const colspanBeforeTotal = includePayerType ? 6 : 5;
   const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
     <td colspan="${colspanBeforeTotal}" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
     <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${grandTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
