@@ -2722,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.17.1'; // *** תוספת חדשה, המשך ל-v2.17.0 *** — מעקב תנועות מול הבנק (renderBankLedger): שם הדייר נוסף ליד מספר הדירה בתיאור כל תנועה (תשלום ועד בית/טעינה חשמלית/גבייה חריגה/גבייה מיוחדת), פורמט "דירה X - שם" — כדי להקל על השוואה ויזואלית מול דף הבנק האמיתי, ששם מופיע שם המשלם ולא מספר דירה. מוצג רק אם יש שם ברשומה (first.name/p.name), אחרת נשאר כמו קודם. לא נדרש AAB חדש — שינוי תצוגה בלבד, git push בלבד.
+const APP_VERSION = '2.17.2'; // *** תוספת חדשה, המשך ל-v2.17.1 *** — שני תיקונים: (1) שלוש טבלאות נוספות שפוספסו בסבב הקודם (v2.17.0) עדיין הציגו את "סכום" לא בעמודה האחרונה: טבלת "פירוט הוצאות" המפורטת (קטגוריה/סכום/תיאור/תאריך/אמצעי) בכל שלושת הדוחות (שנתי/חצי-שנתי/חודשי) — סודרה מחדש ל-קטגוריה/תיאור/תאריך/אמצעי/סכום, וקיבלה שורת "סה"כ" חדשה בתחתית (לא הייתה לה כלל קודם); וטבלת מצב תשלומי הדיירים בדוח החודשי (דירה/שם/קומה/סטטוס/סכום/אופן) — סודרה ל-.../אופן/סכום. (2) טאב "מאזן" (renderBalance): נוספה הקטגוריה השלישית "⏳ שולם מחוץ לתקופה" לכרטיס "פירוט גבייה מראש/באיחור" — אותו באג בדיוק שתוקן בדוחות ב-v2.17.0 (vaadPendingPayments, תשלום המשויך לחודש בתוך התקופה אך ששולם בפועל אחריה) קיים גם כאן; בלעדיו, מעבר בין חודשים בטאב מאזן לא הראה שום הערה/פירוט על תשלומים שכבר נספרו ב"פירוט גבייה" של תקופה קודמת אך שולמו בפועל בתקופה נוכחית. לא נדרש AAB חדש — שינוי לוגיקה ותצוגה בלבד, git push בלבד.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -8086,6 +8086,17 @@ function renderBalance() {
   });
   const { cash: vaadAdvanceCashCollected, bank: vaadAdvanceTransferCollected, total: vaadAdvanceCollected } = splitCashBank(vaadAdvancePayments);
   const { cash: vaadLateCashCollected, bank: vaadLateTransferCollected, total: vaadLateCollected } = splitCashBank(vaadLatePayments);
+  // "שולם מחוץ לתקופה" — ההפך המדויק ממראש/באיחור: תשלום המשויך לחודש
+  // *בתוך* התקופה (ולכן כבר נספר ב"פירוט גבייה"/totalCollected למעלה),
+  // אך ה-paidAt שלו נופל *מחוץ* לתקופה (כמעט תמיד אחרי סוף התקופה —
+  // נגבה בפועל בתקופה מאוחרת יותר). בלי הקטגוריה הזו, פער בין "פירוט
+  // גבייה" ל"סה"כ גבייה בפועל" (ר' טאב "דוחות") לא ניתן להסבר מהטאב הזה —
+  // אותו באג שתוקן בדוחות ב-v2.17.0 (buildVaadTimingSectionHtml).
+  const vaadPendingPayments = vaadAllPayments.filter(p => {
+    if (!(p.month >= periodFrom && p.month <= periodTo)) return false;
+    const d = p.paidAt?.toDate ? p.paidAt.toDate() : null;
+    return !d || d < periodFromDateObj || d > periodToDateObj;
+  });
 
 
   // Group expenses by category — מוגבל לתקופה הנבחרת, עקבי עם שאר הכרטיסים
@@ -8272,17 +8283,21 @@ function renderBalance() {
       + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
-  if (vaadAdvancePayments.length || vaadLatePayments.length) {
+  if (vaadAdvancePayments.length || vaadLatePayments.length || vaadPendingPayments.length) {
     html += '<div class="card" style="margin-bottom:16px;">'
       + '<div style="font-weight:700;margin-bottom:4px;">פירוט גבייה מראש/באיחור של ועד בית</div>'
-      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:10px;">התשלומים האלה כבר נכללים ב"ועד שוטף" וב"סה"כ גבייה" למעלה — הרשימה כאן היא פירוט (מי, כמה, מתי) ולא סכום נוסף.</div>';
+      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:10px;">🔵/🟠 כבר נכללים ב"ועד שוטף" וב"סה"כ גבייה" למעלה — פירוט בלבד. ⏳ הוא ההפך: כבר נספר למעלה כי משויך לחודש בתוך התקופה, אך שולם בפועל מחוץ לתקופה (בדרך כלל אחרי סיומה) — ולכן <b>לא</b> ייכלל בפועל בבנק/בקופה עד לתקופה שבה שולם.</div>';
     if (vaadAdvancePayments.length) {
       html += '<div style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:6px;">🔵 גבייה מראש (' + vaadAdvancePayments.length + ')</div>'
         + buildAdvanceLateTable(vaadAdvancePayments);
     }
     if (vaadLatePayments.length) {
-      html += '<div style="font-size:13px;font-weight:600;color:var(--gray-600);margin:' + (vaadAdvancePayments.length ? '14px' : '0') + ' 0 6px;">🟠 גבייה באיחור (' + vaadLatePayments.length + ')</div>'
+      html += '<div style="font-size:13px;font-weight:600;color:var(--gray-600);margin:' + ((vaadAdvancePayments.length) ? '14px' : '0') + ' 0 6px;">🟠 גבייה באיחור (' + vaadLatePayments.length + ')</div>'
         + buildAdvanceLateTable(vaadLatePayments);
+    }
+    if (vaadPendingPayments.length) {
+      html += '<div style="font-size:13px;font-weight:600;color:var(--gray-600);margin:' + ((vaadAdvancePayments.length || vaadLatePayments.length) ? '14px' : '0') + ' 0 6px;">⏳ שולם מחוץ לתקופה (' + vaadPendingPayments.length + ')</div>'
+        + buildAdvanceLateTable(vaadPendingPayments);
     }
     html += '</div>';
   }
@@ -9568,10 +9583,10 @@ async function createPDFReport(year) {
     const methodLabel = e.method === 'cash' ? 'מזומן' : 'בנק';
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNoteHtml(e)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
     </tr>`;
   }).join('');
   const { bank: bankExpensesYear, cash: cashExpensesYear } = splitCashBank(expenses);
@@ -9732,14 +9747,14 @@ async function createPDFReport(year) {
         <thead>
           <tr>
             <th style="width:18%;">קטגוריה</th>
-            <th style="width:15%;">סכום</th>
             <th style="width:30%;">תיאור</th>
             <th style="width:17%;">תאריך</th>
             <th style="width:20%;">אמצעי תשלום</th>
+            <th style="width:15%;">סכום</th>
           </tr>
         </thead>
         <tbody>
-          ${expenseRows || '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
+          ${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
         </tbody>
       </table>
 
@@ -9951,8 +9966,8 @@ async function createMonthlyPDFReport(ym) {
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${r.name||''}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${r.floor !== undefined ? r.floor : '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${statusHtml}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${(p ? (p.amount||fee) : fee).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${p ? (PAYMENT_METHOD_ICONS[p.method]||'') : '-'}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${(p ? (p.amount||fee) : fee).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
     </tr>`;
   }).join('');
 
@@ -9980,10 +9995,10 @@ async function createMonthlyPDFReport(ym) {
     const methodLabel = e.method === 'cash' ? 'מזומן' : 'בנק';
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category||'-').replace(/ /g,'\u00A0')}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNoteHtml(e)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date||'-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
     </tr>`;
   }).join('');
   const catTotals = {};
@@ -10042,14 +10057,14 @@ async function createMonthlyPDFReport(ym) {
       <div style="font-size:13px;color:#999;display:flex;justify-content:center;gap:5px;direction:rtl;margin-bottom:16px;">${(() => { const now=new Date(); return '<span>הופק</span><span dir="ltr">'+now.toLocaleDateString('he-IL')+'</span><span>בשעה</span><span dir="ltr">'+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})+'</span>'; })()}</div>
 
       <h2>תשלומי&nbsp;דיירים</h2>
-      <table><thead><tr><th>דירה</th><th>שם</th><th>קומה</th><th>סטטוס</th><th>סכום</th><th>אופן</th></tr></thead>
+      <table><thead><tr><th>דירה</th><th>שם</th><th>קומה</th><th>סטטוס</th><th>אופן</th><th>סכום</th></tr></thead>
       <tbody>${residentRows}</tbody></table>
       <div style="font-size:13px;color:#555;margin-bottom:16px;">${paidCount}&nbsp;מתוך&nbsp;${residents.length}&nbsp;דירות&nbsp;שילמו&nbsp;החודש</div>
 
       <h2>הוצאות&nbsp;החודש</h2>
       <table style="table-layout:fixed;"><thead><tr>
-        <th style="width:18%;">קטגוריה</th><th style="width:15%;">סכום</th><th style="width:32%;">תיאור</th><th style="width:17%;">תאריך</th><th style="width:18%;">אופן</th>
-      </tr></thead><tbody>${expenseRows || '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות החודש</td></tr>'}</tbody></table>
+        <th style="width:18%;">קטגוריה</th><th style="width:32%;">תיאור</th><th style="width:17%;">תאריך</th><th style="width:18%;">אופן</th><th style="width:15%;">סכום</th>
+      </tr></thead><tbody>${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות החודש</td></tr>'}</tbody></table>
 
       <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
       <table style="table-layout:fixed;"><thead><tr><th style="width:50%;">קטגוריה</th><th style="width:20%;">אחוז</th><th style="width:30%;">סכום</th></tr></thead>
@@ -10317,10 +10332,10 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
     const methodLabel = e.method === 'cash' ? 'מזומן' : 'בנק';
     return `<tr>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${(e.category || '-').replace(/ /g, '\u00A0')}</td>
-      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:right;">${descWithNoteHtml(e)}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${e.date || '-'}</td>
       <td style="border:1px solid #ddd;padding:8px;text-align:center;">${methodLabel}</td>
+      <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:bold;">₪${(e.amount||0).toLocaleString('he-IL', {minimumFractionDigits:0, maximumFractionDigits:2})}</td>
     </tr>`;
   }).join('');
   const { bank: bankExpensesHalf, cash: cashExpensesHalf } = splitCashBank(expenses);
@@ -10450,14 +10465,14 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
         <thead>
           <tr>
             <th style="width:18%;">קטגוריה</th>
-            <th style="width:15%;">סכום</th>
             <th style="width:30%;">תיאור</th>
             <th style="width:17%;">תאריך</th>
             <th style="width:20%;">אמצעי תשלום</th>
+            <th style="width:15%;">סכום</th>
           </tr>
         </thead>
         <tbody>
-          ${expenseRows || '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
+          ${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
         </tbody>
       </table>
 
