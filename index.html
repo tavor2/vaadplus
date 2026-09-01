@@ -2722,7 +2722,7 @@ window.confirmDeleteBuilding = async () => {
 };
 
 // ===== SUPER ADMIN =====
-const APP_VERSION = '2.17.2'; // *** תוספת חדשה, המשך ל-v2.17.1 *** — שני תיקונים: (1) שלוש טבלאות נוספות שפוספסו בסבב הקודם (v2.17.0) עדיין הציגו את "סכום" לא בעמודה האחרונה: טבלת "פירוט הוצאות" המפורטת (קטגוריה/סכום/תיאור/תאריך/אמצעי) בכל שלושת הדוחות (שנתי/חצי-שנתי/חודשי) — סודרה מחדש ל-קטגוריה/תיאור/תאריך/אמצעי/סכום, וקיבלה שורת "סה"כ" חדשה בתחתית (לא הייתה לה כלל קודם); וטבלת מצב תשלומי הדיירים בדוח החודשי (דירה/שם/קומה/סטטוס/סכום/אופן) — סודרה ל-.../אופן/סכום. (2) טאב "מאזן" (renderBalance): נוספה הקטגוריה השלישית "⏳ שולם מחוץ לתקופה" לכרטיס "פירוט גבייה מראש/באיחור" — אותו באג בדיוק שתוקן בדוחות ב-v2.17.0 (vaadPendingPayments, תשלום המשויך לחודש בתוך התקופה אך ששולם בפועל אחריה) קיים גם כאן; בלעדיו, מעבר בין חודשים בטאב מאזן לא הראה שום הערה/פירוט על תשלומים שכבר נספרו ב"פירוט גבייה" של תקופה קודמת אך שולמו בפועל בתקופה נוכחית. לא נדרש AAB חדש — שינוי לוגיקה ותצוגה בלבד, git push בלבד.
+const APP_VERSION = '2.17.3'; // *** תוספת חדשה, המשך ל-v2.17.2 *** — תיקון: בכל שורת "סה"כ" שבה תווית הטקסט יושבת ב-td עם colspan (buildCategoryDetailTableHtml — גבייה חריגה+טעינה חשמלית, buildSpecialPaymentDetailTableHtml, buildVaadTimingSectionHtml, טבלת "פירוט הוצאות" המפורטת בשלושת הדוחות), הטקסט היה text-align:right — ב-RTL זה ממקם אותו בקצה הימני *של תא ה-colspan עצמו*, כלומר רחוק מאוד מעמודת הסכום (בקצה השני של השורה), ולא ליד הסכום כמו שנראה בשורות הנתונים הרגילות מעליו. תוקן ל-text-align:left, כך שהתווית "סה"כ" יושבת צמוד לעמודת הסכום, בדיוק כמו בשורות הנתונים. (buildOtherIncomeDetailTableHtml כבר היה תקין כי אין לו colspan גדול מ-1 שמצריך זאת בפועל — נבדק, לא נגעתי). לא נדרש AAB חדש — שינוי תצוגה בלבד, git push בלבד.
 const SUPER_ADMIN_EMAIL = 'vaadplus100@gmail.com';
 const BETA_BUILDING_LIMIT = 50; // Stage 1: closed beta cap. Super Admin can override this in Settings without touching code.
 const TRIAL_DAYS = 30; // Default fallback if meta/settings.trialDays doesn't exist yet. Super Admin can override the effective value at runtime — see trialDaysSetting below.
@@ -9361,7 +9361,7 @@ function buildSpecialPaymentDetailTableHtml(specialPayments, titleById) {
   }).join('');
   const grandTotal = specialPayments.reduce((s,p) => s + (p.amount||0), 0);
   const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
-    <td colspan="5" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
+    <td colspan="5" style="border:1px solid #ddd;padding:8px;text-align:left;">סה"כ</td>
     <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${grandTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
   </tr>`;
   return `<div class="detail-section"><h2>${title}</h2>
@@ -9393,7 +9393,7 @@ function buildOtherIncomeDetailTableHtml(otherIncomeList) {
   }).join('');
   const grandTotal = otherIncomeList.reduce((s,p) => s + (p.amount||0), 0);
   const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
-    <td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td>
+    <td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:left;">סה"כ</td>
     <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${grandTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
   </tr>`;
   return `<div class="detail-section"><h2>${title}</h2>
@@ -9450,7 +9450,7 @@ function buildVaadTimingSectionHtml(advancePayments, latePayments, pendingPaymen
   const noteRow = `<tr><td colspan="7" style="border:1px solid #ddd;padding:8px;background:#fafafa;font-size:11px;color:#777;text-align:right;">💡 🔵&nbsp;מראש/🟠&nbsp;באיחור כבר נכללים ב"סה"כ גבייה בפועל" למטה (שולמו בתוך התקופה, עבור חודש שמחוץ לה). ⏳&nbsp;שולם&nbsp;מחוץ&nbsp;לתקופה הוא ההפך — משויך לחודש בתוך התקופה (כבר נספר ב"סה"כ גבייה לפי הטבלה" מעל), אך שולם בפועל מחוץ לתקופה, ולכן <b>לא</b> נכלל ב"סה"כ גבייה בפועל" למטה — זה בדיוק ההפרש בין שתי שורות הסיכום.</td></tr>`;
   const bodyRows = items.length ? buildAdvanceLateDetailTableHtml(items) : `<tr><td colspan="7" style="text-align:center;border:1px solid #ddd;padding:10px;color:#999;">אין גבייה מראש/באיחור/שולמה מחוץ לתקופה עבור ועד בית שוטף</td></tr>`;
   const totalRow = `<tr style="background:#f5f5f5;font-weight:bold;">
-    <td colspan="6" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ&nbsp;גבייה&nbsp;בפועל&nbsp;(ועד&nbsp;בית&nbsp;שוטף):</td>
+    <td colspan="6" style="border:1px solid #ddd;padding:8px;text-align:left;">סה"כ&nbsp;גבייה&nbsp;בפועל&nbsp;(ועד&nbsp;בית&nbsp;שוטף):</td>
     <td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${actualTotal.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td>
   </tr>`;
   return `<div class="detail-section"><h2>${title}</h2>
@@ -9754,7 +9754,7 @@ async function createPDFReport(year) {
           </tr>
         </thead>
         <tbody>
-          ${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
+          ${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:left;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
         </tbody>
       </table>
 
@@ -10064,7 +10064,7 @@ async function createMonthlyPDFReport(ym) {
       <h2>הוצאות&nbsp;החודש</h2>
       <table style="table-layout:fixed;"><thead><tr>
         <th style="width:18%;">קטגוריה</th><th style="width:32%;">תיאור</th><th style="width:17%;">תאריך</th><th style="width:18%;">אופן</th><th style="width:15%;">סכום</th>
-      </tr></thead><tbody>${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות החודש</td></tr>'}</tbody></table>
+      </tr></thead><tbody>${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:left;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות החודש</td></tr>'}</tbody></table>
 
       <h2>סיכום&nbsp;הוצאות&nbsp;לפי&nbsp;קטגוריה</h2>
       <table style="table-layout:fixed;"><thead><tr><th style="width:50%;">קטגוריה</th><th style="width:20%;">אחוז</th><th style="width:30%;">סכום</th></tr></thead>
@@ -10472,7 +10472,7 @@ async function createSemiAnnualPDFReport(year, isFirstHalf) {
           </tr>
         </thead>
         <tbody>
-          ${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:right;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
+          ${expenseRows ? expenseRows + `<tr style="background:#f5f5f5;font-weight:bold;"><td colspan="4" style="border:1px solid #ddd;padding:8px;text-align:left;">סה"כ</td><td style="border:1px solid #ddd;padding:8px;text-align:center;">₪${totalExpenses.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:2})}</td></tr>` : '<tr><td colspan="5" style="text-align:center;border:1px solid #ddd;padding:8px;">אין הוצאות רשומות</td></tr>'}
         </tbody>
       </table>
 
